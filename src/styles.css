@@ -1,0 +1,98 @@
+/*
+ * Comment overlay design tokens — CSS variables.
+ *
+ * The overlay components reference these via Tailwind arbitrary-value classes
+ * (e.g. `bg-[var(--co-surface)]`). Consumers can override any subset in their
+ * own stylesheet to retheme the overlay without needing to add matching token
+ * names to their `tailwind.config.js`.
+ *
+ * Defaults below match the playground's current visual theme (warm off-white
+ * surfaces, near-black ink hierarchy, Fraunces / IBM Plex type stack).
+ */
+:root {
+  /* Surfaces */
+  --co-page: #efece6;
+  --co-surface: #ffffff;
+  --co-surface-2: #faf8f4;
+  --co-surface-3: #f4f1ec;
+
+  /* Text */
+  --co-ink: #14110e;
+  --co-ink-2: #4a453e;
+  --co-ink-3: #807a71;
+  --co-ink-4: #b5afa5;
+
+  /* Borders */
+  --co-line: rgba(20, 17, 14, 0.08);
+  --co-line-strong: rgba(20, 17, 14, 0.14);
+
+  /* Severity / accents */
+  --co-sev-info: #3f5c7c;
+  --co-sev-info-bg: #eef2f7;
+  --co-sev-warning: #94661a;
+  --co-sev-warning-bg: #faf4e6;
+  --co-sev-critical: #b4321a;
+  --co-sev-critical-bg: #fbf1ee;
+  --co-sev-success: #3f6b3f;
+
+  /* Type */
+  --co-font-display: "Fraunces", "Iowan Old Style", Georgia, serif;
+  --co-font-mono: "IBM Plex Mono", ui-monospace, "SF Mono", monospace;
+  --co-font-body: "IBM Plex Sans", -apple-system, system-ui, sans-serif;
+
+  /* Letter-spacing */
+  --co-tracking-micro: 0.14em;
+
+  /* Radii */
+  --co-radius-pill: 999px;
+}
+
+/*
+ * font-display utility — opsz axis on the Fraunces display font. The
+ * playground also defines this class in its own index.css; we ship our own
+ * copy so the package works in consumers that don't.
+ */
+.font-display {
+  font-variation-settings: "opsz" 36;
+}
+.font-display-lg {
+  font-variation-settings: "opsz" 72;
+}
+.font-display-sm {
+  font-variation-settings: "opsz" 18;
+}
+
+/* Comment-dot pulse — visual link from open bubble back to its anchor. */
+@keyframes comment-dot-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(63, 92, 124, 0.4);
+  }
+  50% {
+    box-shadow: 0 0 0 6px rgba(63, 92, 124, 0);
+  }
+}
+.comment-dot-pulse {
+  animation: comment-dot-pulse 1.6s ease-out infinite;
+}
+
+/*
+ * Comment overlay dark theme.
+ *
+ * Scope: the overlay root (`.comment-overlay--dark`) overrides the CSS
+ * variables defined above for everything nested inside it. Because the
+ * components reference vars via `var(--co-*)`, the cascade does the work —
+ * no per-utility selector is needed.
+ */
+.comment-overlay--dark {
+  --co-page: #1a1816;
+  --co-surface: #1a1816;
+  --co-surface-2: #232120;
+  --co-surface-3: #2a2825;
+  --co-ink: #f0ece3;
+  --co-ink-2: #c4bfb5;
+  --co-ink-3: #847e74;
+  --co-ink-4: #5a554d;
+  --co-line: rgba(240, 236, 227, 0.08);
+  --co-line-strong: rgba(240, 236, 227, 0.18);
+}
