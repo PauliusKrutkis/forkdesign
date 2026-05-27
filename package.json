@@ -39,7 +39,12 @@
       "import": "./dist/plugin/index.mjs",
       "require": "./dist/plugin/index.cjs"
     },
-    "./styles.css": "./src/styles.css"
+    "./styles.css": "./src/styles.css",
+    "./tailwind.content": {
+      "import": "./tailwind.content.js",
+      "require": "./tailwind.content.js",
+      "default": "./tailwind.content.js"
+    }
   },
   "peerDependencies": {
     "react": "^19.0.0",
@@ -67,7 +72,7 @@
     "typescript": "~6.0.2",
     "vitest": "^4.1.7"
   },
-  "files": ["dist", "src/styles.css", "README.md", "LICENSE"],
+  "files": ["dist", "src/styles.css", "tailwind.content.js", "README.md", "LICENSE"],
   "keywords": [
     "vite",
     "react",

@@ -60,6 +60,18 @@ export function App() {
 
 Your app needs **Tailwind CSS** enabled. Overlay components use utility classes with CSS-variable fallbacks (`bg-[var(--co-surface)]`, etc.). Import `redline/styles.css` for defaults; override `--co-*` variables to retheme.
 
+**Important:** Tailwind must scan redline's component files or those utilities won't be emitted. Spread the package content globs into your config:
+
+```js
+// tailwind.config.js
+import { tailwindContent } from "redline/tailwind.content";
+
+export default {
+  content: ["./index.html", "./src/**/*.{js,ts,jsx,tsx}", ...tailwindContent],
+  // ...
+};
+```
+
 Optional author override for new comments:
 
 ```html
@@ -113,8 +125,44 @@ Override CSS variables after importing `redline/styles.css`. See [`src/styles.cs
 | `comments()` | Vite plugin — `/api/comments`, `/api/iterations` |
 | `sourceLoc()` | Vite plugin — `data-source-loc` transform |
 | `redline/styles.css` | Default theme tokens |
+| `redline/tailwind.content` | Tailwind `content` globs — required for overlay utilities |
 
 Types: `CommentData`, `RegisteredComment`, `OverlaySettings`, etc. from the main entry.
+
+## Linked local development
+
+When a host app depends on a sibling checkout (`"redline": "link:../redline"`), use this loop:
+
+**One-time host setup** (e.g. `seo-analysis`):
+
+```json
+// package.json
+"redline": "link:../redline"
+```
+
+```ts
+// vite.config.ts — load redline source + watch the linked folder for HMR
+resolve: { conditions: ["source", "module", "browser", "development|production"] },
+optimizeDeps: { exclude: ["redline"] },
+server: { watch: { ignored: ["!../redline/**"] } },
+```
+
+```js
+// tailwind.config.js — emit overlay utility classes
+import { tailwindContent } from "redline/tailwind.content";
+content: ["./src/**/*.{js,ts,jsx,tsx}", ...tailwindContent],
+```
+
+```tsx
+// main.tsx
+import "redline/styles.css";
+```
+
+Then `pnpm install` in the host and start its dev server (`pnpm dev`).
+
+**Day-to-day:** edit files under `redline/src/`. With the config above, React/CSS changes hot-reload in the host. **Restart the host dev server** after changes to redline's Vite plugins (`src/plugin.ts`, `src/source-loc-plugin.ts`) or after editing `package.json` exports — those load at startup.
+
+You do **not** need `pnpm build` in redline for UI work; the host reads `redline/src` directly via the `source` export condition.
 
 ## Local development (this repo)
 
