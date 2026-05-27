@@ -60,6 +60,11 @@ export type WriteCommentInput = {
    * mints a fresh uuid as before.
    */
   id?: string;
+  /**
+   * Optional app route (pathname + search + hash) stamped on the directive so
+   * the overlay can navigate back to the page where the comment was created.
+   */
+  route?: string;
 };
 
 export type WriteCommentResult = {
@@ -122,6 +127,7 @@ export async function writeCommentToFile(
     author: input.author,
     date,
     screenshot: input.screenshot,
+    route: input.route,
   });
   insertAfterSibling(ast, target, marker);
 
@@ -812,6 +818,7 @@ type MarkerArgs = {
    * directive when present.
    */
   screenshot?: string;
+  route?: string;
 };
 
 /**
@@ -841,7 +848,8 @@ function buildCommentMarker(args: MarkerArgs): t.JSXExpressionContainer {
     `@comment id="${args.id}" anchor="${args.anchor}"` +
     ` text=${JSON.stringify(args.text)} author=${JSON.stringify(args.author)}` +
     ` date="${args.date}"` +
-    (args.screenshot ? ` screenshot="${args.screenshot}"` : "");
+    (args.screenshot ? ` screenshot="${args.screenshot}"` : "") +
+    (args.route ? ` route=${JSON.stringify(args.route)}` : "");
 
   // Wrap in a JSX fragment so the parser accepts the bare comment-block
   // expression. We don't render the fragment; we only steal the inner node.

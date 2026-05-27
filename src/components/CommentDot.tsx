@@ -87,11 +87,11 @@ export function CommentDot({
             onMouseLeave={() => onHover(null)}
             onFocus={() => onHover({ anchor, instance })}
             onBlur={() => onHover(null)}
-            className="pointer-events-auto fixed z-[9100] m-0 flex h-[14px] w-[14px] -translate-y-0 items-center justify-center rounded-full p-0 outline-none transition-transform duration-150 hover:scale-110 focus-visible:ring-2 focus-visible:ring-[var(--co-sev-info)] focus-visible:ring-offset-1"
+            className="pointer-events-auto fixed z-[9100] m-0 flex h-[14px] w-[14px] -translate-y-0 items-center justify-center rounded-full p-0 outline-none transition-transform duration-150 hover:scale-110 focus-visible:ring-2 focus-visible:ring-[var(--co-sev-info)] focus-visible:ring-offset-1 focus-visible:ring-offset-[var(--co-page)]"
             style={{ left, top }}
           >
             <span
-              className={`block h-[14px] w-[14px] rounded-full ring-2 ring-white shadow-[0_1px_3px_rgba(20,17,14,0.18)] ${fill} ${
+              className={`block h-[14px] w-[14px] rounded-full ring-2 ring-[var(--co-surface)] shadow-[0_1px_4px_color-mix(in_srgb,var(--co-ink)_22%,transparent)] ${fill} ${
                 isOpen ? "comment-dot-pulse" : ""
               }`}
               aria-hidden

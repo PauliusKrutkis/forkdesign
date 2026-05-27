@@ -66,10 +66,10 @@
 @keyframes comment-dot-pulse {
   0%,
   100% {
-    box-shadow: 0 0 0 0 rgba(63, 92, 124, 0.4);
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--co-sev-info) 40%, transparent);
   }
   50% {
-    box-shadow: 0 0 0 6px rgba(63, 92, 124, 0);
+    box-shadow: 0 0 0 6px color-mix(in srgb, var(--co-sev-info) 0%, transparent);
   }
 }
 .comment-dot-pulse {
@@ -95,4 +95,11 @@
   --co-ink-4: #5a554d;
   --co-line: rgba(240, 236, 227, 0.08);
   --co-line-strong: rgba(240, 236, 227, 0.18);
+  --co-sev-info: #7a9ec4;
+  --co-sev-info-bg: #1e2834;
+  --co-sev-warning: #c9a24a;
+  --co-sev-warning-bg: #2a2418;
+  --co-sev-critical: #e07a62;
+  --co-sev-critical-bg: #2e1e1a;
+  --co-sev-success: #7aab7a;
 }

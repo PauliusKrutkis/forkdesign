@@ -394,6 +394,7 @@ async function handlePost(
       existingAnchor: parsed.value.existingAnchor,
       id: commentId,
       screenshot: screenshotUrl,
+      route: parsed.value.route,
     });
   } catch (err) {
     if (err instanceof WriteError) {
@@ -1393,6 +1394,8 @@ type PostBody = {
    * onto the `@comment` directive's `screenshot` attribute.
    */
   screenshotPng?: string;
+  /** App route (pathname + search + hash) where the comment was created. */
+  route?: string;
 };
 
 type ParseBodyResult =
@@ -1411,6 +1414,7 @@ function parsePostBody(value: unknown): ParseBodyResult {
   const author = obj.author;
   const existingAnchor = obj.existingAnchor;
   const screenshotPng = obj.screenshotPng;
+  const route = obj.route;
 
   if (typeof file !== "string" || file.length === 0) {
     return { ok: false, reason: "field `file` must be a non-empty string" };
@@ -1433,6 +1437,9 @@ function parsePostBody(value: unknown): ParseBodyResult {
   if (screenshotPng !== undefined && typeof screenshotPng !== "string") {
     return { ok: false, reason: "field `screenshotPng` must be a string" };
   }
+  if (route !== undefined && typeof route !== "string") {
+    return { ok: false, reason: "field `route` must be a string" };
+  }
   return {
     ok: true,
     value: {
@@ -1443,6 +1450,7 @@ function parsePostBody(value: unknown): ParseBodyResult {
       author,
       ...(typeof existingAnchor === "string" ? { existingAnchor } : {}),
       ...(typeof screenshotPng === "string" ? { screenshotPng } : {}),
+      ...(typeof route === "string" && route.length > 0 ? { route } : {}),
     },
   };
 }

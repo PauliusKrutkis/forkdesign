@@ -9,6 +9,7 @@ import {
 } from "./CommentComposer";
 import { CommentManagementPanel } from "./CommentManagementPanel";
 import { CommentSettingsPanel } from "./CommentSettingsPanel";
+import { CommentShell, type ShellTab } from "./CommentShell";
 import { Kbd } from "./Kbd";
 import { useAnchorRects } from "./useAnchorElement";
 import type { DotInstanceTarget } from "./CommentDot";
@@ -39,15 +40,30 @@ import {
  * mechanism. The composer POSTs and waits for the file write to flow back
  * through the next /api/comments fetch.
  */
-export function CommentOverlay() {
+export type CommentOverlayProps = {
+  /** React Router `navigate`, or any in-app navigation fn. Falls back to full page load. */
+  navigate?: (to: string) => void;
+  /**
+   * Resolve a source file to an app route for legacy comments without a stored
+   * `route` attribute.
+   */
+  fileToRoute?: (
+    file: string,
+    ctx: { view?: string | null },
+  ) => string | null;
+};
+
+export function CommentOverlay({
+  navigate: navigateProp,
+  fileToRoute,
+}: CommentOverlayProps = {}) {
   const [comments, setComments] = useState<CommentData[]>([]);
   const [openTarget, setOpenTarget] = useState<DotInstanceTarget | null>(null);
   const [hoveredTarget, setHoveredTarget] = useState<DotInstanceTarget | null>(
     null,
   );
   const [composerActive, setComposerActive] = useState(false);
-  const [managementOpen, setManagementOpen] = useState(false);
-  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [shell, setShell] = useState<ShellTab | null>(null);
   /**
    * User-visible overlay settings: enabled flag, toggle corner, theme,
    * author override, AI model. Persisted to localStorage; loaded once on
@@ -70,6 +86,11 @@ export function CommentOverlay() {
    * a mouse trip to click the newly-appeared dot.
    */
   const [pendingOpenId, setPendingOpenId] = useState<string | null>(null);
+  /** After navigation, open the bubble once the anchor appears in the DOM. */
+  const [pendingOpen, setPendingOpen] = useState<{
+    anchor: string;
+    view?: string | null;
+  } | null>(null);
 
   // Bulk-fetch comments across ALL allowed .tsx files in src/, then re-fetch
   // on every Vite HMR update so a freshly-written marker shows up without a
@@ -123,24 +144,37 @@ export function CommentOverlay() {
     }
   }, [comments, pendingOpenId]);
 
-  // Global hotkeys: `C` toggles composer mode, `L` toggles the management
-  // list, `,` toggles settings — all only when not in an input. `C`/`L`
-  // additionally skip when a bubble is open. `Esc` is handled per-surface.
+  useEffect(() => {
+    if (!pendingOpen) return;
+    if (!inDomAnchors.has(pendingOpen.anchor)) return;
+    setOpenTarget({ anchor: pendingOpen.anchor, instance: 0 });
+    if (pendingOpen.view) scrollToDataView(pendingOpen.view);
+    setPendingOpen(null);
+    setShell(null);
+  }, [pendingOpen, inDomAnchors]);
+
+  const toggleShell = useCallback((tab: ShellTab) => {
+    setShell((prev) => (prev === tab ? null : tab));
+  }, []);
+
+  // Global hotkeys: `C` composer, `L` list shell, `,` settings shell.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.metaKey || e.ctrlKey || e.altKey) return;
       if (isInTextInput(document.activeElement)) return;
       if (e.key === ",") {
-        // Settings is the one hotkey that works even when comments are
-        // disabled — it's the only way back in.
         e.preventDefault();
-        setSettingsOpen((v) => !v);
+        toggleShell("settings");
         return;
       }
-      // Everything below this point is muted when the system is off.
       if (!settings.enabled) return;
       if (e.key === "c" || e.key === "C") {
-        if (composerActive || openTarget) return;
+        if (openTarget) return;
+        if (composerActive) {
+          e.preventDefault();
+          setComposerActive(false);
+          return;
+        }
         e.preventDefault();
         setComposerActive(true);
         return;
@@ -148,12 +182,12 @@ export function CommentOverlay() {
       if (e.key === "l" || e.key === "L") {
         if (composerActive || openTarget) return;
         e.preventDefault();
-        setManagementOpen((v) => !v);
+        toggleShell("list");
       }
     };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, [composerActive, openTarget, settings.enabled]);
+  }, [composerActive, openTarget, settings.enabled, toggleShell]);
 
   // Persist settings on change and apply the side-effects that the rest of
   // the overlay reads via globals (author) or className gating (theme).
@@ -180,9 +214,10 @@ export function CommentOverlay() {
   useEffect(() => {
     if (settings.enabled) return;
     setComposerActive(false);
-    setManagementOpen(false);
+    setShell(null);
     setOpenTarget(null);
     setHoveredTarget(null);
+    setPendingOpen(null);
   }, [settings.enabled]);
 
   /** Resolve theme=auto by reading the OS preference. */
@@ -294,6 +329,13 @@ export function CommentOverlay() {
             .__COMMENT_AUTHOR__) ||
         "dev@local";
 
+      const route =
+        typeof window !== "undefined"
+          ? window.location.pathname +
+            window.location.search +
+            window.location.hash
+          : undefined;
+
       try {
         const res = await fetch("/api/comments", {
           method: "POST",
@@ -306,6 +348,7 @@ export function CommentOverlay() {
             author: String(author),
             ...(existingAnchor ? { existingAnchor } : {}),
             ...(entry.screenshotPng ? { screenshotPng: entry.screenshotPng } : {}),
+            ...(route ? { route } : {}),
           }),
         });
         if (!res.ok) {
@@ -349,12 +392,68 @@ export function CommentOverlay() {
     console.info("[CommentOverlay] resolve (stub)", id);
   }, []);
 
+  const navigateTo = useCallback(
+    (to: string) => {
+      if (navigateProp) {
+        navigateProp(to);
+      } else if (typeof window !== "undefined") {
+        window.location.assign(to);
+      }
+    },
+    [navigateProp],
+  );
+
+  const resolveCommentRoute = useCallback(
+    (comment: CommentData & { file?: string }) => {
+      if (comment.route) return comment.route;
+      const file = comment.file;
+      if (!file || !fileToRoute) return null;
+      return fileToRoute(file, { view: comment.view });
+    },
+    [fileToRoute],
+  );
+
   const handleJump = useCallback(
     (target: { anchor: string; instance: number }) => {
+      const c = comments.find((x) => x.anchor === target.anchor);
+      if (c?.view) scrollToDataView(c.view);
       setOpenTarget(target);
-      setManagementOpen(false);
+      setShell(null);
     },
-    [],
+    [comments],
+  );
+
+  const handleGoToPage = useCallback(
+    (comment: CommentData & { file?: string }) => {
+      const route = resolveCommentRoute(comment);
+      if (!route) return;
+
+      const currentRoute =
+        typeof window !== "undefined"
+          ? window.location.pathname +
+            window.location.search +
+            window.location.hash
+          : "";
+
+      setShell(null);
+      setPendingOpen({
+        anchor: comment.anchor,
+        view: comment.view,
+      });
+
+      if (route === currentRoute) {
+        if (inDomAnchors.has(comment.anchor)) {
+          handleJump({ anchor: comment.anchor, instance: 0 });
+          setPendingOpen(null);
+        } else if (comment.view) {
+          scrollToDataView(comment.view);
+        }
+        return;
+      }
+
+      navigateTo(route);
+    },
+    [resolveCommentRoute, inDomAnchors, handleJump, navigateTo],
   );
 
   const handleDelete = useCallback(async (id: string) => {
@@ -442,31 +541,48 @@ export function CommentOverlay() {
 
       <OverlayToggle
         enabled={settings.enabled}
+        uiMode={settings.uiMode}
+        showFloatingControls={settings.showFloatingControls}
         position={settings.position}
         active={composerActive}
         onToggle={() => setComposerActive((v) => !v)}
-        listOpen={managementOpen}
-        onToggleList={() => setManagementOpen((v) => !v)}
-        settingsOpen={settingsOpen}
-        onToggleSettings={() => setSettingsOpen((v) => !v)}
+        shell={shell}
+        onToggleList={() => toggleShell("list")}
+        onToggleSettings={() => toggleShell("settings")}
       />
 
-      {settings.enabled && managementOpen ? (
-        <CommentManagementPanel
-          comments={comments}
-          inDomAnchors={inDomAnchors}
-          onJump={handleJump}
-          onDelete={handleDelete}
-          onClose={() => setManagementOpen(false)}
-        />
-      ) : null}
-
-      {settingsOpen ? (
-        <CommentSettingsPanel
-          settings={settings}
-          onChange={updateSettings}
-          onClose={() => setSettingsOpen(false)}
-        />
+      {shell ? (
+        <CommentShell
+          tab={shell}
+          onTabChange={setShell}
+          onClose={() => setShell(null)}
+          listSubtitle={
+            shell === "list"
+              ? (() => {
+                  const onPage = comments.filter((c) =>
+                    inDomAnchors.has(c.anchor),
+                  ).length;
+                  return `${comments.length} total · ${onPage} on this page`;
+                })()
+              : undefined
+          }
+        >
+          {shell === "list" ? (
+            <CommentManagementPanel
+              comments={comments}
+              inDomAnchors={inDomAnchors}
+              onJump={handleJump}
+              onGoToPage={handleGoToPage}
+              fileToRoute={fileToRoute}
+              onDelete={handleDelete}
+            />
+          ) : (
+            <CommentSettingsPanel
+              settings={settings}
+              onChange={updateSettings}
+            />
+          )}
+        </CommentShell>
       ) : null}
     </div>
   );
@@ -602,43 +718,47 @@ function OpenBubble({
 
 function OverlayToggle({
   enabled,
+  uiMode,
+  showFloatingControls,
   position,
   active,
   onToggle,
-  listOpen,
+  shell,
   onToggleList,
-  settingsOpen,
   onToggleSettings,
 }: {
   enabled: boolean;
+  uiMode: OverlaySettings["uiMode"];
+  showFloatingControls: boolean;
   position: OverlaySettings["position"];
   active: boolean;
   onToggle: () => void;
-  listOpen: boolean;
+  shell: ShellTab | null;
   onToggleList: () => void;
-  settingsOpen: boolean;
   onToggleSettings: () => void;
 }) {
+  if (uiMode === "minimal") {
+    return null;
+  }
+
+  const showFabStack = enabled && showFloatingControls;
+  const showGear = !enabled || enabled;
+
   const positionClass = POSITION_CLASSES[position];
   return (
     <div
       data-comment-overlay="true"
       className={`pointer-events-none fixed z-[9400] flex flex-col gap-2 ${positionClass}`}
     >
-      {/*
-        When the system is muted we collapse the stack to a single small
-        gear so the user retains a way back into settings. Everything else
-        is hidden.
-      */}
-      {enabled ? (
+      {showFabStack ? (
         <>
           <button
             type="button"
             onClick={onToggleList}
-            aria-pressed={listOpen}
+            aria-pressed={shell === "list"}
             aria-label="Toggle comment list"
             className={`pointer-events-auto inline-flex items-center gap-2 rounded-[var(--co-radius-pill)] px-4 py-2 font-[var(--co-font-mono)] text-[11px] uppercase tracking-[0.08em] shadow-lg transition-colors ${
-              listOpen
+              shell === "list"
                 ? "bg-[var(--co-sev-info)] text-[var(--co-page)]"
                 : "bg-[var(--co-surface)] text-[var(--co-ink)] hover:bg-[var(--co-surface-2)]"
             }`}
@@ -646,7 +766,7 @@ function OverlayToggle({
             <span
               aria-hidden
               className={`block h-2 w-2 rounded-full ${
-                listOpen ? "bg-[var(--co-page)]" : "bg-[var(--co-ink-3)]"
+                shell === "list" ? "bg-[var(--co-page)]" : "bg-[var(--co-ink-3)]"
               }`}
             />
             List
@@ -673,24 +793,37 @@ function OverlayToggle({
           </button>
         </>
       ) : null}
-      <button
-        type="button"
-        onClick={onToggleSettings}
-        aria-pressed={settingsOpen}
-        aria-label="Toggle comment settings"
-        title={enabled ? "Settings" : "Comments hidden — open settings"}
-        className={`pointer-events-auto inline-flex h-8 w-8 items-center justify-center rounded-[var(--co-radius-pill)] shadow-lg transition-colors ${
-          settingsOpen
-            ? "bg-[var(--co-sev-info)] text-[var(--co-page)]"
-            : enabled
-              ? "bg-[var(--co-surface)] text-[var(--co-ink-2)] hover:bg-[var(--co-surface-2)]"
-              : "bg-[var(--co-ink)] text-[var(--co-page)] hover:bg-[var(--co-ink-2)]"
-        }`}
-      >
-        <span aria-hidden className="text-[14px] leading-none">
-          •••
-        </span>
-      </button>
+      {showGear ? (
+        <button
+          type="button"
+          onClick={onToggleSettings}
+          aria-pressed={shell === "settings"}
+          aria-label="Toggle comment settings"
+          title={enabled ? "Settings" : "Comments hidden — open settings"}
+          className={`pointer-events-auto inline-flex h-8 w-8 items-center justify-center rounded-[var(--co-radius-pill)] shadow-lg transition-colors ${
+            shell === "settings"
+              ? "bg-[var(--co-sev-info)] text-[var(--co-page)]"
+              : enabled
+                ? "bg-[var(--co-surface)] text-[var(--co-ink-2)] hover:bg-[var(--co-surface-2)]"
+                : "bg-[var(--co-ink)] text-[var(--co-page)] hover:bg-[var(--co-ink-2)]"
+          }`}
+        >
+          <span aria-hidden className="text-[14px] leading-none">
+            •••
+          </span>
+        </button>
+      ) : null}
     </div>
   );
+}
+
+function scrollToDataView(view: string) {
+  if (typeof document === "undefined") return;
+  const escaped =
+    typeof CSS !== "undefined" && typeof CSS.escape === "function"
+      ? CSS.escape(view)
+      : view.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+  document
+    .querySelector(`[data-view="${escaped}"]`)
+    ?.scrollIntoView({ block: "nearest", behavior: "smooth" });
 }

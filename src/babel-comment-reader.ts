@@ -166,6 +166,7 @@ function parseDirective(
   const resolved = boolOf(attrs.values.resolved) ?? false;
   const replies = arrayOf(attrs.values.replies, warnings, tag) ?? [];
   const active = numberOf(attrs.values.active);
+  const route = stringOf(attrs.values.route) ?? undefined;
 
   return {
     id,
@@ -178,6 +179,7 @@ function parseDirective(
     resolved,
     replies,
     ...(active !== null ? { active } : {}),
+    ...(route ? { route } : {}),
   };
 }
 

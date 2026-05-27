@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { toPng } from "html-to-image";
 import { Kbd, ctrlKey } from "./Kbd";
+import { PROMPT_SHORTCUTS } from "./promptTemplates";
 import { effectiveBackgroundColor } from "./screenshot";
 
 export type ComposerSubmission = {
@@ -48,23 +49,6 @@ type CommentComposerProps = {
 
 const PANEL_WIDTH = 320;
 const VIEWPORT_PADDING = 12;
-
-/**
- * Pre-canned prompt shortcuts surfaced as chips above the textarea. Clicking
- * one seeds the composer with a starter prompt the user can then submit or
- * edit. Hardcoded here for now; a follow-up task will move this list into a
- * shared config file.
- */
-const PROMPT_SHORTCUTS: readonly string[] = [
-  "Make this bigger",
-  "Match brand color",
-  "Tighten spacing",
-  "Round the corners",
-  "Add hover state",
-  "Increase contrast",
-  "Try ghost style",
-  "Reduce visual weight",
-];
 
 /**
  * Two-phase capture:
@@ -277,6 +261,7 @@ function ComposerPanel({
   onSaved: () => void;
 }) {
   const [status, setStatus] = useState<ComposerPanelStatus>({ kind: "idle" });
+  const [templatesOpen, setTemplatesOpen] = useState(false);
 
   // Anchor the composer panel to the user's click point, not to the target
   // element's bounding box — for page-wide elements whose `bottom` is below
@@ -332,21 +317,37 @@ function ComposerPanel({
         New comment
       </div>
       <div className="px-4 py-3">
-        <div className="mb-2.5 flex flex-wrap gap-1.5">
-          {PROMPT_SHORTCUTS.map((prompt) => (
-            <button
-              key={prompt}
-              type="button"
-              disabled={submitting || saved}
-              onClick={() => {
-                onTextChange(prompt);
-                textareaRef.current?.focus();
-              }}
-              className="inline-flex items-center rounded-[var(--co-radius-pill)] border border-[var(--co-line)] bg-[var(--co-surface-3)] px-2.5 py-1 text-[11px] font-medium text-[var(--co-ink-2)] transition-colors hover:border-[var(--co-line-strong)] hover:bg-[var(--co-surface-2)] hover:text-[var(--co-ink)] disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              {prompt}
-            </button>
-          ))}
+        <div className="mb-2">
+          <button
+            type="button"
+            disabled={submitting || saved}
+            aria-expanded={templatesOpen}
+            onClick={() => setTemplatesOpen((v) => !v)}
+            className="inline-flex items-center gap-1.5 rounded-[4px] px-1.5 py-1 font-[var(--co-font-mono)] text-[10px] uppercase tracking-[0.06em] text-[var(--co-ink-3)] transition-colors hover:bg-[var(--co-surface-3)] hover:text-[var(--co-ink)] disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            <span aria-hidden className="text-[10px] leading-none">
+              {templatesOpen ? "⌃" : "⌄"}
+            </span>
+            Templates
+          </button>
+          {templatesOpen ? (
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {PROMPT_SHORTCUTS.map((prompt) => (
+                <button
+                  key={prompt}
+                  type="button"
+                  disabled={submitting || saved}
+                  onClick={() => {
+                    onTextChange(prompt);
+                    textareaRef.current?.focus();
+                  }}
+                  className="inline-flex items-center rounded-[var(--co-radius-pill)] border border-[var(--co-line)] bg-[var(--co-surface-3)] px-2.5 py-1 text-[11px] font-medium text-[var(--co-ink-2)] transition-colors hover:border-[var(--co-line-strong)] hover:bg-[var(--co-surface-2)] hover:text-[var(--co-ink)] disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {prompt}
+                </button>
+              ))}
+            </div>
+          ) : null}
         </div>
         <textarea
           ref={textareaRef}

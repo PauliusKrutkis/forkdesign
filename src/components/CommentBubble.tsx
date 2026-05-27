@@ -630,6 +630,9 @@ function ModeToggleButton({
       onClick={onToggle}
       className="inline-flex shrink-0 items-center gap-1 rounded-[4px] px-1.5 py-1 text-[var(--co-ink-3)] transition-colors hover:bg-[var(--co-surface-3)] hover:text-[var(--co-ink)]"
     >
+      <span className="font-[var(--co-font-mono)] text-[10px] uppercase tracking-[0.04em]">
+        Details
+      </span>
       <span aria-hidden className="text-[11px] leading-none">
         {isCompact ? "⌄" : "⌃"}
       </span>

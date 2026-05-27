@@ -17,9 +17,16 @@ export type OverlayModel =
   | "claude-sonnet-4-6"
   | "claude-opus-4-7";
 
+/** full = floating buttons + pins; minimal = pins + hotkeys only. */
+export type OverlayUiMode = "full" | "minimal";
+
 export type OverlaySettings = {
   /** false = system fully muted (no dots/bubbles/panel, only settings access). */
   enabled: boolean;
+  /** full shows optional FAB stack; minimal hides FABs (hotkeys only). */
+  uiMode: OverlayUiMode;
+  /** When uiMode is full, whether List/Comment FABs render (gear always in full). */
+  showFloatingControls: boolean;
   /** Which corner the floating toggle stack docks to. */
   position: OverlayPosition;
   /** Overlay chrome theme. Auto follows OS via `prefers-color-scheme`. */
@@ -32,6 +39,8 @@ export type OverlaySettings = {
 
 export const DEFAULT_SETTINGS: OverlaySettings = {
   enabled: true,
+  uiMode: "full",
+  showFloatingControls: true,
   position: "bottom-right",
   theme: "auto",
   author: "",
@@ -58,6 +67,8 @@ const VALID_MODELS: ReadonlySet<OverlayModel> = new Set([
   "claude-sonnet-4-6",
   "claude-opus-4-7",
 ]);
+
+const VALID_UI_MODES: ReadonlySet<OverlayUiMode> = new Set(["full", "minimal"]);
 
 /**
  * Load settings from localStorage. Any malformed/missing field falls back to
@@ -103,8 +114,25 @@ export function loadSettings(): OverlaySettings {
     VALID_MODELS.has(obj.model as OverlayModel)
       ? (obj.model as OverlayModel)
       : DEFAULT_SETTINGS.model;
+  const uiMode =
+    typeof obj.uiMode === "string" &&
+    VALID_UI_MODES.has(obj.uiMode as OverlayUiMode)
+      ? (obj.uiMode as OverlayUiMode)
+      : DEFAULT_SETTINGS.uiMode;
+  const showFloatingControls =
+    typeof obj.showFloatingControls === "boolean"
+      ? obj.showFloatingControls
+      : DEFAULT_SETTINGS.showFloatingControls;
 
-  return { enabled, position, theme, author, model };
+  return {
+    enabled,
+    uiMode,
+    showFloatingControls,
+    position,
+    theme,
+    author,
+    model,
+  };
 }
 
 /** Persist settings; silently no-ops if storage is unavailable. */

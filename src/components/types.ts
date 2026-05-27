@@ -26,6 +26,11 @@ export type CommentProps = {
   replies?: CommentReply[];
   /** 0-based index of the active iteration version (matches marker on disk). */
   active?: number;
+  /**
+   * App route (pathname + search + hash) where the comment was created.
+   * Used by the list panel to navigate back to the page hosting the anchor.
+   */
+  route?: string;
 };
 
 /**

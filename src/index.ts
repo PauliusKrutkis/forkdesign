@@ -7,7 +7,10 @@
 // into the module graph (Vite externalises node builtins, but the import
 // chain still goes through `recast` etc. which makes the whole tree fail).
 
-export { CommentOverlay } from "./components/CommentOverlay.tsx";
+export {
+  CommentOverlay,
+  type CommentOverlayProps,
+} from "./components/CommentOverlay.tsx";
 
 // Types exported for consumers that want to type their own UI on top.
 export type {
@@ -16,4 +19,7 @@ export type {
   CommentReply,
   RegisteredComment,
 } from "./components/types.ts";
-export type { OverlaySettings } from "./components/settings.ts";
+export type {
+  OverlaySettings,
+  OverlayUiMode,
+} from "./components/settings.ts";

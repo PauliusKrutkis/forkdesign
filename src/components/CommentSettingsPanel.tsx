@@ -1,128 +1,154 @@
-import { useEffect } from "react";
 import type {
   OverlayModel,
   OverlayPosition,
   OverlaySettings,
   OverlayTheme,
+  OverlayUiMode,
 } from "./settings";
+import { Kbd } from "./Kbd";
 
 type Props = {
   settings: OverlaySettings;
   /** Patch updater: caller merges into the persisted shape. */
   onChange: (patch: Partial<OverlaySettings>) => void;
-  onClose: () => void;
 };
 
 /**
- * Compact right-side drawer (~320px) listing user-facing toggles for the
- * comment overlay. Distinct from CommentManagementPanel (360px, content
- * browser) — this one is meta-controls only.
- *
- * Lives on top of the management panel z-stack so the user can pop it while
- * the list is open without losing context. Esc closes; the parent listens
- * for the `,` hotkey to toggle.
+ * Settings form body rendered inside CommentShell. Esc/backdrop close is
+ * handled by the shell; the parent toggles visibility via hotkeys.
  */
-export function CommentSettingsPanel({ settings, onChange, onClose }: Props) {
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        e.preventDefault();
-        onClose();
-      }
-    };
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [onClose]);
-
+export function CommentSettingsPanel({ settings, onChange }: Props) {
   return (
-    <aside
-      data-comment-overlay="true"
-      role="dialog"
-      aria-label="Comment settings"
-      className="pointer-events-auto fixed inset-y-0 right-0 z-[9300] flex w-[320px] animate-[slideInRight_220ms_ease-out] flex-col border-l border-[var(--co-line-strong)] bg-[var(--co-surface)] shadow-2xl"
-      style={{ animationName: "slideInRight" }}
-      onClick={(e) => e.stopPropagation()}
-    >
-      <style>{`@keyframes slideInRight { from { transform: translateX(100%); } to { transform: translateX(0); } }`}</style>
+    <div className="px-4 py-4">
+      <Section label="Interface">
+        <UiModeRow
+          value={settings.uiMode}
+          onChange={(v) => onChange({ uiMode: v })}
+        />
+        {settings.uiMode === "full" ? (
+          <div className="mt-3">
+            <SwitchRow
+              checked={settings.showFloatingControls}
+              onChange={(v) => onChange({ showFloatingControls: v })}
+              label="Show floating buttons"
+              hint="List and Comment FABs in the corner. Hotkeys always work."
+            />
+          </div>
+        ) : null}
+        <HotkeyCheatSheet />
+      </Section>
 
-      <header className="flex shrink-0 items-center justify-between border-b border-[var(--co-line)] bg-[var(--co-surface-2)] px-4 py-3">
-        <span className="font-[var(--co-font-mono)] text-[11px] uppercase tracking-[var(--co-tracking-micro)] text-[var(--co-ink-2)]">
-          Settings
-        </span>
-        <button
-          type="button"
-          aria-label="Close settings"
-          onClick={onClose}
-          className="grid h-7 w-7 shrink-0 place-items-center rounded-[4px] text-[var(--co-ink-2)] transition-colors hover:bg-[var(--co-surface-3)] hover:text-[var(--co-ink)]"
-        >
-          <span aria-hidden className="text-[15px] leading-none">
-            ×
-          </span>
-        </button>
-      </header>
+      <Section label="Comments">
+        <SwitchRow
+          checked={settings.enabled}
+          onChange={(v) => onChange({ enabled: v })}
+          label={settings.enabled ? "On" : "Off"}
+          hint={
+            settings.enabled
+              ? "Pins, bubbles, and composer are active."
+              : "Fully hidden. Open settings with , to turn back on."
+          }
+        />
+      </Section>
 
-      <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
-        <Section label="Comments">
-          <SwitchRow
-            checked={settings.enabled}
-            onChange={(v) => onChange({ enabled: v })}
-            label={settings.enabled ? "On" : "Off"}
-            hint={
-              settings.enabled
-                ? "Dots, bubbles, and panel are active."
-                : "System loaded but hidden. Reopen here."
-            }
-          />
-        </Section>
-
+      {settings.uiMode === "full" && settings.showFloatingControls ? (
         <Section label="Position">
           <PositionGrid
             value={settings.position}
             onChange={(v) => onChange({ position: v })}
           />
         </Section>
+      ) : null}
 
-        <Section label="Theme">
-          <ThemeRow
-            value={settings.theme}
-            onChange={(v) => onChange({ theme: v })}
-          />
-        </Section>
+      <Section label="Theme">
+        <ThemeRow
+          value={settings.theme}
+          onChange={(v) => onChange({ theme: v })}
+        />
+      </Section>
 
-        <Section label="Author">
-          <input
-            type="text"
-            value={settings.author}
-            onChange={(e) => onChange({ author: e.target.value })}
-            placeholder="dev@local"
-            className="block w-full rounded-[4px] border border-[var(--co-line-strong)] bg-[var(--co-surface)] px-2.5 py-1.5 text-[12.5px] text-[var(--co-ink)] placeholder:text-[var(--co-ink-4)] focus:border-[var(--co-ink)] focus:outline-none"
-          />
-          <p className="m-0 mt-1 font-[var(--co-font-mono)] text-[10px] uppercase tracking-[0.04em] text-[var(--co-ink-3)]">
-            Stamps new comments. Empty = use default.
-          </p>
-        </Section>
+      <Section label="Author">
+        <input
+          type="text"
+          value={settings.author}
+          onChange={(e) => onChange({ author: e.target.value })}
+          placeholder="dev@local"
+          className="block w-full rounded-[4px] border border-[var(--co-line-strong)] bg-[var(--co-surface)] px-2.5 py-1.5 text-[12.5px] text-[var(--co-ink)] placeholder:text-[var(--co-ink-4)] focus:border-[var(--co-ink)] focus:outline-none"
+        />
+        <p className="m-0 mt-1 font-[var(--co-font-mono)] text-[10px] uppercase tracking-[0.04em] text-[var(--co-ink-3)]">
+          Stamps new comments. Empty = use default.
+        </p>
+      </Section>
 
-        <Section label="AI model">
-          {/*
-            Wiring to the server is task #23/future (#28). The composer/bubble
-            iterate POST does not yet honour this value — persistence here
-            keeps the user-visible setting stable so future plumbing is a
-            one-line change.
-          */}
-          <select
-            value={settings.model}
-            onChange={(e) =>
-              onChange({ model: e.target.value as OverlayModel })
-            }
-            className="block w-full rounded-[4px] border border-[var(--co-line-strong)] bg-[var(--co-surface)] px-2.5 py-1.5 text-[12.5px] text-[var(--co-ink)] focus:border-[var(--co-ink)] focus:outline-none"
+      <Section label="AI model">
+        <select
+          value={settings.model}
+          onChange={(e) => onChange({ model: e.target.value as OverlayModel })}
+          className="block w-full rounded-[4px] border border-[var(--co-line-strong)] bg-[var(--co-surface)] px-2.5 py-1.5 text-[12.5px] text-[var(--co-ink)] focus:border-[var(--co-ink)] focus:outline-none"
+        >
+          <option value="default">Default</option>
+          <option value="claude-sonnet-4-6">claude-sonnet-4-6</option>
+          <option value="claude-opus-4-7">claude-opus-4-7</option>
+        </select>
+      </Section>
+    </div>
+  );
+}
+
+function HotkeyCheatSheet() {
+  return (
+    <p className="m-0 mt-3 font-[var(--co-font-mono)] text-[10px] leading-[1.6] tracking-[0.04em] text-[var(--co-ink-3)]">
+      <Kbd className="!ml-0">C</Kbd> comment · <Kbd className="!ml-0">L</Kbd> list ·{" "}
+      <Kbd className="!ml-0">,</Kbd> settings · <Kbd className="!ml-0">Esc</Kbd> close
+    </p>
+  );
+}
+
+function UiModeRow({
+  value,
+  onChange,
+}: {
+  value: OverlayUiMode;
+  onChange: (v: OverlayUiMode) => void;
+}) {
+  const opts: { v: OverlayUiMode; label: string; hint: string }[] = [
+    {
+      v: "full",
+      label: "Full",
+      hint: "Optional floating buttons",
+    },
+    {
+      v: "minimal",
+      label: "Minimal",
+      hint: "Pins + hotkeys only",
+    },
+  ];
+  return (
+    <div className="flex flex-col gap-2">
+      {opts.map(({ v, label, hint }) => {
+        const active = value === v;
+        return (
+          <button
+            key={v}
+            type="button"
+            aria-pressed={active}
+            onClick={() => onChange(v)}
+            className={`flex flex-col items-start rounded-[4px] border px-3 py-2 text-left transition-colors ${
+              active
+                ? "border-[var(--co-ink)] bg-[var(--co-surface-2)]"
+                : "border-[var(--co-line-strong)] bg-[var(--co-surface)] hover:bg-[var(--co-surface-2)]"
+            }`}
           >
-            <option value="default">Default</option>
-            <option value="claude-sonnet-4-6">claude-sonnet-4-6</option>
-            <option value="claude-opus-4-7">claude-opus-4-7</option>
-          </select>
-        </Section>
-      </div>
-    </aside>
+            <span className="font-[var(--co-font-mono)] text-[11px] uppercase tracking-[0.06em] text-[var(--co-ink)]">
+              {label}
+            </span>
+            <span className="text-[11px] leading-[1.4] text-[var(--co-ink-3)]">
+              {hint}
+            </span>
+          </button>
+        );
+      })}
+    </div>
   );
 }
 

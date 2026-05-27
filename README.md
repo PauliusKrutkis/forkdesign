@@ -109,6 +109,26 @@ sourceLoc({
 });
 ```
 
+## Comment overlay options
+
+```tsx
+import { CommentOverlay } from "redline";
+import { useNavigate } from "react-router-dom";
+
+const navigate = useNavigate();
+
+<CommentOverlay
+  navigate={navigate}
+  fileToRoute={(file, { view }) => {
+    // Optional: map source files to routes for legacy comments without `route`
+    if (file === "src/pages/Home.tsx") return "/";
+    return null;
+  }}
+/>
+```
+
+New comments store the current URL on the `@comment` marker (`route="/path?query#hash"`). The comment list uses that to **Go to page** for off-page rows. **Minimal** mode (Settings → Interface) hides floating buttons; use `C` comment, `L` list, `,` settings, `Esc` close.
+
 ## Multi-frame prototypes
 
 Wrap distinct views in `<section data-view="empty">…</section>`. Single-view pages need no wrapper.
