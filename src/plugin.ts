@@ -56,11 +56,21 @@ import {
   writeCommentToFile,
 } from "./babel-comment-writer.ts";
 import {
+  buildFixModelChain,
   configureFixRuntime,
-  type FixModel,
+  DEFAULT_FIX_MODEL_PRIORITY,
   parseFixModel,
   runFix,
 } from "./fix/index.ts";
+import { getFixRuntimeConfig } from "./fix/config.ts";
+import {
+  enrichVersionMeta,
+  patchIterationsManifest,
+  readIterationsManifest,
+  resolveIterationsDir,
+  tsxMtimeMs,
+  versionEntryFromManifest,
+} from "./iterations-manifest.ts";
 
 const INJECT_MARKER = "<!-- vite-plugin-comments injected -->";
 const SRC_REL = "src";
@@ -73,6 +83,8 @@ const SRC_REL = "src";
 export interface CommentsPluginOptions {
   /** Path to the Cursor CLI `agent` binary. Default: `"agent"` (must be on PATH). */
   cursorAgentPath?: string;
+  /** Override the default Fix model priority order. */
+  fixModelPriority?: import("./fix/models.ts").FixModel[];
   /**
    * Project-relative `src/` prefixes to skip when reading/writing comments
    * (e.g. overlay infrastructure or dev-only routes in your app).
@@ -83,6 +95,7 @@ export interface CommentsPluginOptions {
 export function comments(options: CommentsPluginOptions = {}): Plugin {
   const excludeSrcPrefixes = options.excludeSrcPrefixes ?? [];
   const cursorAgentPath = options.cursorAgentPath;
+  const fixModelPriority = options.fixModelPriority;
   let projectRoot = process.cwd();
 
   return {
@@ -93,6 +106,7 @@ export function comments(options: CommentsPluginOptions = {}): Plugin {
       projectRoot = config.root;
       configureFixRuntime({
         ...(cursorAgentPath ? { cursorAgentPath } : {}),
+        ...(fixModelPriority ? { fixModelPriority } : {}),
       });
     },
 
@@ -510,6 +524,16 @@ async function handlePost(
       if (baselineSource !== null) {
         await atomicWriteText(path.join(iterDir, "v0.tsx"), baselineSource);
       }
+      try {
+        await patchIterationsManifest(iterDir, 0, {
+          summary: "Baseline",
+          createdAt: new Date().toISOString(),
+        });
+      } catch (manifestErr) {
+        console.warn(
+          `[vite-plugin-comments] failed to write iteration manifest: ${manifestErr instanceof Error ? manifestErr.message : String(manifestErr)}`
+        );
+      }
     } catch (err) {
       console.warn(
         `[vite-plugin-comments] failed to write iteration artifacts: ${err instanceof Error ? err.message : String(err)}`
@@ -876,8 +900,8 @@ async function handleIterationsList(
     return;
   }
 
-  const iterDir = path.join(projectRoot, "designs", "iterations", id);
-  if (!(existsSync(iterDir) && statSync(iterDir).isDirectory())) {
+  const iterDir = resolveIterationsDir(projectRoot, id);
+  if (!iterDir) {
     sendError(res, 404, `iterations dir not found: ${id}`);
     return;
   }
@@ -889,6 +913,8 @@ async function handleIterationsList(
     sendError(res, 500, err instanceof Error ? err.message : String(err));
     return;
   }
+
+  const manifest = await readIterationsManifest(iterDir);
 
   // Collect the (v=N, hasTsx, hasPng) set in one pass.
   const present: Map<number, { tsx: boolean; png: boolean }> = new Map();
@@ -918,11 +944,20 @@ async function handleIterationsList(
     .filter(([, slot]) => slot.tsx && slot.png)
     .map(([n]) => n)
     .sort((a, b) => a - b)
-    .map((n) => ({
-      v: n,
-      tsx: `/designs/iterations/${id}/v${n}.tsx`,
-      png: `/designs/iterations/${id}/v${n}.png`,
-    }));
+    .map((n) => {
+      const meta = enrichVersionMeta(
+        n,
+        versionEntryFromManifest(manifest, n),
+        tsxMtimeMs(iterDir, n)
+      );
+      return {
+        v: n,
+        tsx: `/designs/iterations/${id}/v${n}.tsx`,
+        png: `/designs/iterations/${id}/v${n}.png`,
+        summary: meta.summary,
+        createdAt: meta.createdAt,
+      };
+    });
 
   const active = found.comment.active ?? 0;
 
@@ -1140,7 +1175,7 @@ async function handleIterationsNew(
     return;
   }
 
-  let model: FixModel = "default";
+  let model: import("./fix/models.ts").FixModel = "composer-2.5-fast";
   const rawModel = (body.value as Record<string, unknown>).model;
   if (rawModel !== undefined) {
     const parsed = parseFixModel(rawModel);
@@ -1207,6 +1242,11 @@ async function handleIterationsNew(
   // SDK has emitted anything.
   writeEvent({ type: "progress", stage: "agent", detail: "dispatching" });
 
+  const fixStartedAt = Date.now();
+  const priority =
+    getFixRuntimeConfig().fixModelPriority ?? DEFAULT_FIX_MODEL_PRIORITY;
+  const modelChain = buildFixModelChain(model, priority);
+
   // ----- Step 1: snapshot the source BEFORE the agent runs -----------------
   let beforeSource: string;
   try {
@@ -1220,13 +1260,12 @@ async function handleIterationsNew(
     return;
   }
 
-  // ----- Step 2: invoke the selected fix strategy -----------------------------
-  // Claude: SDK reads credentials from env (Console API key or subscription).
-  // Cursor CLI: `agent login` or CURSOR_API_KEY. See src/fix/strategies/.
+  // ----- Step 2: invoke the fix strategy chain ------------------------------
   console.info(
-    `[vite-plugin-comments] dispatching fix (${model}) for comment ${id} on ${found.relativePath}`
+    `[vite-plugin-comments] dispatching fix model=${model} chain=[${modelChain.join(", ")}] comment=${id} file=${found.relativePath}`,
   );
 
+  let lastAgentSummary: string | undefined;
   const agentResult = await runFix({
     projectRoot,
     file: found.relativePath,
@@ -1237,6 +1276,11 @@ async function handleIterationsNew(
     model,
     signal: abortController.signal,
     onEvent: (e) => {
+      if (e.kind === "tool_use_summary" && e.detail) {
+        lastAgentSummary = e.detail;
+      } else if (e.detail) {
+        lastAgentSummary = lastAgentSummary ?? e.detail;
+      }
       writeEvent({
         type: "progress",
         stage: "agent",
@@ -1255,6 +1299,9 @@ async function handleIterationsNew(
     endStream({ type: "done", ok: false, error: agentResult.error });
     return;
   }
+
+  const durationMs = Date.now() - fixStartedAt;
+  const modelUsed = agentResult.modelUsed;
 
   // ----- Step 3: read post-edit source --------------------------------------
   writeEvent({
@@ -1283,6 +1330,8 @@ async function handleIterationsNew(
       ok: true,
       id,
       changed: false,
+      modelUsed,
+      durationMs,
       turnsUsed: agentResult.turnsUsed,
       toolCalls: agentResult.toolCalls,
     });
@@ -1379,6 +1428,18 @@ async function handleIterationsNew(
     return;
   }
 
+  try {
+    const summary = lastAgentSummary?.trim() || `Fix v${nextV}`;
+    await patchIterationsManifest(iterDir, nextV, {
+      summary,
+      createdAt: new Date().toISOString(),
+    });
+  } catch (manifestErr) {
+    console.warn(
+      `[vite-plugin-comments] failed to write iteration manifest: ${manifestErr instanceof Error ? manifestErr.message : String(manifestErr)}`
+    );
+  }
+
   endStream({
     type: "done",
     ok: true,
@@ -1387,6 +1448,8 @@ async function handleIterationsNew(
     v: nextV,
     tsx: `/designs/iterations/${id}/v${nextV}.tsx`,
     png: `/designs/iterations/${id}/v${nextV}.png`,
+    modelUsed,
+    durationMs,
     turnsUsed: agentResult.turnsUsed,
     toolCalls: agentResult.toolCalls,
   });

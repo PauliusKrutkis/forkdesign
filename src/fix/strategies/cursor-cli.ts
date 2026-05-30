@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process";
 import { getFixRuntimeConfig } from "../config.ts";
+import { isComposerModel } from "../models.ts";
 import {
   type CursorCliStreamEvent,
   countCursorCliAssistantTurn,
@@ -8,19 +9,26 @@ import {
   projectCursorCliProgress,
 } from "../progress/cursor-cli.ts";
 import { buildIteratePrompt } from "../prompt.ts";
-import type { FixInput, FixResult, FixStrategy } from "../types.ts";
+import type { FixAttemptResult, FixInput, FixStrategy } from "../types.ts";
 
 export const cursorCliStrategy: FixStrategy = {
   id: "cursor-cli",
   run: runCursorCliFix,
 };
 
-async function runCursorCliFix(input: FixInput): Promise<FixResult> {
+async function runCursorCliFix(input: FixInput): Promise<FixAttemptResult> {
+  if (!isComposerModel(input.model)) {
+    return { ok: false, error: `invalid Cursor CLI model: ${input.model}` };
+  }
+
   const agentPath =
     getFixRuntimeConfig().cursorAgentPath ??
     process.env.CURSOR_AGENT_PATH ??
     "agent";
   const prompt = buildIteratePrompt(input);
+
+  // eslint-disable-next-line no-console
+  console.info(`[fix/cursor-cli] model=${input.model}`);
 
   let turnsUsed = 0;
   let toolCalls = 0;
@@ -43,7 +51,7 @@ async function runCursorCliFix(input: FixInput): Promise<FixResult> {
         "-p",
         "--force",
         "--model",
-        "composer-2.5",
+        input.model,
         "--output-format",
         "stream-json",
         "--stream-partial-output",

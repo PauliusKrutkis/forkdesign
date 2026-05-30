@@ -68,19 +68,22 @@ export function CommentSettingsPanel({ settings, onChange }: Props) {
         </p>
       </Section>
 
-      <Section label="AI model">
+      <Section label="Preferred model">
         <select
           className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          onChange={(e) => onChange({ model: e.target.value as OverlayModel })}
+          onChange={(e) =>
+            onChange({ model: e.target.value as OverlayModel })
+          }
           value={settings.model}
         >
-          <option value="default">Default (Claude)</option>
+          <option value="composer-2.5-fast">composer-2.5-fast (Cursor CLI)</option>
+          <option value="composer-2.5">composer-2.5 (Cursor CLI)</option>
           <option value="claude-sonnet-4-6">claude-sonnet-4-6</option>
           <option value="claude-opus-4-7">claude-opus-4-7</option>
-          <option value="composer-2.5">composer-2.5 (Cursor CLI)</option>
         </select>
         <p className="m-0 mt-1 text-muted-foreground text-xs">
-          Composer requires the Cursor CLI (`agent login` or `CURSOR_API_KEY`).
+          Tried first on Fix, then falls back through faster models automatically.
+          Composer requires `agent login` or `CURSOR_API_KEY`.
         </p>
       </Section>
     </div>

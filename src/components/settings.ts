@@ -4,7 +4,7 @@
  * — this module is just a defensive (de)serializer over `localStorage`.
  */
 
-import { type FixModel, VALID_FIX_MODELS } from "../fix/models.ts";
+import type { FixModel } from "../fix/models.ts";
 
 export type OverlayPosition =
   | "bottom-right"
@@ -12,14 +12,24 @@ export type OverlayPosition =
   | "top-right"
   | "top-left";
 
-export type OverlayModel = FixModel;
+/** Models exposed in overlay settings (subset of FixModel). */
+export const OVERLAY_FIX_MODELS = [
+  "composer-2.5-fast",
+  "composer-2.5",
+  "claude-sonnet-4-6",
+  "claude-opus-4-7",
+] as const satisfies readonly FixModel[];
+
+export type OverlayModel = (typeof OVERLAY_FIX_MODELS)[number];
+
+const VALID_OVERLAY_MODELS: ReadonlySet<FixModel> = new Set(OVERLAY_FIX_MODELS);
 
 export interface OverlaySettings {
   /** Override for window.__COMMENT_AUTHOR__. Empty string disables override. */
   author: string;
   /** false = system fully muted (no dots/bubbles/panel, only settings access). */
   enabled: boolean;
-  /** AI model for Fix runs; sent to the server with each iteration request. */
+  /** Fix model — tried first, then the server fallback chain. */
   model: OverlayModel;
   /** Which corner the dock pill anchors to. */
   position: OverlayPosition;
@@ -29,12 +39,12 @@ export interface OverlaySettings {
   skipDeleteConfirmation: boolean;
 }
 
-export const DEFAULT_SETTINGS: OverlaySettings = {
+const DEFAULT_SETTINGS: OverlaySettings = {
   enabled: true,
   showFloatingControls: true,
   position: "bottom-right",
   author: "",
-  model: "default",
+  model: "composer-2.5-fast",
   skipDeleteConfirmation: false,
 };
 
@@ -46,8 +56,6 @@ const VALID_POSITIONS: ReadonlySet<OverlayPosition> = new Set([
   "top-right",
   "top-left",
 ]);
-
-const VALID_MODELS = VALID_FIX_MODELS;
 
 /**
  * Load settings from localStorage. Any malformed/missing field falls back to
@@ -87,10 +95,6 @@ export function loadSettings(): OverlaySettings {
       : DEFAULT_SETTINGS.position;
   const author =
     typeof obj.author === "string" ? obj.author : DEFAULT_SETTINGS.author;
-  const model =
-    typeof obj.model === "string" && VALID_MODELS.has(obj.model as OverlayModel)
-      ? (obj.model as OverlayModel)
-      : DEFAULT_SETTINGS.model;
   const showFloatingControls =
     typeof obj.showFloatingControls === "boolean"
       ? obj.showFloatingControls
@@ -99,6 +103,11 @@ export function loadSettings(): OverlaySettings {
     typeof obj.skipDeleteConfirmation === "boolean"
       ? obj.skipDeleteConfirmation
       : DEFAULT_SETTINGS.skipDeleteConfirmation;
+  const model =
+    typeof obj.model === "string" &&
+    VALID_OVERLAY_MODELS.has(obj.model as FixModel)
+      ? (obj.model as OverlayModel)
+      : DEFAULT_SETTINGS.model;
 
   return {
     enabled,

@@ -27,7 +27,7 @@ export function ShortcutHint({
   );
 }
 
-export const ctrlKey: string = detectCtrlKey();
+const ctrlKey: string = detectCtrlKey();
 
 /**
  * Format a Ctrl/Cmd combo for display: `⌘R` on mac, `Ctrl+R` elsewhere. The

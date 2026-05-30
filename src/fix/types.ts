@@ -10,7 +10,7 @@ export interface FixProgress {
   tool?: string;
 }
 
-export interface FixInput {
+export interface FixRunInput {
   anchor: string;
   file: string;
   model: FixModel;
@@ -22,16 +22,24 @@ export interface FixInput {
   view?: string;
 }
 
-export type FixResult =
+export interface FixInput extends FixRunInput {}
+
+export type FixAttemptResult =
   | { ok: true; turnsUsed: number; toolCalls: number }
   | { ok: false; error: string };
 
+export type FixResult =
+  | { ok: true; modelUsed: FixModel; turnsUsed: number; toolCalls: number }
+  | { ok: false; error: string; modelsTried?: FixModel[] };
+
 export interface FixStrategy {
   readonly id: string;
-  run(input: FixInput): Promise<FixResult>;
+  run(input: FixInput): Promise<FixAttemptResult>;
 }
 
 export interface FixRuntimeConfig {
   /** Path to the Cursor CLI `agent` binary. Default: `"agent"`. */
   cursorAgentPath?: string;
+  /** Override the default Fix model fallback order. */
+  fixModelPriority?: FixModel[];
 }

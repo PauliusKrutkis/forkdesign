@@ -90,16 +90,6 @@ export function useAnchorRects(anchorId: string): DOMRect[] {
 }
 
 /**
- * Single-instance convenience wrapper. Returns the first matching rect,
- * or null if none. Prefer `useAnchorRects` for any new code so
- * multi-instance anchors render correctly.
- */
-export function useAnchorElement(anchorId: string): DOMRect | null {
-  const rects = useAnchorRects(anchorId);
-  return rects[0] ?? null;
-}
-
-/**
  * Minimal CSS.escape fallback. `data-comment-anchor` values are uuids,
  * so this is defensive — we just guard against odd characters in case
  * the seed data drifts.

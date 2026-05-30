@@ -786,7 +786,7 @@ function readViewport() {
  * input, or contenteditable. Centralised here so all keymap surfaces use
  * the same definition.
  */
-export function isInTextInput(el: Element | null): boolean {
+function isInTextInput(el: Element | null): boolean {
   if (!el) {
     return false;
   }

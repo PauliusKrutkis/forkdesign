@@ -38,7 +38,7 @@ const traverse: TraverseFn =
  * The shape of one entry returned by GET /api/comments. Extends CommentProps
  * with the inferred `view` slug (or null if no `data-view` ancestor was found).
  */
-export type ReadComment = CommentProps & {
+type ReadComment = CommentProps & {
   view: string | null;
 };
 

@@ -21,12 +21,14 @@ pnpm add -D github:PauliusKrutkis/redline
 
 **Peer dependencies:** `react`, `react-dom`, `react-router-dom`, `vite`.
 
-**AI iteration (Fix)** supports multiple backends selected in overlay Settings → AI model:
+**AI iteration (Fix)** uses a **preferred model + automatic fallback chain**:
 
-- **Claude models** (`default`, `claude-sonnet-4-6`, `claude-opus-4-7`) use the [Claude Agent SDK](https://www.npmjs.com/package/@anthropic-ai/claude-agent-sdk). Credentials come from your environment (`ANTHROPIC_API_KEY`, Claude Code login, etc.).
-- **Composer 2.5** uses the [Cursor CLI](https://cursor.com/docs/cli) (`agent`). Authenticate with `agent login` or set `CURSOR_API_KEY`.
+- **Preferred model** — set in overlay Settings → Preferred model (default: `composer-2.5-fast`).
+- **Fallback order** — `composer-2.5-fast` → `composer-2.5` → `claude-sonnet-4-6` → `default`, skipping models unavailable in your environment (Composer ids are probed via `agent models`).
+- **Claude** — [Claude Agent SDK](https://www.npmjs.com/package/@anthropic-ai/claude-agent-sdk); `ANTHROPIC_API_KEY` or Claude Code login.
+- **Composer** — [Cursor CLI](https://cursor.com/docs/cli) (`agent`); `agent login` or `CURSOR_API_KEY`.
 
-Redline ships no telemetry and no credential handling. A future Cursor SDK backend is planned.
+Override the chain with `comments({ fixModelPriority: [...] })`. The `done` event includes `modelUsed` and `durationMs`.
 
 ## Quick start
 
@@ -135,6 +137,8 @@ comments({
   excludeSrcPrefixes: ["src/dev/", "src/components/comments/"],
   // Optional: path to Cursor CLI when `agent` is not on PATH
   cursorAgentPath: "/usr/local/bin/agent",
+  // Optional: override Fix fallback order (preferred model still goes first)
+  fixModelPriority: ["composer-2.5-fast", "composer-2.5", "claude-sonnet-4-6", "default"],
 });
 
 sourceLoc({

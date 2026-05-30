@@ -11,7 +11,13 @@ import {
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { cn } from "../lib/utils";
-import { CommentVersionSwitcher } from "./CommentVersionSwitcher";
+import {
+  CommentVersionHistory,
+  hasMultipleVersions,
+  shouldShowVersionHistory,
+} from "./CommentVersionHistory";
+import { CommentVersionPicker } from "./CommentVersionPicker";
+import { AdaptiveThumb } from "./comment-thumb";
 import { HotkeyTip } from "./HotkeyTip";
 import { dotRect, type FloaterSide, placeFloater } from "./placement";
 import { ShortcutHint, withCtrl } from "./ShortcutHint";
@@ -20,6 +26,7 @@ import type { OverlayModel } from "./settings";
 import type { CommentReply, RegisteredComment } from "./types";
 import { Button } from "./ui/button";
 import { Textarea } from "./ui/textarea";
+import { useIterations } from "./useIterations";
 
 interface CommentBubbleProps {
   comments: RegisteredComment[];
@@ -54,6 +61,8 @@ type IterateDoneEvent =
       v?: number;
       tsx?: string;
       png?: string;
+      modelUsed?: string;
+      durationMs?: number;
       turnsUsed?: number;
       toolCalls?: number;
     }
@@ -77,7 +86,7 @@ type BubbleMode = "compact" | "detailed";
 export function CommentBubble({
   comments,
   rect,
-  fixModel = "default",
+  fixModel = "composer-2.5-fast",
   skipDeleteConfirmation = false,
   onClose,
   onResolve,
@@ -88,6 +97,13 @@ export function CommentBubble({
   onDeleteReply,
 }: CommentBubbleProps) {
   const lead = comments[0];
+  const commentId = lead?.id ?? "";
+  const {
+    data: iterations,
+    switching: versionSwitching,
+    activate: activateVersion,
+    reload: reloadIterations,
+  } = useIterations(commentId, { enableKeyboard: Boolean(lead) });
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [bubbleHeight, setBubbleHeight] = useState(INITIAL_BUBBLE_HEIGHT);
   /**
@@ -100,7 +116,7 @@ export function CommentBubble({
     left: number;
     top: number;
   } | null>(null);
-  const [lightboxOpen, setLightboxOpen] = useState(false);
+  const [lightboxSrc, setLightboxSrc] = useState<string | null>(null);
   const [viewport, setViewport] = useState(() => readViewport());
   /**
    * Bubble surface mode. Opens in `compact` (text + metadata only) so the
@@ -344,9 +360,20 @@ export function CommentBubble({
         setIterateError("AI made no changes — try a more specific instruction");
         return;
       }
-      // Success: clear the status line. The version switcher refetches off
-      // HMR once the source file is rewritten.
-      setIterateStatus(null);
+      // Success: briefly show which model ran and how long it took.
+      const parts: string[] = [];
+      if (done.modelUsed) {
+        parts.push(done.modelUsed);
+      }
+      if (typeof done.durationMs === "number") {
+        parts.push(`${Math.round(done.durationMs / 1000)}s`);
+      }
+      if (typeof done.turnsUsed === "number") {
+        parts.push(`${done.turnsUsed} turns`);
+      }
+      const successStatus = parts.length > 0 ? parts.join(" · ") : "Done";
+      setIterateStatus(successStatus);
+      window.setTimeout(() => setIterateStatus(null), 3000);
 
       // Best-effort post-edit screenshot capture. The agent just rewrote the
       // source file, so HMR is about to fire and the DOM will re-render with
@@ -355,11 +382,13 @@ export function CommentBubble({
       // element and POST it to the screenshot endpoint to replace the
       // placeholder v0 copy. Failures here are silent — the placeholder PNG
       // on disk is good enough to fall back to.
+      void reloadIterations();
       if (done.v !== undefined && done.ok === true && done.changed === true) {
         captureAndUploadV({
           id: lead.id,
           anchor: lead.anchor,
           v: done.v,
+          onUploaded: () => void reloadIterations(),
         });
       }
     } catch (err) {
@@ -412,8 +441,8 @@ export function CommentBubble({
           active.tagName === "TEXTAREA" ||
           (active instanceof HTMLElement && active.isContentEditable));
       if (e.key === "Escape") {
-        if (lightboxOpen) {
-          setLightboxOpen(false);
+        if (lightboxSrc) {
+          setLightboxSrc(null);
           e.preventDefault();
           return;
         }
@@ -484,7 +513,7 @@ export function CommentBubble({
     return () => document.removeEventListener("keydown", onKey);
   }, [
     lead,
-    lightboxOpen,
+    lightboxSrc,
     iterating,
     onClose,
     onResolve,
@@ -527,6 +556,8 @@ export function CommentBubble({
   if (!lead) {
     return null;
   }
+
+  const multiVersion = hasMultipleVersions(iterations, lead.active);
 
   return (
     <div
@@ -582,10 +613,7 @@ export function CommentBubble({
           className="pointer-events-none ml-2 h-4 w-4 shrink-0 text-muted-foreground"
         />
 
-        {/* Version switcher centered in the bar. */}
-        <div className="flex flex-1 items-center justify-center">
-          <CommentVersionSwitcher commentId={lead.id} />
-        </div>
+        <div className="flex-1" />
 
         <HotkeyTip keys="Esc" label="Close" side="bottom">
           <Button
@@ -602,8 +630,8 @@ export function CommentBubble({
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto px-3.5 pt-3 pb-3">
-        {/* Comment + screenshot as a media object: in detailed mode the text
-            wraps beside the thumbnail; compact hides the thumbnail entirely. */}
+        {/* Comment + aside: with 2+ versions only the version picker (no image);
+            otherwise the original screenshot thumbnail. Compact hides aside. */}
         <div className="flex items-start gap-3">
           {editing ? (
             <div className="min-w-0 flex-1 space-y-2">
@@ -663,9 +691,23 @@ export function CommentBubble({
               {lead.text}
             </p>
           )}
-          {mode === "detailed" && lead.screenshot && !editing ? (
+          {mode === "detailed" &&
+          !editing &&
+          iterations &&
+          shouldShowVersionHistory(iterations) ? (
+            <CommentVersionPicker
+              data={iterations}
+              disabled={iterating}
+              onActivate={(v) => void activateVersion(v)}
+              switching={versionSwitching}
+            />
+          ) : null}
+          {mode === "detailed" &&
+          !editing &&
+          lead.screenshot &&
+          !multiVersion ? (
             <AdaptiveThumb
-              onClick={() => setLightboxOpen(true)}
+              onClick={() => setLightboxSrc(lead.screenshot ?? null)}
               src={lead.screenshot}
             />
           ) : null}
@@ -714,7 +756,40 @@ export function CommentBubble({
           </ul>
         ) : null}
 
-        {mode === "detailed" && lead.replies && lead.replies.length > 0 ? (
+        {mode === "detailed" &&
+        iterations &&
+        shouldShowVersionHistory(iterations) ? (
+          <CommentVersionHistory
+            active={iterations.active}
+            disabled={iterating}
+            onActivate={(v) => void activateVersion(v)}
+            onThumbClick={(src) => setLightboxSrc(src)}
+            renderReply={(reply, i) => (
+              <ReplyItem
+                commentId={lead.id}
+                onDelete={onDeleteReply}
+                onEdit={onEditReply}
+                onInteraction={() => {
+                  setEditing(false);
+                  setReplyOpen(false);
+                  setDeleteConfirming(false);
+                }}
+                reply={reply}
+                replyIndex={i}
+                skipDeleteConfirmation={skipDeleteConfirmation}
+              />
+            )}
+            replies={lead.replies}
+            switching={versionSwitching}
+            versions={iterations.versions}
+          />
+        ) : null}
+
+        {mode === "detailed" &&
+        iterations &&
+        !shouldShowVersionHistory(iterations) &&
+        lead.replies &&
+        lead.replies.length > 0 ? (
           <ul className="m-0 mt-3 list-none space-y-2.5 border-t p-0 pt-3">
             {lead.replies.map((reply, i) => (
               <ReplyItem
@@ -787,7 +862,7 @@ export function CommentBubble({
         ) : null}
       </div>
 
-      {mode === "detailed" && iterating ? (
+      {mode === "detailed" && (iterating || iterateStatus) ? (
         <div
           aria-live="polite"
           className="flex shrink-0 items-center gap-2 border-t bg-muted/50 px-4 py-1.5 text-muted-foreground text-xs"
@@ -897,11 +972,8 @@ export function CommentBubble({
         </div>
       ) : null}
 
-      {mode === "detailed" && lightboxOpen && lead.screenshot ? (
-        <Lightbox
-          onClose={() => setLightboxOpen(false)}
-          src={lead.screenshot}
-        />
+      {mode === "detailed" && lightboxSrc ? (
+        <Lightbox onClose={() => setLightboxSrc(null)} src={lightboxSrc} />
       ) : null}
     </div>
   );
@@ -1322,84 +1394,6 @@ function ModeToggleButton({
   );
 }
 
-/**
- * Adaptive screenshot thumbnail. Reads the source image's natural
- * dimensions on load and picks a container size based on aspect ratio so
- * neither very wide (heading) nor very tall (sidebar) screenshots get
- * cropped or letterboxed awkwardly.
- *
- * - tiny  (natural < 40px either axis): 24×24 icon
- * - wide  (aspect > 1.3): 80px wide, height clamped 24-48px
- * - tall  (aspect < 0.7): 36px wide, height 60-80px
- * - square (0.7..1.3): 36×36 (legacy behaviour)
- *
- * `object-contain` + `bg-surface-3` letterboxing ensures the actual image is
- * always fully visible; we never crop. Falls back to 36×36 while the image
- * hasn't loaded yet so layout doesn't jump twice.
- */
-function AdaptiveThumb({ src, onClick }: { src: string; onClick: () => void }) {
-  const [natural, setNatural] = useState<{ w: number; h: number } | null>(null);
-
-  const dims = useMemo(() => computeThumbDims(natural), [natural]);
-
-  return (
-    <button
-      aria-label="Show full screenshot"
-      className="block shrink-0 overflow-hidden rounded-md border bg-muted transition-shadow hover:ring-1 hover:ring-ring"
-      onClick={onClick}
-      style={{ width: dims.width, height: dims.height }}
-      type="button"
-    >
-      <img
-        alt=""
-        className="h-full w-full object-contain"
-        onLoad={(e) => {
-          const img = e.currentTarget;
-          if (img.naturalWidth > 0 && img.naturalHeight > 0) {
-            setNatural({ w: img.naturalWidth, h: img.naturalHeight });
-          }
-        }}
-        src={src}
-      />
-    </button>
-  );
-}
-
-/**
- * Pick a thumbnail container size from the image's natural dimensions. See
- * AdaptiveThumb for the rule rationale. Returns the legacy 36×36 default
- * pre-load so the row doesn't reflow more than once.
- */
-function computeThumbDims(natural: { w: number; h: number } | null): {
-  width: number;
-  height: number;
-} {
-  if (!natural) {
-    return { width: 36, height: 36 };
-  }
-  const { w, h } = natural;
-  // Tiny: anything genuinely icon-sized at source. Render as a 24px icon —
-  // upscaling beyond that just blurs the source.
-  if (w < 40 || h < 40) {
-    return { width: 24, height: 24 };
-  }
-  const aspect = w / h;
-  if (aspect > 1.3) {
-    // Wide: cap width at 80, derive height (clamped 24-48).
-    const width = 80;
-    const height = Math.max(24, Math.min(48, Math.round(width / aspect)));
-    return { width, height };
-  }
-  if (aspect < 0.7) {
-    // Tall: fix width at 36, derive height (clamped 60-80).
-    const width = 36;
-    const height = Math.max(60, Math.min(80, Math.round(width / aspect)));
-    return { width, height };
-  }
-  // Square-ish: legacy 36×36.
-  return { width: 36, height: 36 };
-}
-
 function ActionIconButton({
   label,
   keys,
@@ -1456,8 +1450,9 @@ function captureAndUploadV(args: {
   id: string;
   anchor: string;
   v: number;
+  onUploaded?: () => void;
 }): void {
-  const { id, anchor, v } = args;
+  const { id, anchor, v, onUploaded } = args;
   if (!import.meta.hot) {
     return;
   }
@@ -1539,7 +1534,9 @@ function captureAndUploadV(args: {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ id, v, screenshotPng: dataUrl }),
       });
-      if (!res.ok) {
+      if (res.ok) {
+        onUploaded?.();
+      } else {
         console.warn(
           `[CommentBubble] /api/iterations/screenshot returned ${res.status}; keeping placeholder`
         );

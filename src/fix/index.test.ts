@@ -8,7 +8,8 @@ describe("resolveFixStrategy", () => {
     expect(resolveFixStrategy("claude-opus-4-7").id).toBe("claude");
   });
 
-  it("routes composer-2.5 to cursor-cli strategy", () => {
+  it("routes composer models to cursor-cli strategy", () => {
     expect(resolveFixStrategy("composer-2.5").id).toBe("cursor-cli");
+    expect(resolveFixStrategy("composer-2.5-fast").id).toBe("cursor-cli");
   });
 });

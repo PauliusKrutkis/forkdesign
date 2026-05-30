@@ -9,6 +9,26 @@ export interface PromptInput {
   view?: string;
 }
 
+/** Skip vision read when the comment text already states the change clearly. */
+export function shouldIncludeScreenshotInPrompt(text: string): boolean {
+  const t = text.trim().toLowerCase();
+  if (t.length === 0) {
+    return true;
+  }
+
+  const explicitPatterns = [
+    /\btext-(red|blue|green|yellow|orange|purple|pink|gray|grey|black|white|primary|foreground|muted)\b/,
+    /\bbg-(red|blue|green|yellow|orange|purple|pink|gray|grey|black|white|primary|background|muted)\b/,
+    /\bfont-(bold|medium|semibold|light|normal)\b/,
+    /\b(padding|margin|gap|rounded|border|shadow|opacity|size|width|height)\b/,
+    /\b(make|change|set|add|use)\s+(it\s+)?(red|blue|green|bold|larger|smaller|bigger)\b/,
+    /`[^`]+`/,
+    /class(?:name)?[=:\s]/,
+  ];
+
+  return !explicitPatterns.some((pattern) => pattern.test(t));
+}
+
 export function buildIteratePrompt(input: PromptInput): string {
   const parts: string[] = [];
 
@@ -21,10 +41,11 @@ export function buildIteratePrompt(input: PromptInput): string {
     "## Location",
     `File: ${input.file}`,
     `Element anchor: \`data-comment-anchor="${input.anchor}"\``,
-    "Find the element by searching for the anchor attribute in the file. Modify code AROUND that element to address the feedback."
+    `Open \`${input.file}\` and find \`data-comment-anchor="${input.anchor}"\` directly. Do not use Glob or Grep unless the anchor is missing.`,
+    "Modify code AROUND that element to address the feedback."
   );
 
-  if (input.screenshot) {
+  if (input.screenshot && shouldIncludeScreenshotInPrompt(input.text)) {
     const absScreenshot = path.join(
       input.projectRoot,
       "public",
@@ -34,7 +55,7 @@ export function buildIteratePrompt(input: PromptInput): string {
       "",
       "## Visual context",
       `Screenshot taken at the time of feedback: \`${absScreenshot}\``,
-      "Read this image to see what the user is looking at when they wrote the feedback."
+      "Read this image only if the text feedback above is ambiguous."
     );
   }
 
@@ -52,10 +73,11 @@ export function buildIteratePrompt(input: PromptInput): string {
     "- Do NOT remove or modify the `{/* @comment ... */}` block — it's preserved human feedback.",
     "- Do NOT change the `data-comment-anchor` attribute value.",
     "- Follow the host app's existing Tailwind/shadcn tokens (`bg-background`, `text-foreground`, `bg-primary`, `text-muted-foreground`, etc.).",
-    "- Make focused changes. Don't rewrite unrelated parts of the file.",
+    "- Make the smallest possible edit (often one className or prop).",
+    "- After one successful Edit, stop immediately — do not re-read the file or verify.",
     "- Don't run tests or builds — the user verifies visually.",
     "",
-    "Now read the file, locate the element by its anchor, and apply the changes. Once you're satisfied, stop."
+    "Now read the file, locate the element by its anchor, apply the change, and stop."
   );
 
   return parts.join("\n");

@@ -8,14 +8,14 @@ import {
   projectClaudeProgress,
 } from "../progress/claude.ts";
 import { buildIteratePrompt } from "../prompt.ts";
-import type { FixInput, FixResult, FixStrategy } from "../types.ts";
+import type { FixAttemptResult, FixInput, FixStrategy } from "../types.ts";
 
 export const claudeStrategy: FixStrategy = {
   id: "claude",
   run: runClaudeFix,
 };
 
-async function runClaudeFix(input: FixInput): Promise<FixResult> {
+async function runClaudeFix(input: FixInput): Promise<FixAttemptResult> {
   const prompt = buildIteratePrompt(input);
 
   const abortController = new AbortController();
@@ -33,8 +33,8 @@ async function runClaudeFix(input: FixInput): Promise<FixResult> {
     cwd: input.projectRoot,
     permissionMode: "acceptEdits",
     abortController,
-    maxTurns: 30,
-    allowedTools: ["Read", "Edit", "Glob", "Grep"],
+    maxTurns: 8,
+    allowedTools: ["Read", "Edit"],
   };
 
   if (input.model !== "default") {

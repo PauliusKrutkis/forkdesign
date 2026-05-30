@@ -1,0 +1,9 @@
+{
+  "$schema": "https://unpkg.com/knip@6/schema.json",
+  "project": ["src/**/*.{ts,tsx}", "tailwind.*.js"],
+  "ignoreDependencies": ["@biomejs/biome"],
+  "ignore": ["src/components/ui/**", "src/fix/strategies/cursor-sdk.ts"],
+  "ignoreIssues": {
+    "tailwind.content.js": ["duplicates"]
+  }
+}
