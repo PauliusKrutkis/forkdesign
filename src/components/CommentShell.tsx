@@ -34,8 +34,8 @@ export function CommentShell({
             onValueChange={(v) => onTabChange(v as ShellTab)}
             className="flex min-h-0 flex-1 flex-col"
           >
-            <div className="shrink-0 border-b px-4 py-3">
-              <TabsList className="grid w-full grid-cols-2">
+            <div className="flex shrink-0 items-center border-b py-3 pl-4 pr-14">
+              <TabsList>
                 <TabsTrigger value="list">Comments</TabsTrigger>
                 <TabsTrigger value="settings">Settings</TabsTrigger>
               </TabsList>

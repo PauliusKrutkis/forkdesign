@@ -2,7 +2,6 @@ import type {
   OverlayModel,
   OverlayPosition,
   OverlaySettings,
-  OverlayUiMode,
 } from "./settings";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
@@ -17,21 +16,13 @@ export function CommentSettingsPanel({ settings, onChange }: Props) {
   return (
     <div className="px-4 py-4">
       <Section label="Interface">
-        <UiModeRow
-          value={settings.uiMode}
-          onChange={(v) => onChange({ uiMode: v })}
+        <SwitchRow
+          id="floating-controls"
+          checked={settings.showFloatingControls}
+          onChange={(v) => onChange({ showFloatingControls: v })}
+          label="Show toolbar"
+          hint="The corner dock pill. Hotkeys keep working when it's off."
         />
-        {settings.uiMode === "full" ? (
-          <div className="mt-3">
-            <SwitchRow
-              id="floating-controls"
-              checked={settings.showFloatingControls}
-              onChange={(v) => onChange({ showFloatingControls: v })}
-              label="Show floating buttons"
-              hint="Comments and Add comment in the corner. Hotkeys always work."
-            />
-          </div>
-        ) : null}
         <HotkeyCheatSheet />
       </Section>
 
@@ -49,7 +40,7 @@ export function CommentSettingsPanel({ settings, onChange }: Props) {
         />
       </Section>
 
-      {settings.uiMode === "full" && settings.showFloatingControls ? (
+      {settings.showFloatingControls ? (
         <Section label="Position">
           <PositionGrid
             value={settings.position}
@@ -105,41 +96,6 @@ function HotkeyCheatSheet() {
       </kbd>{" "}
       close
     </p>
-  );
-}
-
-function UiModeRow({
-  value,
-  onChange,
-}: {
-  value: OverlayUiMode;
-  onChange: (v: OverlayUiMode) => void;
-}) {
-  const opts: { v: OverlayUiMode; label: string; hint: string }[] = [
-    { v: "full", label: "Full", hint: "Optional floating buttons" },
-    { v: "minimal", label: "Minimal", hint: "Pins and hotkeys only" },
-  ];
-  return (
-    <div className="flex flex-col gap-2">
-      {opts.map(({ v, label, hint }) => {
-        const active = value === v;
-        return (
-          <Button
-            key={v}
-            type="button"
-            variant={active ? "secondary" : "outline"}
-            className="h-auto flex-col items-start gap-0.5 px-3 py-2 text-left"
-            aria-pressed={active}
-            onClick={() => onChange(v)}
-          >
-            <span className="text-sm font-medium">{label}</span>
-            <span className="text-xs font-normal text-muted-foreground">
-              {hint}
-            </span>
-          </Button>
-        );
-      })}
-    </div>
   );
 }
 

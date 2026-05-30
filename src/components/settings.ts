@@ -15,17 +15,12 @@ export type OverlayModel =
   | "claude-sonnet-4-6"
   | "claude-opus-4-7";
 
-/** full = floating buttons + pins; minimal = pins + hotkeys only. */
-export type OverlayUiMode = "full" | "minimal";
-
 export type OverlaySettings = {
   /** false = system fully muted (no dots/bubbles/panel, only settings access). */
   enabled: boolean;
-  /** full shows optional FAB stack; minimal hides FABs (hotkeys only). */
-  uiMode: OverlayUiMode;
-  /** When uiMode is full, whether List/Comment FABs render (gear always in full). */
+  /** Whether the corner dock pill renders. Hotkeys keep working when false. */
   showFloatingControls: boolean;
-  /** Which corner the floating toggle stack docks to. */
+  /** Which corner the dock pill anchors to. */
   position: OverlayPosition;
   /** Override for window.__COMMENT_AUTHOR__. Empty string disables override. */
   author: string;
@@ -35,7 +30,6 @@ export type OverlaySettings = {
 
 export const DEFAULT_SETTINGS: OverlaySettings = {
   enabled: true,
-  uiMode: "minimal",
   showFloatingControls: true,
   position: "bottom-right",
   author: "",
@@ -56,8 +50,6 @@ const VALID_MODELS: ReadonlySet<OverlayModel> = new Set([
   "claude-sonnet-4-6",
   "claude-opus-4-7",
 ]);
-
-const VALID_UI_MODES: ReadonlySet<OverlayUiMode> = new Set(["full", "minimal"]);
 
 /**
  * Load settings from localStorage. Any malformed/missing field falls back to
@@ -98,11 +90,6 @@ export function loadSettings(): OverlaySettings {
     VALID_MODELS.has(obj.model as OverlayModel)
       ? (obj.model as OverlayModel)
       : DEFAULT_SETTINGS.model;
-  const uiMode =
-    typeof obj.uiMode === "string" &&
-    VALID_UI_MODES.has(obj.uiMode as OverlayUiMode)
-      ? (obj.uiMode as OverlayUiMode)
-      : DEFAULT_SETTINGS.uiMode;
   const showFloatingControls =
     typeof obj.showFloatingControls === "boolean"
       ? obj.showFloatingControls
@@ -110,7 +97,6 @@ export function loadSettings(): OverlaySettings {
 
   return {
     enabled,
-    uiMode,
     showFloatingControls,
     position,
     author,

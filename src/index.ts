@@ -19,7 +19,4 @@ export type {
   CommentReply,
   RegisteredComment,
 } from "./components/types.ts";
-export type {
-  OverlaySettings,
-  OverlayUiMode,
-} from "./components/settings.ts";
+export type { OverlaySettings } from "./components/settings.ts";

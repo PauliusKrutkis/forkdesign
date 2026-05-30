@@ -10,10 +10,7 @@ import {
 import { CommentManagementPanel } from "./CommentManagementPanel";
 import { CommentSettingsPanel } from "./CommentSettingsPanel";
 import { CommentShell, type ShellTab } from "./CommentShell";
-import { Settings } from "lucide-react";
-import { Button } from "./ui/button";
-import { ShortcutHint } from "./ShortcutHint";
-import { cn } from "../lib/utils";
+import { OverlayDock } from "./OverlayDock";
 import { useAnchorRects } from "./useAnchorElement";
 import type { DotInstanceTarget } from "./CommentDot";
 import { findSourceLoc } from "./sourceLoc";
@@ -21,7 +18,6 @@ import { dotRect, placeFloater } from "./placement";
 import {
   loadSettings,
   saveSettings,
-  POSITION_CLASSES,
   type OverlaySettings,
 } from "./settings";
 
@@ -559,16 +555,20 @@ export function CommentOverlay({
         />
       ) : null}
 
-      <OverlayToggle
-        enabled={settings.enabled}
-        uiMode={settings.uiMode}
-        showFloatingControls={settings.showFloatingControls}
+      <OverlayDock
+        show={settings.showFloatingControls}
         position={settings.position}
-        active={composerActive}
-        onToggle={() => setComposerActive((v) => !v)}
+        enabled={settings.enabled}
+        onToggleEnabled={() => updateSettings({ enabled: !settings.enabled })}
+        composerActive={composerActive}
+        onToggleComposer={() => setComposerActive((v) => !v)}
         shell={shell}
         onToggleList={() => toggleShell("list")}
         onToggleSettings={() => toggleShell("settings")}
+        totalCount={comments.length}
+        onPageCount={
+          comments.filter((c) => inDomAnchors.has(c.anchor)).length
+        }
       />
 
       {shell ? (
@@ -735,86 +735,6 @@ function OpenBubble({
       onEdit={onEdit}
       onSubmitReply={onSubmitReply}
     />
-  );
-}
-
-function OverlayToggle({
-  enabled,
-  uiMode,
-  showFloatingControls,
-  position,
-  active,
-  onToggle,
-  shell,
-  onToggleList,
-  onToggleSettings,
-}: {
-  enabled: boolean;
-  uiMode: OverlaySettings["uiMode"];
-  showFloatingControls: boolean;
-  position: OverlaySettings["position"];
-  active: boolean;
-  onToggle: () => void;
-  shell: ShellTab | null;
-  onToggleList: () => void;
-  onToggleSettings: () => void;
-}) {
-  if (uiMode === "minimal") {
-    return null;
-  }
-
-  const showFabStack = enabled && showFloatingControls;
-  const showGear = !enabled || enabled;
-
-  const positionClass = POSITION_CLASSES[position];
-  return (
-    <div
-      data-comment-overlay="true"
-      className={`pointer-events-none fixed z-[9400] flex flex-col gap-2 ${positionClass}`}
-    >
-      {showFabStack ? (
-        <>
-          <Button
-            type="button"
-            variant={shell === "list" ? "default" : "secondary"}
-            className="pointer-events-auto shadow-md"
-            onClick={onToggleList}
-            aria-pressed={shell === "list"}
-            aria-label="Toggle comment list"
-          >
-            Comments
-            <ShortcutHint onPrimary={shell === "list"}>L</ShortcutHint>
-          </Button>
-          <Button
-            type="button"
-            variant={active ? "secondary" : "default"}
-            className={cn(
-              "pointer-events-auto shadow-md",
-              active && "border-primary/30 bg-accent text-accent-foreground",
-            )}
-            onClick={onToggle}
-            aria-pressed={active}
-          >
-            {active ? "Cancel" : "Add comment"}
-            {active ? null : <ShortcutHint onPrimary>C</ShortcutHint>}
-          </Button>
-        </>
-      ) : null}
-      {showGear ? (
-        <Button
-          type="button"
-          variant={shell === "settings" ? "default" : enabled ? "secondary" : "default"}
-          size="icon"
-          className="pointer-events-auto shadow-md"
-          onClick={onToggleSettings}
-          aria-pressed={shell === "settings"}
-          aria-label="Toggle comment settings"
-          title={enabled ? "Settings" : "Comments hidden — open settings"}
-        >
-          <Settings className="h-4 w-4" />
-        </Button>
-      ) : null}
-    </div>
   );
 }
 
