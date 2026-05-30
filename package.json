@@ -1,8 +1,60 @@
 {
+  "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "^0.3.150",
+    "@babel/parser": "^7.29.3",
+    "@babel/traverse": "^7.29.0",
+    "@babel/types": "^7.29.0",
+    "@radix-ui/react-dialog": "^1.1.15",
+    "@radix-ui/react-label": "^2.1.8",
+    "@radix-ui/react-separator": "^1.1.8",
+    "@radix-ui/react-slot": "^1.2.4",
+    "@radix-ui/react-switch": "^1.2.6",
+    "@radix-ui/react-tabs": "^1.1.13",
+    "@radix-ui/react-tooltip": "^1.2.8",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "html-to-image": "^1.11.13",
+    "lucide-react": "^1.17.0",
+    "recast": "^0.23.11",
+    "tailwind-merge": "^3.6.0"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.4.15",
+    "@types/babel__traverse": "^7.28.0",
+    "@types/node": "^24.12.3",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "happy-dom": "^20.9.0",
+    "react": "^19.2.6",
+    "react-dom": "^19.2.6",
+    "tsup": "^8.3.0",
+    "typescript": "~6.0.2",
+    "ultracite": "7.8.0",
+    "vitest": "^4.1.7"
+  },
   "name": "redline",
+  "peerDependencies": {
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "react-router-dom": "^7.0.0",
+    "vite": "^8.0.0"
+  },
+  "scripts": {
+    "build": "tsup",
+    "check": "pnpm lint && pnpm typecheck && pnpm test && pnpm build",
+    "dev": "tsup --watch",
+    "lint": "ultracite check",
+    "lint:fix": "ultracite fix",
+    "prepare": "pnpm build",
+    "prepublishOnly": "pnpm test && pnpm build",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit"
+  },
+  "packageManager": "pnpm@10.33.0",
+  "type": "module",
   "version": "0.1.0",
   "description": "Inline design feedback for Vite + React playgrounds — comments live in source as JSX markers with per-comment iteration snapshots on disk.",
-  "type": "module",
   "license": "MIT",
   "author": "Paulius Krutkis",
   "repository": {
@@ -14,14 +66,6 @@
   "sideEffects": [
     "**/*.css"
   ],
-  "scripts": {
-    "build": "tsup",
-    "dev": "tsup --watch",
-    "test": "vitest run",
-    "test:watch": "vitest",
-    "prepare": "pnpm build",
-    "prepublishOnly": "pnpm test && pnpm build"
-  },
   "exports": {
     ".": {
       "source": "./src/index.ts",
@@ -52,43 +96,6 @@
       "require": "./tailwind.preset.js",
       "default": "./tailwind.preset.js"
     }
-  },
-  "peerDependencies": {
-    "react": "^19.0.0",
-    "react-dom": "^19.0.0",
-    "react-router-dom": "^7.0.0",
-    "vite": "^8.0.0"
-  },
-  "dependencies": {
-    "@anthropic-ai/claude-agent-sdk": "^0.3.150",
-    "@babel/parser": "^7.29.3",
-    "@babel/traverse": "^7.29.0",
-    "@babel/types": "^7.29.0",
-    "@radix-ui/react-dialog": "^1.1.15",
-    "@radix-ui/react-label": "^2.1.8",
-    "@radix-ui/react-separator": "^1.1.8",
-    "@radix-ui/react-slot": "^1.2.4",
-    "@radix-ui/react-switch": "^1.2.6",
-    "@radix-ui/react-tabs": "^1.1.13",
-    "@radix-ui/react-tooltip": "^1.2.8",
-    "class-variance-authority": "^0.7.1",
-    "clsx": "^2.1.1",
-    "html-to-image": "^1.11.13",
-    "lucide-react": "^1.17.0",
-    "recast": "^0.23.11",
-    "tailwind-merge": "^3.6.0"
-  },
-  "devDependencies": {
-    "@types/babel__traverse": "^7.28.0",
-    "@types/node": "^24.12.3",
-    "@types/react": "^19.2.14",
-    "@types/react-dom": "^19.2.3",
-    "happy-dom": "^20.9.0",
-    "react": "^19.2.6",
-    "react-dom": "^19.2.6",
-    "tsup": "^8.3.0",
-    "typescript": "~6.0.2",
-    "vitest": "^4.1.7"
   },
   "files": [
     "dist",
