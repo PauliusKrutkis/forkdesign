@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
-import { Tooltip, TooltipContent, TooltipTrigger } from "./ui/tooltip";
 import { Kbd } from "./ui/kbd";
+import { Tooltip, TooltipContent, TooltipTrigger } from "./ui/tooltip";
 
 /**
  * Tooltip carrying a button's label and (optionally) its hotkey chip. The home
@@ -28,7 +28,7 @@ export function HotkeyTip({
   return (
     <Tooltip>
       <TooltipTrigger asChild>{children}</TooltipTrigger>
-      <TooltipContent side={side} className="flex items-center gap-2 text-xs">
+      <TooltipContent className="flex items-center gap-2 text-xs" side={side}>
         <span>{label}</span>
         {keys ? <Kbd>{keys}</Kbd> : null}
       </TooltipContent>

@@ -1,20 +1,20 @@
-import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { afterAll, beforeEach, describe, expect, it } from "vitest";
+import { readCommentsFromSource } from "./babel-comment-reader";
 import {
   appendCommentReply,
-  deleteCommentReply,
-  updateCommentReply,
   deleteCommentMarker,
+  deleteCommentReply,
   extractDirectiveInner,
   injectExistingMarkerIntoSource,
   updateCommentActive,
+  updateCommentReply,
   updateCommentText,
-  writeCommentToFile,
   WriteError,
+  writeCommentToFile,
 } from "./babel-comment-writer";
-import { readCommentsFromSource } from "./babel-comment-reader";
 
 const dir = mkdtempSync(path.join(tmpdir(), "babel-writer-test-"));
 
@@ -34,7 +34,10 @@ const SOURCE = `export function P() {
 `;
 
 beforeEach(() => {
-  file = path.join(dir, `t-${Date.now()}-${Math.random().toString(36).slice(2)}.tsx`);
+  file = path.join(
+    dir,
+    `t-${Date.now()}-${Math.random().toString(36).slice(2)}.tsx`
+  );
   writeFileSync(file, SOURCE, "utf8");
 });
 
@@ -67,8 +70,8 @@ describe("writeCommentToFile", () => {
 
   it("reuses an existing data-comment-anchor instead of minting a new one", async () => {
     const initial = SOURCE.replace(
-      `<button>`,
-      `<button data-comment-anchor="preset-uuid">`,
+      "<button>",
+      `<button data-comment-anchor="preset-uuid">`
     );
     writeFileSync(file, initial, "utf8");
 
@@ -98,7 +101,7 @@ describe("writeCommentToFile", () => {
     const out = readFileSync(file, "utf8");
     const { comments, warnings } = readCommentsFromSource(out);
     expect(warnings).toEqual([]);
-    expect(comments[0]!.text).toBe('has "quotes"\nand a newline');
+    expect(comments[0]?.text).toBe('has "quotes"\nand a newline');
   });
 
   it("wraps target in a Fragment when it has no JSX parent (root return)", async () => {
@@ -182,7 +185,7 @@ export function Card() {
     const out = readFileSync(file, "utf8");
     expect(out).not.toContain("screenshot=");
     const { comments } = readCommentsFromSource(out);
-    expect(comments[0]!.screenshot).toBeUndefined();
+    expect(comments[0]?.screenshot).toBeUndefined();
   });
 
   it("uses the caller-supplied id when one is passed", async () => {
@@ -238,11 +241,11 @@ describe("updateCommentActive", () => {
       active: 1,
     });
     const out = readFileSync(file, "utf8");
-    expect(out).toContain(`active=1`);
+    expect(out).toContain("active=1");
     const { comments, warnings } = readCommentsFromSource(out);
     expect(warnings).toEqual([]);
     expect(comments).toHaveLength(1);
-    expect(comments[0]!.active).toBe(1);
+    expect(comments[0]?.active).toBe(1);
   });
 
   it("updates an existing active=2 to active=5", async () => {
@@ -274,7 +277,7 @@ describe("updateCommentActive", () => {
     // Only one active= occurrence — make sure we replaced, not appended.
     expect(out.match(/active=/g)?.length).toBe(1);
     const { comments } = readCommentsFromSource(out);
-    expect(comments[0]!.active).toBe(5);
+    expect(comments[0]?.active).toBe(5);
   });
 
   it("throws a meaningful error when the comment id is not found", async () => {
@@ -283,7 +286,7 @@ describe("updateCommentActive", () => {
         absolutePath: file,
         commentId: "nonexistent-uuid-deadbeef",
         active: 1,
-      }),
+      })
     ).rejects.toThrow(/nonexistent-uuid-deadbeef/);
   });
 
@@ -303,7 +306,7 @@ describe("updateCommentActive", () => {
     const out = readFileSync(file, "utf8");
     const { comments, warnings } = readCommentsFromSource(out);
     expect(warnings).toEqual([]);
-    expect(comments[0]!.active).toBe(7);
+    expect(comments[0]?.active).toBe(7);
   });
 });
 
@@ -326,7 +329,7 @@ describe("updateCommentText", () => {
     expect(out).not.toContain("original");
     const { comments, warnings } = readCommentsFromSource(out);
     expect(warnings).toEqual([]);
-    expect(comments[0]!.text).toBe("updated body");
+    expect(comments[0]?.text).toBe("updated body");
   });
 
   it("preserves JSON escaping for quotes and newlines", async () => {
@@ -343,7 +346,7 @@ describe("updateCommentText", () => {
       text: 'say "hi"\nand bye',
     });
     const { comments } = readCommentsFromSource(readFileSync(file, "utf8"));
-    expect(comments[0]!.text).toBe('say "hi"\nand bye');
+    expect(comments[0]?.text).toBe('say "hi"\nand bye');
   });
 
   it("throws when the comment id is not found", async () => {
@@ -352,7 +355,7 @@ describe("updateCommentText", () => {
         absolutePath: file,
         commentId: "missing-id",
         text: "nope",
-      }),
+      })
     ).rejects.toThrow(/missing-id/);
   });
 });
@@ -375,7 +378,7 @@ describe("appendCommentReply", () => {
     expect(reply.text).toBe("ack");
     expect(reply.date.length).toBeGreaterThan(0);
     const { comments } = readCommentsFromSource(readFileSync(file, "utf8"));
-    expect(comments[0]!.replies).toEqual([reply]);
+    expect(comments[0]?.replies).toEqual([reply]);
   });
 
   it("appends to an existing replies array", async () => {
@@ -397,7 +400,7 @@ describe("appendCommentReply", () => {
       reply: { author: "b@local", text: "second" },
     });
     const { comments } = readCommentsFromSource(readFileSync(file, "utf8"));
-    expect(comments[0]!.replies).toEqual([first, second]);
+    expect(comments[0]?.replies).toEqual([first, second]);
   });
 
   it("throws when the comment id is not found", async () => {
@@ -406,7 +409,7 @@ describe("appendCommentReply", () => {
         absolutePath: file,
         commentId: "missing-id",
         reply: { author: "a@local", text: "nope" },
-      }),
+      })
     ).rejects.toThrow(/missing-id/);
   });
 });
@@ -432,7 +435,7 @@ describe("updateCommentReply", () => {
       text: "updated",
     });
     const { comments } = readCommentsFromSource(readFileSync(file, "utf8"));
-    expect(comments[0]!.replies).toEqual([
+    expect(comments[0]?.replies).toEqual([
       { author: reply.author, date: reply.date, text: "updated" },
     ]);
   });
@@ -451,7 +454,7 @@ describe("updateCommentReply", () => {
         commentId: result.id,
         replyIndex: 0,
         text: "nope",
-      }),
+      })
     ).rejects.toThrow(/out of range/);
   });
 });
@@ -481,7 +484,7 @@ describe("deleteCommentReply", () => {
       replyIndex: 0,
     });
     const { comments } = readCommentsFromSource(readFileSync(file, "utf8"));
-    expect(comments[0]!.replies).toEqual([second]);
+    expect(comments[0]?.replies).toEqual([second]);
   });
 
   it("throws when the reply index is out of range", async () => {
@@ -497,7 +500,7 @@ describe("deleteCommentReply", () => {
         absolutePath: file,
         commentId: result.id,
         replyIndex: 0,
-      }),
+      })
     ).rejects.toThrow(/out of range/);
   });
 });
@@ -522,7 +525,7 @@ describe("injectExistingMarkerIntoSource", () => {
     const out = injectExistingMarkerIntoSource(
       SNAPSHOT_WITHOUT_MARKER,
       anchor,
-      directiveInner,
+      directiveInner
     );
 
     // The output must still carry the anchor and now contain the directive.
@@ -561,13 +564,13 @@ describe("injectExistingMarkerIntoSource", () => {
 
     // Build a snapshot that only has the anchor attribute (legacy v0 shape).
     const legacySnapshot = SOURCE.replace(
-      `<button>`,
-      `<button data-comment-anchor="${result.anchor}">`,
+      "<button>",
+      `<button data-comment-anchor="${result.anchor}">`
     );
     const out = injectExistingMarkerIntoSource(
       legacySnapshot,
       result.anchor,
-      directiveInner!,
+      directiveInner!
     );
     const { comments, warnings } = readCommentsFromSource(out);
     expect(warnings).toEqual([]);
@@ -588,8 +591,8 @@ describe("injectExistingMarkerIntoSource", () => {
       injectExistingMarkerIntoSource(
         SOURCE, // No data-comment-anchor anywhere.
         anchor,
-        directiveInner,
-      ),
+        directiveInner
+      )
     ).toThrow(/data-comment-anchor/);
   });
 });
@@ -628,7 +631,7 @@ describe("deleteCommentMarker", () => {
     const { comments, warnings } = readCommentsFromSource(out);
     expect(warnings).toEqual([]);
     expect(comments).toHaveLength(1);
-    expect(comments[0]!.id).toBe(r2.id);
+    expect(comments[0]?.id).toBe(r2.id);
   });
 
   it("removes the data-comment-anchor attribute when deleting the last marker on that anchor", async () => {
@@ -647,8 +650,8 @@ describe("deleteCommentMarker", () => {
     expect(result.removedAnchor).toBe(true);
 
     const out = readFileSync(file, "utf8");
-    expect(out).not.toContain(`@comment`);
-    expect(out).not.toContain(`data-comment-anchor=`);
+    expect(out).not.toContain("@comment");
+    expect(out).not.toContain("data-comment-anchor=");
     // Source is parseable and has no orphaned whitespace breaking the reader.
     const { comments, warnings } = readCommentsFromSource(out);
     expect(warnings).toEqual([]);
@@ -763,7 +766,7 @@ describe("deleteCommentMarker", () => {
     const { comments, warnings } = readCommentsFromSource(out);
     expect(warnings).toEqual([]);
     expect(comments.map((c) => c.id).sort()).toEqual(
-      [rHeader.id, rFooter.id].sort(),
+      [rHeader.id, rFooter.id].sort()
     );
   });
 });

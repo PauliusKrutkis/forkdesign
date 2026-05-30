@@ -13,13 +13,13 @@ const POSITIONS: {
 ];
 
 const LABEL_BY_POSITION = Object.fromEntries(
-  POSITIONS.map((p) => [p.id, p.label]),
+  POSITIONS.map((p) => [p.id, p.label])
 ) as Record<OverlayPosition, string>;
 
-type Props = {
-  value: OverlayPosition;
+interface Props {
   onChange: (v: OverlayPosition) => void;
-};
+  value: OverlayPosition;
+}
 
 /**
  * Schematic page preview for choosing which corner anchors the dock pill.
@@ -30,28 +30,28 @@ export function DockPositionPicker({ value, onChange }: Props) {
     <div>
       <fieldset className="m-0 overflow-hidden rounded-lg border border-border bg-muted/15 p-0 shadow-sm">
         <legend className="sr-only">Dock position</legend>
-        <div className="flex h-7 items-center gap-1.5 border-b border-border/80 bg-background/90 px-2.5">
+        <div className="flex h-7 items-center gap-1.5 border-border/80 border-b bg-background/90 px-2.5">
           <span
-            className="h-2 w-2 rounded-full bg-muted-foreground/20"
             aria-hidden
+            className="h-2 w-2 rounded-full bg-muted-foreground/20"
           />
           <span
-            className="h-2 w-2 rounded-full bg-muted-foreground/20"
             aria-hidden
+            className="h-2 w-2 rounded-full bg-muted-foreground/20"
           />
           <span
-            className="h-2 w-2 rounded-full bg-muted-foreground/20"
             aria-hidden
+            className="h-2 w-2 rounded-full bg-muted-foreground/20"
           />
-          <span className="ml-1 truncate font-mono text-[9px] tracking-wide text-muted-foreground/70">
+          <span className="ml-1 truncate font-mono text-[9px] text-muted-foreground/70 tracking-wide">
             your page
           </span>
         </div>
 
         <div className="relative aspect-[5/4] min-h-[132px] bg-gradient-to-b from-background via-background to-muted/25">
           <div
-            className="pointer-events-none absolute inset-3 rounded-sm border border-dashed border-border/50"
             aria-hidden
+            className="pointer-events-none absolute inset-3 rounded-sm border border-border/50 border-dashed"
           />
 
           {POSITIONS.map((pos) => {
@@ -59,23 +59,23 @@ export function DockPositionPicker({ value, onChange }: Props) {
             const inputId = `dock-position-${pos.id}`;
             return (
               <label
-                key={pos.id}
-                htmlFor={inputId}
                 className={cn(
                   "absolute flex cursor-pointer rounded-md p-1.5 transition-[opacity,transform] duration-100",
                   "hover:scale-105 has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-ring",
                   pos.place,
-                  active ? "opacity-100" : "opacity-45 hover:opacity-75",
+                  active ? "opacity-100" : "opacity-45 hover:opacity-75"
                 )}
+                htmlFor={inputId}
+                key={pos.id}
               >
                 <input
-                  id={inputId}
-                  type="radio"
-                  name="dock-position"
-                  value={pos.id}
                   checked={active}
-                  onChange={() => onChange(pos.id)}
                   className="sr-only"
+                  id={inputId}
+                  name="dock-position"
+                  onChange={() => onChange(pos.id)}
+                  type="radio"
+                  value={pos.id}
                 />
                 <DockPillPreview active={active} />
               </label>
@@ -84,7 +84,7 @@ export function DockPositionPicker({ value, onChange }: Props) {
         </div>
       </fieldset>
 
-      <p className="m-0 mt-2 text-center text-xs text-muted-foreground">
+      <p className="m-0 mt-2 text-center text-muted-foreground text-xs">
         Dock in{" "}
         <span className="font-medium text-foreground">
           {LABEL_BY_POSITION[value].toLowerCase()}
@@ -101,7 +101,7 @@ function DockPillPreview({ active }: { active: boolean }) {
         "inline-flex h-5 items-center gap-0.5 rounded-full border px-1.5 shadow-sm",
         active
           ? "border-foreground/35 bg-popover text-foreground ring-2 ring-ring/40 ring-offset-1 ring-offset-background"
-          : "border-border/70 bg-popover/80 text-muted-foreground",
+          : "border-border/70 bg-popover/80 text-muted-foreground"
       )}
     >
       <RedlineMark className="h-2.5 w-2.5 shrink-0" />
@@ -112,25 +112,25 @@ function DockPillPreview({ active }: { active: boolean }) {
 function RedlineMark({ className }: { className?: string }) {
   return (
     <svg
+      aria-hidden="true"
+      className={className}
+      fill="none"
+      height="16"
       viewBox="0 0 16 16"
       width="16"
-      height="16"
-      fill="none"
-      className={className}
-      aria-hidden="true"
     >
       <path
         d="M2.5 11.75h11"
         stroke="currentColor"
-        strokeWidth="1.5"
         strokeLinecap="round"
+        strokeWidth="1.5"
       />
       <path
         d="M5.25 11.75 8 5l2.75 6.75"
         stroke="currentColor"
-        strokeWidth="1.5"
         strokeLinecap="round"
         strokeLinejoin="round"
+        strokeWidth="1.5"
       />
     </svg>
   );

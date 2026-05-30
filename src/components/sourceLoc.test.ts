@@ -13,10 +13,10 @@ describe("findSourceLoc", () => {
 
     const loc = findSourceLoc(el);
     expect(loc).not.toBeNull();
-    expect(loc!.file).toBe("src/pages/Foo.tsx");
-    expect(loc!.line).toBe(42);
-    expect(loc!.column).toBe(7);
-    expect(loc!.element).toBe(el);
+    expect(loc?.file).toBe("src/pages/Foo.tsx");
+    expect(loc?.line).toBe(42);
+    expect(loc?.column).toBe(7);
+    expect(loc?.element).toBe(el);
   });
 
   it("walks up to find the nearest ancestor with a loc", () => {
@@ -28,8 +28,8 @@ describe("findSourceLoc", () => {
 
     const loc = findSourceLoc(inner);
     expect(loc).not.toBeNull();
-    expect(loc!.element).toBe(wrapper);
-    expect(loc!.line).toBe(10);
+    expect(loc?.element).toBe(wrapper);
+    expect(loc?.line).toBe(10);
   });
 
   it("returns null when no ancestor has a loc", () => {
@@ -43,9 +43,9 @@ describe("findSourceLoc", () => {
     el.setAttribute("data-source-loc", "src/pages/A.tsx:5:9");
     document.body.appendChild(el);
     const loc = findSourceLoc(el);
-    expect(loc!.file).toBe("src/pages/A.tsx");
-    expect(loc!.line).toBe(5);
-    expect(loc!.column).toBe(9);
+    expect(loc?.file).toBe("src/pages/A.tsx");
+    expect(loc?.line).toBe(5);
+    expect(loc?.column).toBe(9);
   });
 
   it("returns null on malformed attribute values", () => {

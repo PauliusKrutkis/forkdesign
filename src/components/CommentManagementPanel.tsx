@@ -1,23 +1,20 @@
-import { useMemo, useState } from "react";
 import { Trash2 } from "lucide-react";
-import type { CommentData } from "./types";
-import { Button } from "./ui/button";
-import { Badge } from "./ui/badge";
+import { useMemo, useState } from "react";
 import { cn } from "../lib/utils";
+import type { CommentData } from "./types";
+import { Badge } from "./ui/badge";
+import { Button } from "./ui/button";
 
 type CommentWithFile = CommentData & { file?: string };
 
-export type CommentManagementPanelProps = {
+export interface CommentManagementPanelProps {
   comments: CommentData[];
+  fileToRoute?: (file: string, ctx: { view?: string | null }) => string | null;
   inDomAnchors: Set<string>;
-  onJump: (target: { anchor: string; instance: number }) => void;
-  onGoToPage: (comment: CommentWithFile) => void;
-  fileToRoute?: (
-    file: string,
-    ctx: { view?: string | null },
-  ) => string | null;
   onDelete: (id: string) => Promise<void>;
-};
+  onGoToPage: (comment: CommentWithFile) => void;
+  onJump: (target: { anchor: string; instance: number }) => void;
+}
 
 export function CommentManagementPanel({
   comments,
@@ -33,8 +30,11 @@ export function CommentManagementPanel({
     const on: CommentWithFile[] = [];
     const off: CommentWithFile[] = [];
     for (const c of withFile) {
-      if (inDomAnchors.has(c.anchor)) on.push(c);
-      else off.push(c);
+      if (inDomAnchors.has(c.anchor)) {
+        on.push(c);
+      } else {
+        off.push(c);
+      }
     }
     const byDate = (a: CommentWithFile, b: CommentWithFile) =>
       Date.parse(b.date) - Date.parse(a.date);
@@ -58,7 +58,7 @@ export function CommentManagementPanel({
 
   if (total === 0) {
     return (
-      <div className="grid min-h-[200px] place-items-center px-6 py-12 text-center text-sm text-muted-foreground">
+      <div className="grid min-h-[200px] place-items-center px-6 py-12 text-center text-muted-foreground text-sm">
         No comments yet
       </div>
     );
@@ -68,29 +68,29 @@ export function CommentManagementPanel({
     <div>
       {grouped.map(([file, rows]) => (
         <FileGroup
-          key={file}
-          file={file}
           comments={rows}
-          onJump={onJump}
+          file={file}
+          key={file}
           onDelete={onDelete}
+          onJump={onJump}
         />
       ))}
 
       {offPage.length > 0 ? (
         <section className="border-t">
-          <h3 className="sticky top-0 z-10 m-0 border-b bg-background/80 px-4 py-2 text-xs italic text-muted-foreground backdrop-blur">
+          <h3 className="sticky top-0 z-10 m-0 border-b bg-background/80 px-4 py-2 text-muted-foreground text-xs italic backdrop-blur">
             Off-page or orphaned
           </h3>
           <div className="opacity-90">
             {offPage.map((c) => (
               <CommentRow
-                key={c.id}
                 comment={c}
                 jumpable={false}
+                key={c.id}
                 navigable={canNavigateToPage(c, fileToRoute)}
-                onJump={onJump}
-                onGoToPage={onGoToPage}
                 onDelete={onDelete}
+                onGoToPage={onGoToPage}
+                onJump={onJump}
               />
             ))}
           </div>
@@ -102,11 +102,15 @@ export function CommentManagementPanel({
 
 function canNavigateToPage(
   comment: CommentWithFile,
-  fileToRoute?: CommentManagementPanelProps["fileToRoute"],
+  fileToRoute?: CommentManagementPanelProps["fileToRoute"]
 ): boolean {
-  if (comment.route) return true;
+  if (comment.route) {
+    return true;
+  }
   const file = comment.file;
-  if (!file || !fileToRoute) return false;
+  if (!(file && fileToRoute)) {
+    return false;
+  }
   return fileToRoute(file, { view: comment.view }) !== null;
 }
 
@@ -125,15 +129,15 @@ function FileGroup({
   return (
     <section className="border-b">
       <Button
+        aria-expanded={open}
+        className="sticky top-0 z-10 h-auto w-full justify-between rounded-none border-b bg-background/80 px-4 py-2 text-muted-foreground text-xs backdrop-blur hover:bg-muted"
+        onClick={() => setOpen((v) => !v)}
         type="button"
         variant="ghost"
-        className="sticky top-0 z-10 h-auto w-full justify-between rounded-none border-b bg-background/80 px-4 py-2 text-xs text-muted-foreground backdrop-blur hover:bg-muted"
-        onClick={() => setOpen((v) => !v)}
-        aria-expanded={open}
       >
         <span className="truncate">{file}</span>
         <span className="flex items-center gap-2">
-          <Badge variant="secondary" className="font-normal">
+          <Badge className="font-normal" variant="secondary">
             {comments.length}
           </Badge>
           <Chevron rotated={!open} />
@@ -143,13 +147,13 @@ function FileGroup({
         <div>
           {comments.map((c) => (
             <CommentRow
-              key={c.id}
               comment={c}
               jumpable
+              key={c.id}
               navigable={false}
-              onJump={onJump}
-              onGoToPage={() => {}}
               onDelete={onDelete}
+              onGoToPage={() => {}}
+              onJump={onJump}
             />
           ))}
         </div>
@@ -204,9 +208,9 @@ function CommentRow({
   const rowClass = cn(
     "group relative flex w-full items-start gap-3 border-t px-4 py-3 text-left transition-colors",
     interactive &&
-      "cursor-pointer hover:bg-muted/50 focus-visible:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
+      "cursor-pointer hover:bg-muted/50 focus-visible:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset",
     !interactive && "cursor-default",
-    busy && "opacity-50",
+    busy && "opacity-50"
   );
 
   const inner = (
@@ -214,7 +218,7 @@ function CommentRow({
       <Thumbnail src={comment.screenshot} />
       <div className="min-w-0 flex-1">
         <p
-          className="m-0 overflow-hidden text-sm leading-snug text-foreground"
+          className="m-0 overflow-hidden text-foreground text-sm leading-snug"
           style={{
             display: "-webkit-box",
             WebkitLineClamp: 2,
@@ -224,25 +228,25 @@ function CommentRow({
           {comment.text}
         </p>
         <div className="mt-1 flex flex-wrap items-center justify-between gap-2">
-          <span className="truncate text-xs text-muted-foreground">
+          <span className="truncate text-muted-foreground text-xs">
             {comment.author}
           </span>
-          <span className="shrink-0 font-mono text-[10px] tabular-nums text-muted-foreground">
+          <span className="shrink-0 font-mono text-[10px] text-muted-foreground tabular-nums">
             {formatRelative(comment.date)}
           </span>
         </div>
         {navigable ? (
-          <span className="mt-1 inline-block text-xs text-primary">
+          <span className="mt-1 inline-block text-primary text-xs">
             Go to page
           </span>
         ) : null}
-        {!jumpable && !navigable && comment.file ? (
+        {!(jumpable || navigable) && comment.file ? (
           <span className="mt-1 block truncate font-mono text-[10px] text-muted-foreground">
             {comment.file}
           </span>
         ) : null}
         {error ? (
-          <p className="m-0 mt-1 text-xs text-destructive">{error}</p>
+          <p className="m-0 mt-1 text-destructive text-xs">{error}</p>
         ) : null}
       </div>
       <div
@@ -250,15 +254,15 @@ function CommentRow({
         onClick={(e) => e.stopPropagation()}
       >
         <Button
-          type="button"
-          variant="ghost"
-          size="icon"
-          className="h-7 w-7 text-muted-foreground opacity-0 transition-opacity hover:text-destructive focus-visible:opacity-100 group-hover:opacity-100"
           aria-label="Delete comment"
+          className="h-7 w-7 text-muted-foreground opacity-0 transition-opacity hover:text-destructive focus-visible:opacity-100 group-hover:opacity-100"
           onClick={(e) => {
             e.stopPropagation();
             setConfirming(true);
           }}
+          size="icon"
+          type="button"
+          variant="ghost"
         >
           <Trash2 className="h-4 w-4" />
         </Button>
@@ -266,35 +270,35 @@ function CommentRow({
 
       {confirming ? (
         <div
-          className="absolute inset-y-0 right-0 z-10 flex items-center gap-1.5 rounded-r-[inherit] bg-gradient-to-l from-background from-55% to-transparent pl-14 pr-3"
+          className="absolute inset-y-0 right-0 z-10 flex items-center gap-1.5 rounded-r-[inherit] bg-gradient-to-l from-55% from-background to-transparent pr-3 pl-14"
           onClick={(e) => e.stopPropagation()}
         >
-          <span className="mr-0.5 text-xs font-medium text-foreground">
+          <span className="mr-0.5 font-medium text-foreground text-xs">
             Delete?
           </span>
           <Button
-            type="button"
-            variant="ghost"
-            size="sm"
             className="h-7 px-2 text-xs"
             disabled={busy}
             onClick={(e) => {
               e.stopPropagation();
               setConfirming(false);
             }}
+            size="sm"
+            type="button"
+            variant="ghost"
           >
             Cancel
           </Button>
           <Button
-            type="button"
-            variant="destructive"
-            size="sm"
             className="h-7 px-2 text-xs"
             disabled={busy}
             onClick={(e) => {
               e.stopPropagation();
               void handleDelete();
             }}
+            size="sm"
+            type="button"
+            variant="destructive"
           >
             {busy ? "Deleting…" : "Delete"}
           </Button>
@@ -306,8 +310,6 @@ function CommentRow({
   if (interactive) {
     return (
       <div
-        role="button"
-        tabIndex={0}
         className={rowClass}
         onClick={handleRowActivate}
         onKeyDown={(e) => {
@@ -316,6 +318,8 @@ function CommentRow({
             handleRowActivate();
           }
         }}
+        role="button"
+        tabIndex={0}
       >
         {inner}
       </div>
@@ -329,10 +333,10 @@ function Thumbnail({ src }: { src?: string }) {
   if (src) {
     return (
       <img
-        src={src}
         alt=""
-        loading="lazy"
         className="block h-9 w-9 shrink-0 rounded-md border bg-muted object-cover"
+        loading="lazy"
+        src={src}
       />
     );
   }
@@ -348,16 +352,16 @@ function Chevron({ rotated }: { rotated: boolean }) {
   return (
     <svg
       aria-hidden
-      viewBox="0 0 16 16"
-      focusable="false"
-      width="9"
-      height="9"
+      className={cn("transition-transform", rotated && "-rotate-90")}
       fill="none"
+      focusable="false"
+      height="9"
       stroke="currentColor"
-      strokeWidth="1.75"
       strokeLinecap="round"
       strokeLinejoin="round"
-      className={cn("transition-transform", rotated && "-rotate-90")}
+      strokeWidth="1.75"
+      viewBox="0 0 16 16"
+      width="9"
     >
       <polyline points="3,5 8,11 13,5" />
     </svg>
@@ -366,16 +370,26 @@ function Chevron({ rotated }: { rotated: boolean }) {
 
 function formatRelative(iso: string): string {
   const ts = Date.parse(iso);
-  if (Number.isNaN(ts)) return iso;
+  if (Number.isNaN(ts)) {
+    return iso;
+  }
   const diff = Date.now() - ts;
   const sec = Math.round(diff / 1000);
-  if (sec < 60) return "just now";
+  if (sec < 60) {
+    return "just now";
+  }
   const min = Math.round(sec / 60);
-  if (min < 60) return `${min}m`;
+  if (min < 60) {
+    return `${min}m`;
+  }
   const hr = Math.round(min / 60);
-  if (hr < 24) return `${hr}h`;
+  if (hr < 24) {
+    return `${hr}h`;
+  }
   const day = Math.round(hr / 24);
-  if (day < 7) return `${day}d`;
+  if (day < 7) {
+    return `${day}d`;
+  }
   const d = new Date(ts);
   return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }

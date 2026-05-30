@@ -17,29 +17,25 @@
  * `JSON.stringify` so quotes, backslashes, and newlines survive a round-trip
  * through the directive's tiny attribute parser without bespoke escaping.
  */
-import { readFile, writeFile, rename } from "node:fs/promises";
-import path from "node:path";
-import { tmpdir } from "node:os";
+
 import { randomUUID } from "node:crypto";
+import { readFile, rename, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import { parse as parseBabel } from "@babel/parser";
+import * as t from "@babel/types";
 import recast from "recast";
 // recast ships a Babel-TS parser shim that mirrors the @babel/parser options
 // used by the reader (jsx + typescript).
-// eslint-disable-next-line @typescript-eslint/no-require-imports
 import babelTsParser from "recast/parsers/babel-ts.js";
-import { parse as parseBabel } from "@babel/parser";
-import * as t from "@babel/types";
 
-export type WriteCommentInput = {
+export interface WriteCommentInput {
   /** Absolute path to the .tsx file. */
   absolutePath: string;
-  /** 1-indexed line of the target JSXElement (Babel-style loc.start.line). */
-  line: number;
-  /** 1-indexed column of the `<` of the target JSXElement. */
-  column: number;
-  /** Body text from the composer. */
-  text: string;
   /** Author identifier (email). */
   author: string;
+  /** 1-indexed column of the `<` of the target JSXElement. */
+  column: number;
   /**
    * If the target element already has `data-comment-anchor`, the caller may
    * pass it through so we don't mint a new uuid. When omitted, an existing
@@ -48,33 +44,37 @@ export type WriteCommentInput = {
    */
   existingAnchor?: string;
   /**
-   * Optional repo-root absolute path to the cropped PNG saved at comment time
-   * (e.g. `/designs/iterations/<id>/v0.png`). When provided, the writer emits
-   * `screenshot="..."` on the directive so the reader can surface it.
-   */
-  screenshot?: string;
-  /**
    * Optional pre-allocated uuid to stamp as the directive's `id`. Callers use
    * this when they need the id BEFORE the write (e.g. to compute a screenshot
    * path under `/designs/iterations/<id>/v0.png`). When omitted the writer
    * mints a fresh uuid as before.
    */
   id?: string;
+  /** 1-indexed line of the target JSXElement (Babel-style loc.start.line). */
+  line: number;
   /**
    * Optional app route (pathname + search + hash) stamped on the directive so
    * the overlay can navigate back to the page where the comment was created.
    */
   route?: string;
-};
+  /**
+   * Optional repo-root absolute path to the cropped PNG saved at comment time
+   * (e.g. `/designs/iterations/<id>/v0.png`). When provided, the writer emits
+   * `screenshot="..."` on the directive so the reader can surface it.
+   */
+  screenshot?: string;
+  /** Body text from the composer. */
+  text: string;
+}
 
-export type WriteCommentResult = {
-  /** uuid v4 written as the directive's `id="..."`. */
-  id: string;
+export interface WriteCommentResult {
   /** uuid written as `anchor="..."` and as `data-comment-anchor` on the target. */
   anchor: string;
   /** ISO 8601 date string written as `date="..."`. */
   date: string;
-};
+  /** uuid v4 written as the directive's `id="..."`. */
+  id: string;
+}
 
 /**
  * Mutate the file at `absolutePath` to (a) stamp `data-comment-anchor` on the
@@ -87,7 +87,7 @@ export type WriteCommentResult = {
  * directory and rename over the original.
  */
 export async function writeCommentToFile(
-  input: WriteCommentInput,
+  input: WriteCommentInput
 ): Promise<WriteCommentResult> {
   const source = await readFile(input.absolutePath, "utf8");
   const ast = recast.parse(source, { parser: babelTsParser });
@@ -96,7 +96,7 @@ export async function writeCommentToFile(
   if (!target) {
     throw new WriteError(
       `no JSXElement found at line:column ${input.line}:${input.column}`,
-      400,
+      400
     );
   }
 
@@ -104,7 +104,7 @@ export async function writeCommentToFile(
   //    present (callers may also pass `existingAnchor` to be explicit).
   const existingAnchorOnNode = readAttrValue(
     target.openingElement,
-    "data-comment-anchor",
+    "data-comment-anchor"
   );
   const anchorUuid =
     existingAnchorOnNode ?? input.existingAnchor ?? randomUUID();
@@ -143,7 +143,10 @@ export async function writeCommentToFile(
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    throw new WriteError(`generated output failed to re-parse: ${message}`, 500);
+    throw new WriteError(
+      `generated output failed to re-parse: ${message}`,
+      500
+    );
   }
 
   await atomicWrite(input.absolutePath, output);
@@ -167,33 +170,41 @@ export async function writeCommentToFile(
  */
 export function extractDirectiveInner(
   source: string,
-  commentId: string,
+  commentId: string
 ): string | null {
   const ast = recast.parse(source, { parser: babelTsParser });
   let result: string | null = null;
   recast.visit(ast, {
     visitJSXExpressionContainer(p) {
-      if (result !== null) return false;
+      if (result !== null) {
+        return false;
+      }
       const node = p.node as t.JSXExpressionContainer;
       if (node.expression.type !== "JSXEmptyExpression") {
         this.traverse(p);
-        return undefined;
+        return;
       }
       const blocks: t.Comment[] = [];
       pushComments(node.expression.innerComments, blocks);
       pushComments(node.expression.leadingComments, blocks);
       pushComments(node.expression.trailingComments, blocks);
       for (const block of blocks) {
-        if (block.type !== "CommentBlock") continue;
+        if (block.type !== "CommentBlock") {
+          continue;
+        }
         const trimmed = block.value.trim();
-        if (!trimmed.startsWith("@comment")) continue;
+        if (!trimmed.startsWith("@comment")) {
+          continue;
+        }
         const idMatch = block.value.match(/\bid="([^"]+)"/);
-        if (!idMatch || idMatch[1] !== commentId) continue;
+        if (!idMatch || idMatch[1] !== commentId) {
+          continue;
+        }
         result = block.value;
         return false;
       }
       this.traverse(p);
-      return undefined;
+      return;
     },
   });
   return result;
@@ -225,7 +236,7 @@ export function extractDirectiveInner(
 export function injectExistingMarkerIntoSource(
   source: string,
   anchorUuid: string,
-  directiveInner: string,
+  directiveInner: string
 ): string {
   const ast = recast.parse(source, { parser: babelTsParser });
 
@@ -234,7 +245,7 @@ export function injectExistingMarkerIntoSource(
   if (!target) {
     throw new WriteError(
       `no JSXElement with data-comment-anchor="${anchorUuid}" in source`,
-      400,
+      400
     );
   }
 
@@ -256,7 +267,7 @@ export function injectExistingMarkerIntoSource(
     const message = err instanceof Error ? err.message : String(err);
     throw new WriteError(
       `injectExistingMarkerIntoSource: generated output failed to re-parse: ${message}`,
-      500,
+      500
     );
   }
 
@@ -269,12 +280,14 @@ export function injectExistingMarkerIntoSource(
  */
 function findJsxElementByAnchor(
   ast: t.File,
-  anchorUuid: string,
+  anchorUuid: string
 ): t.JSXElement | null {
   let found: t.JSXElement | null = null;
   recast.visit(ast, {
     visitJSXElement(jsxPath) {
-      if (found) return false;
+      if (found) {
+        return false;
+      }
       const node = jsxPath.node as t.JSXElement;
       const v = readAttrValue(node.openingElement, "data-comment-anchor");
       if (v === anchorUuid) {
@@ -282,7 +295,7 @@ function findJsxElementByAnchor(
         return false;
       }
       this.traverse(jsxPath);
-      return undefined;
+      return;
     },
   });
   return found;
@@ -297,14 +310,14 @@ function findJsxElementByAnchor(
  * gymnastics.
  */
 function buildMarkerFromInner(
-  directiveInner: string,
+  directiveInner: string
 ): t.JSXExpressionContainer {
   // The directive must not contain "*/" (would close the block early). If it
   // does, the original source was malformed — bail rather than emit broken JS.
   if (directiveInner.includes("*/")) {
     throw new WriteError(
       "injectExistingMarkerIntoSource: directive contains '*/' (would close block early)",
-      500,
+      500
     );
   }
   const wrap = `<>{/*${directiveInner}*/}</>;`;
@@ -319,7 +332,7 @@ function buildMarkerFromInner(
   if (!found) {
     throw new WriteError(
       "internal: failed to construct @comment marker node from inner text",
-      500,
+      500
     );
   }
   return found;
@@ -329,14 +342,14 @@ function buildMarkerFromInner(
 // Update `active=N` on an existing @comment marker
 // ---------------------------------------------------------------------------
 
-export type UpdateCommentActiveInput = {
+export interface UpdateCommentActiveInput {
   /** Absolute path to the .tsx file containing the marker. */
   absolutePath: string;
-  /** uuid that matches the `id` attribute on the `@comment` directive. */
-  commentId: string;
   /** New value for the directive's `active=N` attribute. */
   active: number;
-};
+  /** uuid that matches the `id` attribute on the `@comment` directive. */
+  commentId: string;
+}
 
 /**
  * Find the `{/* @comment id="<commentId>" ... *\/}` block in `absolutePath` and
@@ -355,30 +368,30 @@ export type UpdateCommentActiveInput = {
  * Throws (with status 404) when no matching comment id is found in the file.
  */
 export async function updateCommentActive(
-  input: UpdateCommentActiveInput,
+  input: UpdateCommentActiveInput
 ): Promise<void> {
   if (!Number.isInteger(input.active) || input.active < 0) {
     throw new WriteError(
       `active must be a non-negative integer (got ${input.active})`,
-      400,
+      400
     );
   }
   await mutateCommentDirectiveById(
     input.absolutePath,
     input.commentId,
     (raw) => setActiveOnDirective(raw, input.active),
-    "updateCommentActive",
+    "updateCommentActive"
   );
 }
 
-export type UpdateCommentTextInput = {
+export interface UpdateCommentTextInput {
   /** Absolute path to the .tsx file containing the marker. */
   absolutePath: string;
   /** uuid that matches the `id` attribute on the `@comment` directive. */
   commentId: string;
   /** New body text for the comment. */
   text: string;
-};
+}
 
 /**
  * Find the `{/* @comment id="<commentId>" ... *\/}` block and replace its
@@ -386,7 +399,7 @@ export type UpdateCommentTextInput = {
  * matches `buildCommentMarker`.
  */
 export async function updateCommentText(
-  input: UpdateCommentTextInput,
+  input: UpdateCommentTextInput
 ): Promise<void> {
   const text = input.text.trim();
   if (text.length === 0) {
@@ -396,11 +409,11 @@ export async function updateCommentText(
     input.absolutePath,
     input.commentId,
     (raw) => setTextOnDirective(raw, text),
-    "updateCommentText",
+    "updateCommentText"
   );
 }
 
-export type AppendCommentReplyInput = {
+export interface AppendCommentReplyInput {
   /** Absolute path to the .tsx file containing the marker. */
   absolutePath: string;
   /** uuid that matches the `id` attribute on the `@comment` directive. */
@@ -409,20 +422,20 @@ export type AppendCommentReplyInput = {
     author: string;
     text: string;
   };
-};
+}
 
-export type AppendCommentReplyResult = {
+export interface AppendCommentReplyResult {
   author: string;
   date: string;
   text: string;
-};
+}
 
 /**
  * Append a flat reply to the `@comment` marker's `replies=[...]` array.
  * Creates the attribute when missing. The server stamps `date` as ISO 8601.
  */
 export async function appendCommentReply(
-  input: AppendCommentReplyInput,
+  input: AppendCommentReplyInput
 ): Promise<AppendCommentReplyResult> {
   const author = input.reply.author.trim();
   const text = input.reply.text.trim();
@@ -441,25 +454,25 @@ export async function appendCommentReply(
     input.absolutePath,
     input.commentId,
     (raw) => appendReplyOnDirective(raw, reply),
-    "appendCommentReply",
+    "appendCommentReply"
   );
   return reply;
 }
 
-export type UpdateCommentReplyInput = {
+export interface UpdateCommentReplyInput {
   absolutePath: string;
   commentId: string;
   /** 0-based index into the marker's `replies=[...]` array. */
   replyIndex: number;
   text: string;
-};
+}
 
 /**
  * Replace the `text` field on an existing flat reply. Author and date are
  * preserved.
  */
 export async function updateCommentReply(
-  input: UpdateCommentReplyInput,
+  input: UpdateCommentReplyInput
 ): Promise<void> {
   const text = input.text.trim();
   if (text.length === 0) {
@@ -472,20 +485,20 @@ export async function updateCommentReply(
     input.absolutePath,
     input.commentId,
     (raw) => updateReplyOnDirective(raw, input.replyIndex, text),
-    "updateCommentReply",
+    "updateCommentReply"
   );
 }
 
-export type DeleteCommentReplyInput = {
+export interface DeleteCommentReplyInput {
   absolutePath: string;
   commentId: string;
   /** 0-based index into the marker's `replies=[...]` array. */
   replyIndex: number;
-};
+}
 
 /** Remove one flat reply from the marker's `replies=[...]` array. */
 export async function deleteCommentReply(
-  input: DeleteCommentReplyInput,
+  input: DeleteCommentReplyInput
 ): Promise<void> {
   if (!Number.isInteger(input.replyIndex) || input.replyIndex < 0) {
     throw new WriteError("replyIndex must be a non-negative integer", 400);
@@ -494,21 +507,21 @@ export async function deleteCommentReply(
     input.absolutePath,
     input.commentId,
     (raw) => deleteReplyOnDirective(raw, input.replyIndex),
-    "deleteCommentReply",
+    "deleteCommentReply"
   );
 }
 
-type StoredCommentReply = {
+interface StoredCommentReply {
   author: string;
   date: string;
   text: string;
-};
+}
 
 async function mutateCommentDirectiveById(
   absolutePath: string,
   commentId: string,
   mutate: (directiveValue: string) => string,
-  operationName: string,
+  operationName: string
 ): Promise<void> {
   const source = await readFile(absolutePath, "utf8");
   const ast = recast.parse(source, { parser: babelTsParser });
@@ -519,7 +532,7 @@ async function mutateCommentDirectiveById(
       const node = p.node as t.JSXExpressionContainer;
       if (node.expression.type !== "JSXEmptyExpression") {
         this.traverse(p);
-        return undefined;
+        return;
       }
       const blocks: t.Comment[] = [];
       pushComments(node.expression.innerComments, blocks);
@@ -527,25 +540,31 @@ async function mutateCommentDirectiveById(
       pushComments(node.expression.trailingComments, blocks);
 
       for (const block of blocks) {
-        if (block.type !== "CommentBlock") continue;
+        if (block.type !== "CommentBlock") {
+          continue;
+        }
         const trimmed = block.value.trim();
-        if (!trimmed.startsWith("@comment")) continue;
+        if (!trimmed.startsWith("@comment")) {
+          continue;
+        }
         const idMatch = block.value.match(/\bid="([^"]+)"/);
-        if (!idMatch || idMatch[1] !== commentId) continue;
+        if (!idMatch || idMatch[1] !== commentId) {
+          continue;
+        }
 
         block.value = mutate(block.value);
         mutated = true;
         return false;
       }
       this.traverse(p);
-      return undefined;
+      return;
     },
   });
 
   if (!mutated) {
     throw new WriteError(
       `no @comment with id="${commentId}" found in ${absolutePath}`,
-      404,
+      404
     );
   }
 
@@ -560,7 +579,7 @@ async function mutateCommentDirectiveById(
     const message = err instanceof Error ? err.message : String(err);
     throw new WriteError(
       `${operationName}: generated output failed to re-parse: ${message}`,
-      500,
+      500
     );
   }
 
@@ -568,11 +587,15 @@ async function mutateCommentDirectiveById(
 }
 
 function pushComments(
-  list: ReadonlyArray<t.Comment> | null | undefined,
-  out: t.Comment[],
+  list: readonly t.Comment[] | null | undefined,
+  out: t.Comment[]
 ): void {
-  if (!list) return;
-  for (const c of list) out.push(c);
+  if (!list) {
+    return;
+  }
+  for (const c of list) {
+    out.push(c);
+  }
 }
 
 /**
@@ -612,7 +635,7 @@ function setTextOnDirective(raw: string, text: string): string {
   if (!existing.test(raw)) {
     throw new WriteError(
       "setTextOnDirective: directive is missing required text attribute",
-      500,
+      500
     );
   }
   return raw.replace(existing, replacement);
@@ -620,7 +643,7 @@ function setTextOnDirective(raw: string, text: string): string {
 
 function appendReplyOnDirective(
   raw: string,
-  reply: StoredCommentReply,
+  reply: StoredCommentReply
 ): string {
   const existing = readRepliesFromDirective(raw);
   existing.push(reply);
@@ -630,13 +653,14 @@ function appendReplyOnDirective(
 function updateReplyOnDirective(
   raw: string,
   replyIndex: number,
-  text: string,
+  text: string
 ): string {
   const existing = readRepliesFromDirective(raw);
   if (replyIndex >= existing.length) {
     throw new WriteError(`reply index ${replyIndex} out of range`, 400);
   }
-  existing[replyIndex] = { ...existing[replyIndex]!, text };
+  const reply = existing[replyIndex];
+  existing[replyIndex] = { ...reply, text };
   return setRepliesOnDirective(raw, existing);
 }
 
@@ -651,13 +675,15 @@ function deleteReplyOnDirective(raw: string, replyIndex: number): string {
 
 function setRepliesOnDirective(
   raw: string,
-  replies: StoredCommentReply[],
+  replies: StoredCommentReply[]
 ): string {
   const serialized = `replies=${JSON.stringify(replies)}`;
   const idx = raw.search(/\breplies=/);
   if (idx >= 0) {
     let pos = idx + "replies=".length;
-    while (pos < raw.length && raw[pos] === " ") pos++;
+    while (pos < raw.length && raw[pos] === " ") {
+      pos++;
+    }
     const bracket = readBalancedSlice(raw, pos, "[", "]");
     if (bracket) {
       return raw.slice(0, idx) + serialized + raw.slice(bracket.next);
@@ -672,17 +698,27 @@ function setRepliesOnDirective(
 
 function readRepliesFromDirective(raw: string): StoredCommentReply[] {
   const idx = raw.search(/\breplies=/);
-  if (idx < 0) return [];
+  if (idx < 0) {
+    return [];
+  }
   let pos = idx + "replies=".length;
-  while (pos < raw.length && raw[pos] === " ") pos++;
+  while (pos < raw.length && raw[pos] === " ") {
+    pos++;
+  }
   const bracket = readBalancedSlice(raw, pos, "[", "]");
-  if (!bracket) return [];
+  if (!bracket) {
+    return [];
+  }
   try {
     const parsed = JSON.parse(bracket.slice) as unknown;
-    if (!Array.isArray(parsed)) return [];
+    if (!Array.isArray(parsed)) {
+      return [];
+    }
     const out: StoredCommentReply[] = [];
     for (const el of parsed) {
-      if (!el || typeof el !== "object") continue;
+      if (!el || typeof el !== "object") {
+        continue;
+      }
       const obj = el as Record<string, unknown>;
       if (
         typeof obj.author === "string" &&
@@ -706,13 +742,15 @@ function readBalancedSlice(
   source: string,
   start: number,
   open: string,
-  close: string,
+  close: string
 ): { slice: string; next: number } | null {
-  if (source[start] !== open) return null;
+  if (source[start] !== open) {
+    return null;
+  }
   let depth = 0;
   let j = start;
   while (j < source.length) {
-    const c = source[j]!;
+    const c = source.charAt(j);
     if (c === '"' || c === "'") {
       const q = c;
       j++;
@@ -729,8 +767,9 @@ function readBalancedSlice(
       }
       continue;
     }
-    if (c === open) depth++;
-    else if (c === close) {
+    if (c === open) {
+      depth++;
+    } else if (c === close) {
       depth--;
       if (depth === 0) {
         return { slice: source.slice(start, j + 1), next: j + 1 };
@@ -745,14 +784,14 @@ function readBalancedSlice(
 // Delete an @comment marker (and optionally its anchor attribute)
 // ---------------------------------------------------------------------------
 
-export type DeleteCommentMarkerInput = {
+export interface DeleteCommentMarkerInput {
   /** Absolute path to the .tsx file containing the marker. */
   absolutePath: string;
   /** uuid matching the `id` attribute on the `@comment` directive. */
   commentId: string;
-};
+}
 
-export type DeleteCommentMarkerResult = {
+export interface DeleteCommentMarkerResult {
   /**
    * True when the target was the last @comment block referencing the anchor
    * and we therefore also stripped `data-comment-anchor="<anchor>"` from the
@@ -760,7 +799,7 @@ export type DeleteCommentMarkerResult = {
    * still reference the anchor and the attribute was preserved.
    */
   removedAnchor: boolean;
-};
+}
 
 /**
  * Remove the `{/* @comment id="<commentId>" ... *\/}` JSXExpressionContainer
@@ -778,7 +817,7 @@ export type DeleteCommentMarkerResult = {
  * file. Throws WriteError(500) when the resulting source fails to re-parse.
  */
 export async function deleteCommentMarker(
-  input: DeleteCommentMarkerInput,
+  input: DeleteCommentMarkerInput
 ): Promise<DeleteCommentMarkerResult> {
   const source = await readFile(input.absolutePath, "utf8");
   const ast = recast.parse(source, { parser: babelTsParser });
@@ -793,11 +832,13 @@ export async function deleteCommentMarker(
 
   recast.visit(ast, {
     visitJSXExpressionContainer(p) {
-      if (targetContainer) return false;
+      if (targetContainer) {
+        return false;
+      }
       const node = p.node as t.JSXExpressionContainer;
       if (node.expression.type !== "JSXEmptyExpression") {
         this.traverse(p);
-        return undefined;
+        return;
       }
       const blocks: t.Comment[] = [];
       pushComments(node.expression.innerComments, blocks);
@@ -806,11 +847,17 @@ export async function deleteCommentMarker(
       let matched = false;
       let anchor: string | null = null;
       for (const block of blocks) {
-        if (block.type !== "CommentBlock") continue;
+        if (block.type !== "CommentBlock") {
+          continue;
+        }
         const trimmed = block.value.trim();
-        if (!trimmed.startsWith("@comment")) continue;
+        if (!trimmed.startsWith("@comment")) {
+          continue;
+        }
         const idMatch = block.value.match(/\bid="([^"]+)"/);
-        if (!idMatch || idMatch[1] !== input.commentId) continue;
+        if (!idMatch || idMatch[1] !== input.commentId) {
+          continue;
+        }
         const anchorMatch = block.value.match(/\banchor="([^"]+)"/);
         anchor = anchorMatch ? (anchorMatch[1] ?? null) : null;
         matched = true;
@@ -818,7 +865,7 @@ export async function deleteCommentMarker(
       }
       if (!matched) {
         this.traverse(p);
-        return undefined;
+        return;
       }
       // Walk up to find the JSX parent and resolve the index in its children.
       let parentPath = p.parent;
@@ -844,10 +891,10 @@ export async function deleteCommentMarker(
     },
   });
 
-  if (!targetContainer || !targetParent) {
+  if (!(targetContainer && targetParent)) {
     throw new WriteError(
       `comment marker not found in file: id="${input.commentId}"`,
-      404,
+      404
     );
   }
 
@@ -873,10 +920,10 @@ export async function deleteCommentMarker(
       // an orphan empty JSXText behind.
       removeCount += 1;
       children.splice(removeFrom - 1, removeCount);
-    } else if (stripped !== text) {
-      (prev as t.JSXText).value = stripped;
+    } else if (stripped === text) {
       children.splice(removeFrom, removeCount);
     } else {
+      (prev as t.JSXText).value = stripped;
       children.splice(removeFrom, removeCount);
     }
   } else {
@@ -890,20 +937,26 @@ export async function deleteCommentMarker(
   if (targetAnchor !== null) {
     recast.visit(ast, {
       visitJSXExpressionContainer(p) {
-        if (anchorStillReferenced) return false;
+        if (anchorStillReferenced) {
+          return false;
+        }
         const node = p.node as t.JSXExpressionContainer;
         if (node.expression.type !== "JSXEmptyExpression") {
           this.traverse(p);
-          return undefined;
+          return;
         }
         const blocks: t.Comment[] = [];
         pushComments(node.expression.innerComments, blocks);
         pushComments(node.expression.leadingComments, blocks);
         pushComments(node.expression.trailingComments, blocks);
         for (const block of blocks) {
-          if (block.type !== "CommentBlock") continue;
+          if (block.type !== "CommentBlock") {
+            continue;
+          }
           const trimmed = block.value.trim();
-          if (!trimmed.startsWith("@comment")) continue;
+          if (!trimmed.startsWith("@comment")) {
+            continue;
+          }
           const anchorMatch = block.value.match(/\banchor="([^"]+)"/);
           if (anchorMatch && anchorMatch[1] === targetAnchor) {
             anchorStillReferenced = true;
@@ -911,7 +964,7 @@ export async function deleteCommentMarker(
           }
         }
         this.traverse(p);
-        return undefined;
+        return;
       },
     });
   }
@@ -933,7 +986,7 @@ export async function deleteCommentMarker(
     const message = err instanceof Error ? err.message : String(err);
     throw new WriteError(
       `deleteCommentMarker: generated output failed to re-parse: ${message}`,
-      500,
+      500
     );
   }
 
@@ -952,15 +1005,27 @@ function stripAnchorAttribute(ast: t.File, anchorUuid: string): boolean {
   let stripped = false;
   recast.visit(ast, {
     visitJSXOpeningElement(p) {
-      if (stripped) return false;
+      if (stripped) {
+        return false;
+      }
       const opening = p.node as t.JSXOpeningElement;
       const idx = opening.attributes.findIndex((attr) => {
-        if (attr.type !== "JSXAttribute") return false;
-        if (attr.name.type !== "JSXIdentifier") return false;
-        if (attr.name.name !== "data-comment-anchor") return false;
+        if (attr.type !== "JSXAttribute") {
+          return false;
+        }
+        if (attr.name.type !== "JSXIdentifier") {
+          return false;
+        }
+        if (attr.name.name !== "data-comment-anchor") {
+          return false;
+        }
         const v = attr.value;
-        if (!v) return false;
-        if (v.type === "StringLiteral") return v.value === anchorUuid;
+        if (!v) {
+          return false;
+        }
+        if (v.type === "StringLiteral") {
+          return v.value === anchorUuid;
+        }
         if (
           v.type === "JSXExpressionContainer" &&
           v.expression.type === "StringLiteral"
@@ -975,7 +1040,7 @@ function stripAnchorAttribute(ast: t.File, anchorUuid: string): boolean {
         return false;
       }
       this.traverse(p);
-      return undefined;
+      return;
     },
   });
   return stripped;
@@ -1014,7 +1079,7 @@ export class WriteError extends Error {
 function findJsxElementAt(
   ast: t.File,
   line: number,
-  column: number,
+  column: number
 ): t.JSXElement | null {
   const targetCol = column - 1;
   let exact: t.JSXElement | null = null;
@@ -1035,11 +1100,13 @@ function findJsxElementAt(
         }
       }
       this.traverse(jsxPath);
-      return undefined;
+      return;
     },
   });
 
-  if (exact) return exact;
+  if (exact) {
+    return exact;
+  }
   // Only accept a fallback if it's within 1 column — protects against
   // matching a totally unrelated element on the same line.
   if (bestFallback !== null) {
@@ -1057,15 +1124,25 @@ function findJsxElementAt(
 
 function readAttrValue(
   opening: t.JSXOpeningElement,
-  name: string,
+  name: string
 ): string | null {
   for (const attr of opening.attributes) {
-    if (attr.type !== "JSXAttribute") continue;
-    if (attr.name.type !== "JSXIdentifier") continue;
-    if (attr.name.name !== name) continue;
+    if (attr.type !== "JSXAttribute") {
+      continue;
+    }
+    if (attr.name.type !== "JSXIdentifier") {
+      continue;
+    }
+    if (attr.name.name !== name) {
+      continue;
+    }
     const v = attr.value;
-    if (!v) return null;
-    if (v.type === "StringLiteral") return v.value;
+    if (!v) {
+      return null;
+    }
+    if (v.type === "StringLiteral") {
+      return v.value;
+    }
     if (
       v.type === "JSXExpressionContainer" &&
       v.expression.type === "StringLiteral"
@@ -1080,10 +1157,10 @@ function readAttrValue(
 function addAttribute(
   opening: t.JSXOpeningElement,
   name: string,
-  value: string,
+  value: string
 ): void {
   opening.attributes.push(
-    t.jsxAttribute(t.jsxIdentifier(name), t.stringLiteral(value)),
+    t.jsxAttribute(t.jsxIdentifier(name), t.stringLiteral(value))
   );
 }
 
@@ -1091,20 +1168,20 @@ function addAttribute(
 // Marker construction
 // ---------------------------------------------------------------------------
 
-type MarkerArgs = {
-  id: string;
+interface MarkerArgs {
   anchor: string;
-  text: string;
   author: string;
   date: string;
+  id: string;
+  route?: string;
   /**
    * Optional repo-root absolute path to the saved screenshot, e.g.
    * `/designs/iterations/<id>/v0.png`. Emitted as `screenshot="..."` on the
    * directive when present.
    */
   screenshot?: string;
-  route?: string;
-};
+  text: string;
+}
 
 /**
  * Build the JSXExpressionContainer that holds the comment directive:
@@ -1151,7 +1228,7 @@ function buildCommentMarker(args: MarkerArgs): t.JSXExpressionContainer {
   if (!found) {
     throw new WriteError(
       "internal: failed to construct @comment marker node",
-      500,
+      500
     );
   }
   return found;
@@ -1174,13 +1251,15 @@ function buildCommentMarker(args: MarkerArgs): t.JSXExpressionContainer {
 function insertAfterSibling(
   ast: t.File,
   target: t.JSXElement,
-  marker: t.JSXExpressionContainer,
+  marker: t.JSXExpressionContainer
 ): void {
   let inserted = false;
 
   recast.visit(ast, {
     visitJSXElement(jsxPath) {
-      if (inserted) return false;
+      if (inserted) {
+        return false;
+      }
       const node = jsxPath.node as t.JSXElement;
       if (node === target) {
         let p = jsxPath.parent;
@@ -1202,11 +1281,13 @@ function insertAfterSibling(
         return false;
       }
       this.traverse(jsxPath);
-      return undefined;
+      return;
     },
   });
 
-  if (inserted) return;
+  if (inserted) {
+    return;
+  }
 
   // Fallback: target has no JSXElement/JSXFragment parent (it's the root of
   // a function return, a conditional consequent, a map callback body, etc.).
@@ -1215,11 +1296,13 @@ function insertAfterSibling(
   // preserves the original target's formatting.
   recast.visit(ast, {
     visitJSXElement(jsxPath) {
-      if (inserted) return false;
+      if (inserted) {
+        return false;
+      }
       const node = jsxPath.node as t.JSXElement;
       if (node !== target) {
         this.traverse(jsxPath);
-        return undefined;
+        return;
       }
       const col = target.loc?.start.column ?? 0;
       const indent = " ".repeat(col);
@@ -1228,8 +1311,9 @@ function insertAfterSibling(
       // belong to the original return-expression context; carrying them into
       // the new fragment slot prints `(<label>…</label>)` which is valid JSX
       // but ugly.
-      const targetExtra = (target as unknown as { extra?: Record<string, unknown> })
-        .extra;
+      const targetExtra = (
+        target as unknown as { extra?: Record<string, unknown> }
+      ).extra;
       if (targetExtra && "parenthesized" in targetExtra) {
         targetExtra.parenthesized = false;
         targetExtra.parenStart = undefined;
@@ -1243,7 +1327,7 @@ function insertAfterSibling(
           t.jsxText(`\n${indent}`),
           marker,
           t.jsxText(`\n${outerIndent}`),
-        ],
+        ]
       );
       jsxPath.replace(fragment);
       inserted = true;
@@ -1254,7 +1338,7 @@ function insertAfterSibling(
   if (!inserted) {
     throw new WriteError(
       "couldn't locate target JSXElement to wrap with marker",
-      500,
+      500
     );
   }
 }
@@ -1267,8 +1351,8 @@ function insertAfterSibling(
  */
 function inferSiblingIndent(
   parent: t.JSXElement | t.JSXFragment,
-  children: ReadonlyArray<t.Node>,
-  targetIdx: number,
+  children: readonly t.Node[],
+  targetIdx: number
 ): string {
   for (let i = targetIdx - 1; i >= 0; i--) {
     const child = children[i];
@@ -1277,7 +1361,9 @@ function inferSiblingIndent(
       const nl = raw.lastIndexOf("\n");
       if (nl >= 0) {
         const indent = raw.slice(nl + 1);
-        if (/^[ \t]*$/.test(indent)) return indent;
+        if (/^[ \t]*$/.test(indent)) {
+          return indent;
+        }
       }
     }
   }
@@ -1286,9 +1372,11 @@ function inferSiblingIndent(
 }
 
 function isJsxParent(
-  v: unknown,
-): v is { children: Array<t.Node> } & (t.JSXElement | t.JSXFragment) {
-  if (!v || typeof v !== "object") return false;
+  v: unknown
+): v is { children: t.Node[] } & (t.JSXElement | t.JSXFragment) {
+  if (!v || typeof v !== "object") {
+    return false;
+  }
   const node = v as { type?: string; children?: unknown };
   return (
     (node.type === "JSXElement" || node.type === "JSXFragment") &&
@@ -1300,7 +1388,10 @@ function isJsxParent(
 // Atomic-ish write
 // ---------------------------------------------------------------------------
 
-async function atomicWrite(absolutePath: string, content: string): Promise<void> {
+async function atomicWrite(
+  absolutePath: string,
+  content: string
+): Promise<void> {
   // Write to a sibling tmp file (same directory) and rename — this is atomic
   // on the same filesystem volume, which is the common case for source files.
   const dir = path.dirname(absolutePath);
@@ -1314,7 +1405,7 @@ async function atomicWrite(absolutePath: string, content: string): Promise<void>
     const message = err instanceof Error ? err.message : String(err);
     throw new WriteError(
       `failed to write file (tmpdir=${hint}): ${message}`,
-      500,
+      500
     );
   }
 }

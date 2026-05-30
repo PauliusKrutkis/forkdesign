@@ -1,14 +1,18 @@
 import type { FixProgress } from "../types.ts";
 
-export type CursorCliStreamEvent = {
-  type?: string;
+export interface CursorCliStreamEvent {
   subtype?: string;
   tool_call?: Record<string, unknown>;
-};
+  type?: string;
+}
 
-export function projectCursorCliProgress(event: CursorCliStreamEvent): FixProgress | null {
+export function projectCursorCliProgress(
+  event: CursorCliStreamEvent
+): FixProgress | null {
   const t = event.type;
-  if (!t) return null;
+  if (!t) {
+    return null;
+  }
 
   if (t === "tool_call" && event.subtype === "started") {
     const toolCall = event.tool_call;
@@ -16,7 +20,9 @@ export function projectCursorCliProgress(event: CursorCliStreamEvent): FixProgre
       return { kind: t, detail: "tool" };
     }
 
-    const read = toolCall.readToolCall as { args?: { path?: string } } | undefined;
+    const read = toolCall.readToolCall as
+      | { args?: { path?: string } }
+      | undefined;
     if (read) {
       return {
         kind: "assistant",
@@ -25,7 +31,9 @@ export function projectCursorCliProgress(event: CursorCliStreamEvent): FixProgre
       };
     }
 
-    const write = toolCall.writeToolCall as { args?: { path?: string } } | undefined;
+    const write = toolCall.writeToolCall as
+      | { args?: { path?: string } }
+      | undefined;
     if (write) {
       return {
         kind: "assistant",
@@ -34,7 +42,9 @@ export function projectCursorCliProgress(event: CursorCliStreamEvent): FixProgre
       };
     }
 
-    const edit = toolCall.editToolCall as { args?: { path?: string } } | undefined;
+    const edit = toolCall.editToolCall as
+      | { args?: { path?: string } }
+      | undefined;
     if (edit) {
       return {
         kind: "assistant",
@@ -43,7 +53,9 @@ export function projectCursorCliProgress(event: CursorCliStreamEvent): FixProgre
       };
     }
 
-    const glob = toolCall.globToolCall as { args?: { pattern?: string } } | undefined;
+    const glob = toolCall.globToolCall as
+      | { args?: { pattern?: string } }
+      | undefined;
     if (glob) {
       return {
         kind: "assistant",
@@ -52,7 +64,9 @@ export function projectCursorCliProgress(event: CursorCliStreamEvent): FixProgre
       };
     }
 
-    const grep = toolCall.grepToolCall as { args?: { pattern?: string } } | undefined;
+    const grep = toolCall.grepToolCall as
+      | { args?: { pattern?: string } }
+      | undefined;
     if (grep) {
       return {
         kind: "assistant",
@@ -75,11 +89,16 @@ export function countCursorCliToolStart(event: CursorCliStreamEvent): number {
   return event.type === "tool_call" && event.subtype === "started" ? 1 : 0;
 }
 
-export function countCursorCliAssistantTurn(event: CursorCliStreamEvent): number {
+export function countCursorCliAssistantTurn(
+  event: CursorCliStreamEvent
+): number {
   return event.type === "assistant" ? 1 : 0;
 }
 
-export function mapCursorCliError(stderr: string, exitCode: number | null): string {
+export function mapCursorCliError(
+  stderr: string,
+  exitCode: number | null
+): string {
   const combined = stderr.trim();
   const lower = combined.toLowerCase();
 

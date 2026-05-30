@@ -32,7 +32,6 @@ import type { CommentProps, CommentReply } from "./components/types";
 // `{ default: fn }` depending on bundler interop. Normalize both shapes.
 type TraverseFn = typeof _traverse;
 const traverse: TraverseFn =
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   (_traverse as unknown as { default?: TraverseFn }).default ?? _traverse;
 
 /**
@@ -43,17 +42,17 @@ export type ReadComment = CommentProps & {
   view: string | null;
 };
 
-export type ReadResult = {
+export interface ReadResult {
   comments: ReadComment[];
   warnings: string[];
-};
+}
 
 /**
  * Read a .tsx file from disk and return the list of comment-block markers it
  * contains plus any warnings encountered.
  */
 export async function readCommentsFromFile(
-  absolutePath: string,
+  absolutePath: string
 ): Promise<ReadResult> {
   const source = await readFile(absolutePath, "utf8");
   return readCommentsFromSource(source);
@@ -77,7 +76,9 @@ export function readCommentsFromSource(source: string): ReadResult {
   traverse(ast, {
     JSXExpressionContainer(path: NodePath<JSXExpressionContainer>) {
       const expr = path.node.expression;
-      if (expr.type !== "JSXEmptyExpression") return;
+      if (expr.type !== "JSXEmptyExpression") {
+        return;
+      }
 
       // Block comments attached to `{/* … */}` may land on either the
       // JSXEmptyExpression (innerComments) or its container's leading slot
@@ -87,14 +88,18 @@ export function readCommentsFromSource(source: string): ReadResult {
       collectCommentBlocks(expr.leadingComments, blocks, seenComments);
       collectCommentBlocks(expr.trailingComments, blocks, seenComments);
 
-      if (blocks.length === 0) return;
+      if (blocks.length === 0) {
+        return;
+      }
 
       const view = resolveViewFromAncestors(path);
 
       for (const block of blocks) {
         const raw = block.value;
         const trimmed = raw.trim();
-        if (!trimmed.startsWith("@comment")) continue;
+        if (!trimmed.startsWith("@comment")) {
+          continue;
+        }
         const parsed = parseDirective(trimmed, warnings, block);
         if (parsed) {
           comments.push({ ...parsed, view });
@@ -107,14 +112,20 @@ export function readCommentsFromSource(source: string): ReadResult {
 }
 
 function collectCommentBlocks(
-  list: ReadonlyArray<BabelComment> | null | undefined,
+  list: readonly BabelComment[] | null | undefined,
   out: BabelComment[],
-  seen: Set<BabelComment>,
+  seen: Set<BabelComment>
 ): void {
-  if (!list) return;
+  if (!list) {
+    return;
+  }
   for (const c of list) {
-    if (c.type !== "CommentBlock") continue;
-    if (seen.has(c)) continue;
+    if (c.type !== "CommentBlock") {
+      continue;
+    }
+    if (seen.has(c)) {
+      continue;
+    }
     seen.add(c);
     out.push(c);
   }
@@ -132,12 +143,14 @@ function collectCommentBlocks(
 function parseDirective(
   trimmed: string,
   warnings: string[],
-  block: BabelComment,
+  block: BabelComment
 ): CommentProps | null {
   // Strip the leading marker.
   const body = trimmed.slice("@comment".length).trim();
   const attrs = parseAttributes(body, warnings, block);
-  if (!attrs) return null;
+  if (!attrs) {
+    return null;
+  }
 
   const id = stringOf(attrs.values.id);
   const text = stringOf(attrs.values.text);
@@ -156,7 +169,7 @@ function parseDirective(
     anchor === null
   ) {
     warnings.push(
-      `${tag} skipped: missing required attribute(s) ${describeMissing({ id, text, author, date, anchor })} (line ${line})`,
+      `${tag} skipped: missing required attribute(s) ${describeMissing({ id, text, author, date, anchor })} (line ${line})`
     );
     return null;
   }
@@ -178,7 +191,7 @@ function parseDirective(
     snapshot,
     resolved,
     replies,
-    ...(active !== null ? { active } : {}),
+    ...(active === null ? {} : { active }),
     ...(route ? { route } : {}),
   };
 }
@@ -189,9 +202,9 @@ type AttrValue =
   | { kind: "array"; value: unknown }
   | { kind: "number"; value: number };
 
-type ParsedAttrs = {
+interface ParsedAttrs {
   values: Partial<Record<string, AttrValue>>;
-};
+}
 
 /**
  * Tiny attribute parser. Recognized forms:
@@ -210,7 +223,7 @@ type ParsedAttrs = {
 function parseAttributes(
   source: string,
   warnings: string[],
-  block: BabelComment,
+  block: BabelComment
 ): ParsedAttrs | null {
   const values: Record<string, AttrValue> = {};
   let i = 0;
@@ -219,15 +232,21 @@ function parseAttributes(
 
   while (i < len) {
     // Skip whitespace
-    while (i < len && /\s/.test(source[i]!)) i++;
-    if (i >= len) break;
+    while (i < len && /\s/.test(source.charAt(i))) {
+      i++;
+    }
+    if (i >= len) {
+      break;
+    }
 
     // Key
     const keyStart = i;
-    while (i < len && /[A-Za-z0-9_-]/.test(source[i]!)) i++;
+    while (i < len && /[A-Za-z0-9_-]/.test(source.charAt(i))) {
+      i++;
+    }
     if (i === keyStart) {
       warnings.push(
-        `@comment skipped: unexpected character '${source[i]}' (line ${line})`,
+        `@comment skipped: unexpected character '${source[i]}' (line ${line})`
       );
       return null;
     }
@@ -237,14 +256,18 @@ function parseAttributes(
     if (i < len && source[i] === "=") {
       i++;
       if (i >= len) {
-        warnings.push(`@comment skipped: trailing '=' for key '${key}' (line ${line})`);
+        warnings.push(
+          `@comment skipped: trailing '=' for key '${key}' (line ${line})`
+        );
         return null;
       }
       const ch = source[i];
       if (ch === '"') {
         const r = readDoubleQuotedString(source, i);
         if (!r) {
-          warnings.push(`@comment skipped: unterminated string for '${key}' (line ${line})`);
+          warnings.push(
+            `@comment skipped: unterminated string for '${key}' (line ${line})`
+          );
           return null;
         }
         values[key] = { kind: "string", value: r.value };
@@ -252,7 +275,9 @@ function parseAttributes(
       } else if (ch === "[") {
         const r = readBalanced(source, i, "[", "]");
         if (!r) {
-          warnings.push(`@comment skipped: unbalanced [] for '${key}' (line ${line})`);
+          warnings.push(
+            `@comment skipped: unbalanced [] for '${key}' (line ${line})`
+          );
           return null;
         }
         let parsed: unknown;
@@ -260,7 +285,7 @@ function parseAttributes(
           parsed = JSON.parse(r.slice);
         } catch (err) {
           warnings.push(
-            `@comment skipped: invalid JSON array for '${key}': ${err instanceof Error ? err.message : String(err)} (line ${line})`,
+            `@comment skipped: invalid JSON array for '${key}': ${err instanceof Error ? err.message : String(err)} (line ${line})`
           );
           return null;
         }
@@ -278,11 +303,13 @@ function parseAttributes(
         // Anything that isn't a clean integer is soft-skipped: we emit a
         // warning and drop the attribute, but keep the rest of the comment.
         const tokStart = i;
-        while (i < len && !/\s/.test(source[i]!)) i++;
+        while (i < len && !/\s/.test(source.charAt(i))) {
+          i++;
+        }
         const token = source.slice(tokStart, i);
         if (token.length === 0) {
           warnings.push(
-            `@comment skipped: unsupported value for '${key}' (line ${line})`,
+            `@comment skipped: unsupported value for '${key}' (line ${line})`
           );
           return null;
         }
@@ -290,18 +317,15 @@ function parseAttributes(
           const n = Number.parseInt(token, 10);
           if (Number.isNaN(n)) {
             warnings.push(
-              `@comment '${key}': failed to parse integer '${token}' — skipping attribute (line ${line})`,
+              `@comment '${key}': failed to parse integer '${token}' — skipping attribute (line ${line})`
             );
             continue;
           }
           values[key] = { kind: "number", value: n };
         } else {
           warnings.push(
-            `@comment '${key}': expected an integer, got '${token}' — skipping attribute (line ${line})`,
+            `@comment '${key}': expected an integer, got '${token}' — skipping attribute (line ${line})`
           );
-          // Skip the attribute entirely but keep parsing the rest of the
-          // directive — defensive per the active-attr spec.
-          continue;
         }
       }
     } else {
@@ -319,9 +343,11 @@ function parseAttributes(
  */
 function readDoubleQuotedString(
   source: string,
-  i: number,
+  i: number
 ): { value: string; next: number } | null {
-  if (source[i] !== '"') return null;
+  if (source[i] !== '"') {
+    return null;
+  }
   let j = i + 1;
   let out = "";
   const len = source.length;
@@ -332,7 +358,9 @@ function readDoubleQuotedString(
     }
     if (c === "\\") {
       const n = source[j + 1];
-      if (n === undefined) return null;
+      if (n === undefined) {
+        return null;
+      }
       switch (n) {
         case '"':
           out += '"';
@@ -360,8 +388,10 @@ function readDoubleQuotedString(
           break;
         case "u": {
           const hex = source.slice(j + 2, j + 6);
-          if (!/^[0-9a-fA-F]{4}$/.test(hex)) return null;
-          out += String.fromCharCode(parseInt(hex, 16));
+          if (!/^[0-9a-fA-F]{4}$/.test(hex)) {
+            return null;
+          }
+          out += String.fromCharCode(Number.parseInt(hex, 16));
           j += 4;
           break;
         }
@@ -386,9 +416,11 @@ function readBalanced(
   source: string,
   i: number,
   open: string,
-  close: string,
+  close: string
 ): { slice: string; next: number } | null {
-  if (source[i] !== open) return null;
+  if (source[i] !== open) {
+    return null;
+  }
   let depth = 0;
   let j = i;
   const len = source.length;
@@ -396,12 +428,15 @@ function readBalanced(
     const c = source[j];
     if (c === '"') {
       const r = readDoubleQuotedString(source, j);
-      if (!r) return null;
+      if (!r) {
+        return null;
+      }
       j = r.next;
       continue;
     }
-    if (c === open) depth++;
-    else if (c === close) {
+    if (c === open) {
+      depth++;
+    } else if (c === close) {
       depth--;
       if (depth === 0) {
         return { slice: source.slice(i, j + 1), next: j + 1 };
@@ -413,21 +448,33 @@ function readBalanced(
 }
 
 function stringOf(v: AttrValue | undefined): string | null {
-  if (!v || v.kind !== "string") return null;
+  if (!v || v.kind !== "string") {
+    return null;
+  }
   return v.value;
 }
 
 function numberOf(v: AttrValue | undefined): number | null {
-  if (!v || v.kind !== "number") return null;
+  if (!v || v.kind !== "number") {
+    return null;
+  }
   return v.value;
 }
 
 function boolOf(v: AttrValue | undefined): boolean | null {
-  if (!v) return null;
-  if (v.kind === "boolean") return v.value;
+  if (!v) {
+    return null;
+  }
+  if (v.kind === "boolean") {
+    return v.value;
+  }
   if (v.kind === "string") {
-    if (v.value === "true") return true;
-    if (v.value === "false") return false;
+    if (v.value === "true") {
+      return true;
+    }
+    if (v.value === "false") {
+      return false;
+    }
   }
   return null;
 }
@@ -435,9 +482,11 @@ function boolOf(v: AttrValue | undefined): boolean | null {
 function arrayOf(
   v: AttrValue | undefined,
   warnings: string[],
-  tag: string,
+  tag: string
 ): CommentReply[] | null {
-  if (!v) return null;
+  if (!v) {
+    return null;
+  }
   if (v.kind !== "array") {
     warnings.push(`${tag} replies: not an array, ignored`);
     return null;
@@ -483,15 +532,15 @@ function describeMissing(values: Record<string, string | null>): string {
  * the first static `data-view="<slug>"` attribute encountered.
  */
 function resolveViewFromAncestors(
-  path: NodePath<JSXExpressionContainer>,
+  path: NodePath<JSXExpressionContainer>
 ): string | null {
   let current: NodePath<Node> | null = path.parentPath;
   while (current) {
     if (current.isJSXElement()) {
-      const slug = getDataViewAttr(
-        (current.node as JSXElement).openingElement,
-      );
-      if (slug !== null) return slug;
+      const slug = getDataViewAttr((current.node as JSXElement).openingElement);
+      if (slug !== null) {
+        return slug;
+      }
     }
     current = current.parentPath;
   }
@@ -500,12 +549,22 @@ function resolveViewFromAncestors(
 
 function getDataViewAttr(opening: JSXOpeningElement): string | null {
   for (const attr of opening.attributes) {
-    if (attr.type !== "JSXAttribute") continue;
-    if (attr.name.type !== "JSXIdentifier") continue;
-    if (attr.name.name !== "data-view") continue;
+    if (attr.type !== "JSXAttribute") {
+      continue;
+    }
+    if (attr.name.type !== "JSXIdentifier") {
+      continue;
+    }
+    if (attr.name.name !== "data-view") {
+      continue;
+    }
     const v = attr.value;
-    if (!v) return null;
-    if (v.type === "StringLiteral") return v.value;
+    if (!v) {
+      return null;
+    }
+    if (v.type === "StringLiteral") {
+      return v.value;
+    }
     if (
       v.type === "JSXExpressionContainer" &&
       v.expression.type === "StringLiteral"

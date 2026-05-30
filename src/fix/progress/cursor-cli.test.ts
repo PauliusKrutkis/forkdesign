@@ -44,7 +44,7 @@ describe("projectCursorCliProgress", () => {
 describe("countCursorCliToolStart", () => {
   it("counts tool_call started events", () => {
     expect(
-      countCursorCliToolStart({ type: "tool_call", subtype: "started" }),
+      countCursorCliToolStart({ type: "tool_call", subtype: "started" })
     ).toBe(1);
     expect(countCursorCliToolStart({ type: "assistant" })).toBe(0);
   });
@@ -53,14 +53,12 @@ describe("countCursorCliToolStart", () => {
 describe("mapCursorCliError", () => {
   it("maps authentication errors", () => {
     expect(mapCursorCliError("Error: Not authenticated", 1)).toContain(
-      "agent login",
+      "agent login"
     );
   });
 
   it("maps missing binary errors", () => {
-    expect(mapCursorCliError("spawn agent ENOENT", 127)).toContain(
-      "not found",
-    );
+    expect(mapCursorCliError("spawn agent ENOENT", 127)).toContain("not found");
   });
 
   it("falls back to exit code", () => {

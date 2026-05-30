@@ -1,9 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import { createPortal } from "react-dom";
 import { toPng } from "html-to-image";
-import { effectiveBackgroundColor } from "./screenshot";
-import type { CommentReply, RegisteredComment } from "./types";
-import { CommentVersionSwitcher } from "./CommentVersionSwitcher";
 import {
   CheckCircle2,
   GripVertical,
@@ -13,42 +8,43 @@ import {
   Trash2,
   X,
 } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
+import { cn } from "../lib/utils";
+import { CommentVersionSwitcher } from "./CommentVersionSwitcher";
+import { HotkeyTip } from "./HotkeyTip";
+import { dotRect, type FloaterSide, placeFloater } from "./placement";
+import { ShortcutHint, withCtrl } from "./ShortcutHint";
+import { effectiveBackgroundColor } from "./screenshot";
+import type { OverlayModel } from "./settings";
+import type { CommentReply, RegisteredComment } from "./types";
 import { Button } from "./ui/button";
 import { Textarea } from "./ui/textarea";
-import { ShortcutHint, withCtrl } from "./ShortcutHint";
-import { HotkeyTip } from "./HotkeyTip";
-import { cn } from "../lib/utils";
-import { dotRect, placeFloater, type FloaterSide } from "./placement";
-import type { OverlayModel } from "./settings";
 
-type CommentBubbleProps = {
+interface CommentBubbleProps {
   comments: RegisteredComment[];
-  rect: DOMRect;
   fixModel?: OverlayModel;
-  skipDeleteConfirmation?: boolean;
   onClose: () => void;
-  onResolve?: (id: string) => void;
   onDelete?: (id: string) => Promise<void>;
-  onEdit?: (id: string, text: string) => Promise<void>;
-  onSubmitReply?: (id: string, text: string) => Promise<void>;
-  onEditReply?: (
-    id: string,
-    replyIndex: number,
-    text: string,
-  ) => Promise<void>;
   onDeleteReply?: (id: string, replyIndex: number) => Promise<void>;
-};
+  onEdit?: (id: string, text: string) => Promise<void>;
+  onEditReply?: (id: string, replyIndex: number, text: string) => Promise<void>;
+  onResolve?: (id: string) => void;
+  onSubmitReply?: (id: string, text: string) => Promise<void>;
+  rect: DOMRect;
+  skipDeleteConfirmation?: boolean;
+}
 
 /** NDJSON event shapes streamed from `POST /api/iterations/new`. */
-type IterateProgressEvent = {
-  type: "progress";
+interface IterateProgressEvent {
+  /** Short detail (file path, command, or status string). */
+  detail?: string;
   /** Where in the pipeline the event was emitted from. */
   stage?: "agent" | "snapshot";
   /** Tool name when the agent invoked one (Read/Edit/Glob/Grep). */
   tool?: string;
-  /** Short detail (file path, command, or status string). */
-  detail?: string;
-};
+  type: "progress";
+}
 type IterateDoneEvent =
   | {
       type: "done";
@@ -139,7 +135,9 @@ export function CommentBubble({
   // 1Hz tick while iterating so the elapsed counter updates without
   // requiring an external state push for every second.
   useEffect(() => {
-    if (!iterating) return;
+    if (!iterating) {
+      return;
+    }
     const t = window.setInterval(() => setIterateNow(Date.now()), 1000);
     return () => window.clearInterval(t);
   }, [iterating]);
@@ -157,7 +155,9 @@ export function CommentBubble({
   }, [replyOpen]);
 
   const startEditing = () => {
-    if (!lead || !onEdit) return;
+    if (!(lead && onEdit)) {
+      return;
+    }
     setMode("detailed");
     setEditing(true);
     setEditDraft(lead.text);
@@ -172,7 +172,9 @@ export function CommentBubble({
   };
 
   const saveEdit = async () => {
-    if (!lead || !onEdit || editBusy) return;
+    if (!(lead && onEdit) || editBusy) {
+      return;
+    }
     const trimmed = editDraft.trim();
     if (!trimmed) {
       setEditError("Comment cannot be empty");
@@ -206,7 +208,9 @@ export function CommentBubble({
   };
 
   const saveReply = async () => {
-    if (!lead || !onSubmitReply || replyBusy) return;
+    if (!(lead && onSubmitReply) || replyBusy) {
+      return;
+    }
     const trimmed = replyDraft.trim();
     if (!trimmed) {
       setReplyError("Reply cannot be empty");
@@ -226,7 +230,9 @@ export function CommentBubble({
   };
 
   const confirmDelete = async () => {
-    if (!lead || !onDelete || deleteBusy) return;
+    if (!(lead && onDelete) || deleteBusy) {
+      return;
+    }
     setDeleteBusy(true);
     setDeleteError(null);
     try {
@@ -239,7 +245,9 @@ export function CommentBubble({
   };
 
   const requestDelete = () => {
-    if (!lead || !onDelete || deleteBusy) return;
+    if (!(lead && onDelete) || deleteBusy) {
+      return;
+    }
     setDeleteError(null);
     if (skipDeleteConfirmation) {
       void confirmDelete();
@@ -261,7 +269,9 @@ export function CommentBubble({
   // below the action row. HMR fires once the source is rewritten and the
   // switcher refetches to surface the new version.
   const handleIterate = async () => {
-    if (!lead || iterating) return;
+    if (!lead || iterating) {
+      return;
+    }
     // Auto-expand to detailed before kicking off the run so the iterate
     // status row + version switcher have room to surface progress.
     setMode("detailed");
@@ -276,7 +286,7 @@ export function CommentBubble({
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ id: lead.id, model: fixModel }),
       });
-      if (!res.ok || !res.body) {
+      if (!(res.ok && res.body)) {
         // Validation errors (400/404) still come back as plain JSON.
         const body = (await res.json().catch(() => ({}))) as { error?: string };
         setIterateError(body.error ?? `request failed (${res.status})`);
@@ -294,13 +304,17 @@ export function CommentBubble({
       // as an error so the UI never gets stuck spinning.
       streamLoop: while (true) {
         const { done: streamDone, value } = await reader.read();
-        if (streamDone) break;
+        if (streamDone) {
+          break;
+        }
         buffer += decoder.decode(value, { stream: true });
         let nl: number;
         while ((nl = buffer.indexOf("\n")) >= 0) {
           const line = buffer.slice(0, nl).trim();
           buffer = buffer.slice(nl + 1);
-          if (!line) continue;
+          if (!line) {
+            continue;
+          }
           let event: IterateStreamEvent;
           try {
             event = JSON.parse(line) as IterateStreamEvent;
@@ -327,9 +341,7 @@ export function CommentBubble({
         return;
       }
       if (done.changed === false) {
-        setIterateError(
-          "AI made no changes — try a more specific instruction",
-        );
+        setIterateError("AI made no changes — try a more specific instruction");
         return;
       }
       // Success: clear the status line. The version switcher refetches off
@@ -371,7 +383,9 @@ export function CommentBubble({
 
   useEffect(() => {
     const el = containerRef.current;
-    if (!el) return;
+    if (!el) {
+      return;
+    }
     const obs = new ResizeObserver((entries) => {
       for (const entry of entries) {
         setBubbleHeight(entry.contentRect.height);
@@ -387,7 +401,9 @@ export function CommentBubble({
   // with AI", Cmd/Ctrl+R fires "Resolve". Skipped when the user is in a
   // text input (e.g., a future inline reply textarea).
   useEffect(() => {
-    if (!lead) return;
+    if (!lead) {
+      return;
+    }
     const onKey = (e: KeyboardEvent) => {
       const active = document.activeElement;
       const inInput =
@@ -410,9 +426,11 @@ export function CommentBubble({
         e.preventDefault();
         return;
       }
-      if (inInput) return;
+      if (inInput) {
+        return;
+      }
       const mod = e.metaKey || e.ctrlKey;
-      const plain = !e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey;
+      const plain = !(e.metaKey || e.ctrlKey || e.altKey || e.shiftKey);
       const key = e.key.toLowerCase();
       if (deleteConfirming) {
         if (plain && key === "enter") {
@@ -428,7 +446,9 @@ export function CommentBubble({
       }
       if (mod && key === "i") {
         e.preventDefault();
-        if (!iterating) void handleIterate();
+        if (!iterating) {
+          void handleIterate();
+        }
       } else if (mod && key === "r") {
         e.preventDefault();
         onResolve?.(lead.id);
@@ -453,7 +473,9 @@ export function CommentBubble({
         // Tab toggles compact/detailed when no modifiers are pressed.
         // Without this guard a stray Tab while the bubble is focused would
         // both shift the page focus AND toggle the mode.
-        if (e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return;
+        if (e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) {
+          return;
+        }
         e.preventDefault();
         setMode((prev) => (prev === "compact" ? "detailed" : "compact"));
       }
@@ -470,7 +492,6 @@ export function CommentBubble({
     onEdit,
     onSubmitReply,
     deleteConfirming,
-    skipDeleteConfirmation,
     handleIterate,
     startEditing,
     openReplyComposer,
@@ -500,28 +521,30 @@ export function CommentBubble({
         gap: 10,
         arrowSafePadding: 18,
       }),
-    [rect, bubbleHeight, bubbleWidth, maxBubbleHeight, viewport],
+    [rect, bubbleHeight, bubbleWidth, maxBubbleHeight, viewport]
   );
 
-  if (!lead) return null;
+  if (!lead) {
+    return null;
+  }
 
   return (
     <div
+      aria-label="Comment"
+      className="pointer-events-auto fixed z-[9200] flex flex-col overflow-hidden rounded-lg border bg-background shadow-lg transition-[width] duration-200"
+      data-comment-overlay="true"
+      onClick={(e) => e.stopPropagation()}
       ref={containerRef}
       role="dialog"
-      aria-label="Comment"
-      data-comment-overlay="true"
-      className="pointer-events-auto fixed z-[9200] flex flex-col overflow-hidden rounded-lg border bg-background shadow-lg transition-[width] duration-200"
       style={{
         left: userPosition?.left ?? placement.left,
         top: userPosition?.top ?? placement.top,
         width: bubbleWidth,
         maxHeight: maxBubbleHeight,
       }}
-      onClick={(e) => e.stopPropagation()}
     >
       {userPosition === null ? (
-        <Pointer side={placement.side} offset={placement.arrowOffset} />
+        <Pointer offset={placement.arrowOffset} side={placement.side} />
       ) : null}
 
       {/* Header bar — dedicated drag handle. Three regions: grip glyph (left),
@@ -530,9 +553,10 @@ export function CommentBubble({
           guard in the pointerdown handler. */}
       <div
         className="relative flex shrink-0 cursor-grab items-center border-b active:cursor-grabbing"
-        style={{ height: BUBBLE_HEADER_HEIGHT }}
         onPointerDown={(e) => {
-          if ((e.target as Element).closest("button")) return;
+          if ((e.target as Element).closest("button")) {
+            return;
+          }
           e.preventDefault();
           const startX = e.clientX;
           const startY = e.clientY;
@@ -551,6 +575,7 @@ export function CommentBubble({
           document.addEventListener("pointermove", onMove);
           document.addEventListener("pointerup", onUp);
         }}
+        style={{ height: BUBBLE_HEADER_HEIGHT }}
       >
         <GripVertical
           aria-hidden
@@ -562,57 +587,57 @@ export function CommentBubble({
           <CommentVersionSwitcher commentId={lead.id} />
         </div>
 
-        <HotkeyTip label="Close" keys="Esc" side="bottom">
+        <HotkeyTip keys="Esc" label="Close" side="bottom">
           <Button
+            aria-label="Close"
+            className="mr-1 h-7 w-7 shrink-0"
+            onClick={onClose}
+            size="icon"
             type="button"
             variant="ghost"
-            size="icon"
-            className="mr-1 h-7 w-7 shrink-0"
-            aria-label="Close"
-            onClick={onClose}
           >
             <X className="h-4 w-4" />
           </Button>
         </HotkeyTip>
       </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto px-3.5 pb-3 pt-3">
+      <div className="min-h-0 flex-1 overflow-y-auto px-3.5 pt-3 pb-3">
         {/* Comment + screenshot as a media object: in detailed mode the text
             wraps beside the thumbnail; compact hides the thumbnail entirely. */}
         <div className="flex items-start gap-3">
           {editing ? (
             <div className="min-w-0 flex-1 space-y-2">
               <Textarea
-                ref={editTextareaRef}
-                value={editDraft}
-                onChange={(e) => setEditDraft(e.target.value)}
-                disabled={editBusy}
-                className="min-h-[72px] resize-none text-sm leading-relaxed"
                 aria-label="Edit comment"
+                className="min-h-[72px] resize-none text-sm leading-relaxed"
+                disabled={editBusy}
+                onChange={(e) => setEditDraft(e.target.value)}
                 onKeyDown={(e) => {
                   if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
                     e.preventDefault();
                     void saveEdit();
                   }
                 }}
+                ref={editTextareaRef}
+                value={editDraft}
               />
               <div className="flex items-center justify-end gap-1.5">
                 <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
                   className="h-7 px-2 text-xs"
                   disabled={editBusy}
                   onClick={cancelEditing}
+                  size="sm"
+                  type="button"
+                  variant="ghost"
                 >
                   Cancel
                 </Button>
                 <Button
-                  type="button"
-                  size="sm"
                   className="h-7 px-2 text-xs"
                   disabled={editBusy}
                   onClick={() => void saveEdit()}
+                  size="sm"
+                  type="button"
                 >
                   {editBusy ? (
                     "Saving…"
@@ -625,14 +650,14 @@ export function CommentBubble({
                 </Button>
               </div>
               {editError ? (
-                <p className="m-0 text-xs text-destructive">{editError}</p>
+                <p className="m-0 text-destructive text-xs">{editError}</p>
               ) : null}
             </div>
           ) : (
             <p
               className={cn(
-                "m-0 min-w-0 flex-1 whitespace-pre-wrap text-sm leading-relaxed text-foreground",
-                mode === "compact" && "line-clamp-3",
+                "m-0 min-w-0 flex-1 whitespace-pre-wrap text-foreground text-sm leading-relaxed",
+                mode === "compact" && "line-clamp-3"
               )}
             >
               {lead.text}
@@ -640,8 +665,8 @@ export function CommentBubble({
           )}
           {mode === "detailed" && lead.screenshot && !editing ? (
             <AdaptiveThumb
-              src={lead.screenshot}
               onClick={() => setLightboxOpen(true)}
+              src={lead.screenshot}
             />
           ) : null}
         </div>
@@ -651,13 +676,13 @@ export function CommentBubble({
           <Attribution author={lead.author} date={lead.date} />
           <div className="flex shrink-0 items-center gap-0.5">
             {onEdit && !editing ? (
-              <HotkeyTip label="Edit" keys="E">
+              <HotkeyTip keys="E" label="Edit">
                 <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
                   className="h-auto px-1.5 py-1 text-xs"
                   onClick={startEditing}
+                  size="sm"
+                  type="button"
+                  variant="ghost"
                 >
                   Edit
                 </Button>
@@ -676,13 +701,13 @@ export function CommentBubble({
           <ul className="m-0 mt-3 list-none space-y-2.5 border-t p-0 pt-3">
             {comments.slice(1).map((extra) => (
               <li key={extra.id}>
-                <p className="m-0 text-sm leading-snug text-muted-foreground">
+                <p className="m-0 text-muted-foreground text-sm leading-snug">
                   {extra.text}
                 </p>
                 <Attribution
                   author={extra.author}
-                  date={extra.date}
                   className="mt-1"
+                  date={extra.date}
                 />
               </li>
             ))}
@@ -693,18 +718,18 @@ export function CommentBubble({
           <ul className="m-0 mt-3 list-none space-y-2.5 border-t p-0 pt-3">
             {lead.replies.map((reply, i) => (
               <ReplyItem
-                key={`${reply.author}-${reply.date}-${i}`}
-                reply={reply}
-                replyIndex={i}
                 commentId={lead.id}
-                skipDeleteConfirmation={skipDeleteConfirmation}
-                onEdit={onEditReply}
+                key={`${reply.author}-${reply.date}-${i}`}
                 onDelete={onDeleteReply}
+                onEdit={onEditReply}
                 onInteraction={() => {
                   setEditing(false);
                   setReplyOpen(false);
                   setDeleteConfirming(false);
                 }}
+                reply={reply}
+                replyIndex={i}
+                skipDeleteConfirmation={skipDeleteConfirmation}
               />
             ))}
           </ul>
@@ -713,37 +738,37 @@ export function CommentBubble({
         {mode === "detailed" && replyOpen ? (
           <div className="mt-3 space-y-2 border-t pt-3">
             <Textarea
-              ref={replyTextareaRef}
-              value={replyDraft}
-              onChange={(e) => setReplyDraft(e.target.value)}
-              disabled={replyBusy}
-              placeholder="Write a reply…"
-              className="min-h-[64px] resize-none text-sm leading-relaxed"
               aria-label="Reply"
+              className="min-h-[64px] resize-none text-sm leading-relaxed"
+              disabled={replyBusy}
+              onChange={(e) => setReplyDraft(e.target.value)}
               onKeyDown={(e) => {
                 if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
                   e.preventDefault();
                   void saveReply();
                 }
               }}
+              placeholder="Write a reply…"
+              ref={replyTextareaRef}
+              value={replyDraft}
             />
             <div className="flex items-center justify-end gap-1.5">
               <Button
-                type="button"
-                variant="ghost"
-                size="sm"
                 className="h-7 px-2 text-xs"
                 disabled={replyBusy}
                 onClick={cancelReply}
+                size="sm"
+                type="button"
+                variant="ghost"
               >
                 Cancel
               </Button>
               <Button
-                type="button"
-                size="sm"
                 className="h-7 px-2 text-xs"
                 disabled={replyBusy}
                 onClick={() => void saveReply()}
+                size="sm"
+                type="button"
               >
                 {replyBusy ? (
                   "Saving…"
@@ -756,7 +781,7 @@ export function CommentBubble({
               </Button>
             </div>
             {replyError ? (
-              <p className="m-0 text-xs text-destructive">{replyError}</p>
+              <p className="m-0 text-destructive text-xs">{replyError}</p>
             ) : null}
           </div>
         ) : null}
@@ -764,15 +789,15 @@ export function CommentBubble({
 
       {mode === "detailed" && iterating ? (
         <div
-          role="status"
           aria-live="polite"
-          className="flex shrink-0 items-center gap-2 border-t bg-muted/50 px-4 py-1.5 text-xs text-muted-foreground"
+          className="flex shrink-0 items-center gap-2 border-t bg-muted/50 px-4 py-1.5 text-muted-foreground text-xs"
+          role="status"
         >
-          {iterateStartedAt !== null ? (
+          {iterateStartedAt === null ? null : (
             <span className="tabular-nums">
               {formatElapsed(iterateNow - iterateStartedAt)}
             </span>
-          ) : null}
+          )}
           <span aria-hidden>·</span>
           <span className="min-w-0 flex-1 truncate">
             {iterateStatus ?? "Working..."}
@@ -782,8 +807,8 @@ export function CommentBubble({
 
       {mode === "detailed" && iterateError ? (
         <div
+          className="shrink-0 border-t bg-amber-500/10 px-4 py-1.5 text-amber-700 text-xs"
           role="alert"
-          className="shrink-0 border-t bg-amber-500/10 px-4 py-1.5 text-xs text-amber-700"
         >
           {iterateError}
         </div>
@@ -791,69 +816,69 @@ export function CommentBubble({
 
       {mode === "detailed" ? (
         <div className="relative flex shrink-0 divide-x divide-border border-t">
-          <ActionIconButton label="Reply" keys="R" onClick={openReplyComposer}>
-            <MessageSquareReply className="h-4 w-4" aria-hidden />
+          <ActionIconButton keys="R" label="Reply" onClick={openReplyComposer}>
+            <MessageSquareReply aria-hidden className="h-4 w-4" />
           </ActionIconButton>
           <ActionIconButton
-            label={lead.resolved ? "Resolved" : "Resolve"}
-            keys={lead.resolved ? undefined : withCtrl("R")}
             active={lead.resolved}
+            keys={lead.resolved ? undefined : withCtrl("R")}
+            label={lead.resolved ? "Resolved" : "Resolve"}
             onClick={() => onResolve?.(lead.id)}
           >
-            <CheckCircle2 className="h-4 w-4" aria-hidden />
+            <CheckCircle2 aria-hidden className="h-4 w-4" />
           </ActionIconButton>
           <ActionIconButton
-            label="Fix"
-            keys={withCtrl("I")}
             disabled={iterating}
+            keys={withCtrl("I")}
+            label="Fix"
             onClick={handleIterate}
           >
             {iterating ? (
-              <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+              <Loader2 aria-hidden className="h-4 w-4 animate-spin" />
             ) : (
-              <Sparkles className="h-4 w-4" aria-hidden />
+              <Sparkles aria-hidden className="h-4 w-4" />
             )}
           </ActionIconButton>
           {onDelete ? (
             <ActionIconButton
-              label="Delete"
-              keys={withCtrl("⌫")}
               destructive
               disabled={deleteBusy}
+              keys={withCtrl("⌫")}
+              label="Delete"
               onClick={requestDelete}
             >
-              <Trash2 className="h-4 w-4" aria-hidden />
+              <Trash2 aria-hidden className="h-4 w-4" />
             </ActionIconButton>
           ) : null}
 
           {deleteConfirming ? (
             <div
-              className="absolute inset-0 z-10 flex items-center justify-end gap-1.5 bg-gradient-to-l from-background from-55% to-transparent pl-8 pr-2"
+              className="absolute inset-0 z-10 flex items-center justify-end gap-1.5 bg-gradient-to-l from-55% from-background to-transparent pr-2 pl-8"
               onClick={(e) => e.stopPropagation()}
             >
-              <span className="mr-0.5 text-xs font-medium text-foreground">
+              <span className="mr-0.5 font-medium text-foreground text-xs">
                 Delete?
               </span>
-              <HotkeyTip label="Cancel" keys="Esc">
+              <HotkeyTip keys="Esc" label="Cancel">
                 <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
                   className="h-7 px-2 text-xs"
                   disabled={deleteBusy}
                   onClick={cancelDeleteConfirm}
+                  size="sm"
+                  type="button"
+                  variant="ghost"
                 >
                   Cancel
                 </Button>
               </HotkeyTip>
-              <HotkeyTip label="Delete" keys="⏎">
+              <HotkeyTip keys="⏎" label="Delete">
                 <Button
-                  type="button"
-                  variant="destructive"
-                  size="sm"
                   className="h-7 px-2 text-xs"
                   disabled={deleteBusy}
                   onClick={() => void confirmDelete()}
+                  size="sm"
+                  type="button"
+                  variant="destructive"
                 >
                   {deleteBusy ? "Deleting…" : "Delete"}
                 </Button>
@@ -865,8 +890,8 @@ export function CommentBubble({
 
       {deleteError ? (
         <div
+          className="shrink-0 border-t bg-destructive/10 px-4 py-1.5 text-destructive text-xs"
           role="alert"
-          className="shrink-0 border-t bg-destructive/10 px-4 py-1.5 text-xs text-destructive"
         >
           {deleteError}
         </div>
@@ -874,8 +899,8 @@ export function CommentBubble({
 
       {mode === "detailed" && lightboxOpen && lead.screenshot ? (
         <Lightbox
-          src={lead.screenshot}
           onClose={() => setLightboxOpen(false)}
+          src={lead.screenshot}
         />
       ) : null}
     </div>
@@ -895,7 +920,7 @@ function Lightbox({ src, onClose }: { src: string; onClose: () => void }) {
   useEffect(() => {
     setPortalRoot(
       document.querySelector<HTMLElement>("[data-redline-overlay-root]") ??
-        document.body,
+        document.body
     );
   }, []);
 
@@ -908,40 +933,44 @@ function Lightbox({ src, onClose }: { src: string; onClose: () => void }) {
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
+      if (e.key === "Escape") {
+        onClose();
+      }
     };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
   }, [onClose]);
 
-  if (typeof document === "undefined" || !portalRoot) return null;
+  if (typeof document === "undefined" || !portalRoot) {
+    return null;
+  }
 
   return createPortal(
     <div
-      data-comment-overlay="true"
-      role="dialog"
       aria-label="Comment screenshot"
       className="redline-lightbox-backdrop"
+      data-comment-overlay="true"
       onClick={onClose}
+      role="dialog"
     >
       <img
-        src={src}
         alt=""
         className="redline-lightbox-image"
         onClick={(e) => e.stopPropagation()}
+        src={src}
       />
       <Button
+        aria-label="Close screenshot"
+        className="absolute top-6 right-6"
+        onClick={onClose}
+        size="icon"
         type="button"
         variant="secondary"
-        size="icon"
-        aria-label="Close screenshot"
-        className="absolute right-6 top-6"
-        onClick={onClose}
       >
         <X className="h-4 w-4" />
       </Button>
     </div>,
-    portalRoot,
+    portalRoot
   );
 }
 
@@ -957,7 +986,7 @@ function Pointer({ side, offset }: { side: FloaterSide; offset: number }) {
     return (
       <span
         aria-hidden
-        className="absolute -top-[7px] block h-3 w-3 rotate-45 border-l border-t border-border bg-background"
+        className="absolute -top-[7px] block h-3 w-3 rotate-45 border-border border-t border-l bg-background"
         style={{ left: offset - 6 }}
       />
     );
@@ -966,7 +995,7 @@ function Pointer({ side, offset }: { side: FloaterSide; offset: number }) {
     return (
       <span
         aria-hidden
-        className="absolute -bottom-[7px] block h-3 w-3 rotate-45 border-b border-r border-border bg-background"
+        className="absolute -bottom-[7px] block h-3 w-3 rotate-45 border-border border-r border-b bg-background"
         style={{ left: offset - 6 }}
       />
     );
@@ -975,7 +1004,7 @@ function Pointer({ side, offset }: { side: FloaterSide; offset: number }) {
     return (
       <span
         aria-hidden
-        className="absolute -left-[7px] block h-3 w-3 rotate-45 border-b border-l border-border bg-background"
+        className="absolute -left-[7px] block h-3 w-3 rotate-45 border-border border-b border-l bg-background"
         style={{ top: offset - 6 }}
       />
     );
@@ -983,14 +1012,16 @@ function Pointer({ side, offset }: { side: FloaterSide; offset: number }) {
   return (
     <span
       aria-hidden
-      className="absolute -right-[7px] block h-3 w-3 rotate-45 border-r border-t border-border bg-background"
+      className="absolute -right-[7px] block h-3 w-3 rotate-45 border-border border-t border-r bg-background"
       style={{ top: offset - 6 }}
     />
   );
 }
 
 function readViewport() {
-  if (typeof window === "undefined") return { width: 1024, height: 768 };
+  if (typeof window === "undefined") {
+    return { width: 1024, height: 768 };
+  }
   return { width: window.innerWidth, height: window.innerHeight };
 }
 
@@ -1011,8 +1042,8 @@ function Attribution({
   return (
     <div
       className={cn(
-        "flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground",
-        className,
+        "flex min-w-0 items-center gap-1.5 text-muted-foreground text-xs",
+        className
       )}
     >
       <span className="truncate">{author}</span>
@@ -1059,7 +1090,9 @@ function ReplyItem({
   }, [editing]);
 
   const startEditing = () => {
-    if (!onEdit) return;
+    if (!onEdit) {
+      return;
+    }
     onInteraction?.();
     setEditing(true);
     setEditDraft(reply.text);
@@ -1075,7 +1108,9 @@ function ReplyItem({
   };
 
   const saveEdit = async () => {
-    if (!onEdit || editBusy) return;
+    if (!onEdit || editBusy) {
+      return;
+    }
     const trimmed = editDraft.trim();
     if (!trimmed) {
       setEditError("Reply cannot be empty");
@@ -1095,7 +1130,9 @@ function ReplyItem({
   };
 
   const confirmDelete = async () => {
-    if (!onDelete || deleteBusy) return;
+    if (!onDelete || deleteBusy) {
+      return;
+    }
     setDeleteBusy(true);
     setDeleteError(null);
     try {
@@ -1108,7 +1145,9 @@ function ReplyItem({
   };
 
   const requestDelete = () => {
-    if (!onDelete || deleteBusy) return;
+    if (!onDelete || deleteBusy) {
+      return;
+    }
     onInteraction?.();
     setDeleteError(null);
     setEditing(false);
@@ -1128,36 +1167,36 @@ function ReplyItem({
       {editing ? (
         <div className="space-y-2">
           <Textarea
-            ref={editTextareaRef}
-            value={editDraft}
-            onChange={(e) => setEditDraft(e.target.value)}
-            disabled={editBusy}
-            className="min-h-[64px] resize-none text-sm leading-relaxed"
             aria-label="Edit reply"
+            className="min-h-[64px] resize-none text-sm leading-relaxed"
+            disabled={editBusy}
+            onChange={(e) => setEditDraft(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
                 e.preventDefault();
                 void saveEdit();
               }
             }}
+            ref={editTextareaRef}
+            value={editDraft}
           />
           <div className="flex items-center justify-end gap-1.5">
             <Button
-              type="button"
-              variant="ghost"
-              size="sm"
               className="h-7 px-2 text-xs"
               disabled={editBusy}
               onClick={cancelEditing}
+              size="sm"
+              type="button"
+              variant="ghost"
             >
               Cancel
             </Button>
             <Button
-              type="button"
-              size="sm"
               className="h-7 px-2 text-xs"
               disabled={editBusy}
               onClick={() => void saveEdit()}
+              size="sm"
+              type="button"
             >
               {editBusy ? (
                 "Saving…"
@@ -1170,42 +1209,42 @@ function ReplyItem({
             </Button>
           </div>
           {editError ? (
-            <p className="m-0 text-xs text-destructive">{editError}</p>
+            <p className="m-0 text-destructive text-xs">{editError}</p>
           ) : null}
         </div>
       ) : (
-        <p className="m-0 text-sm leading-snug text-muted-foreground">
+        <p className="m-0 text-muted-foreground text-sm leading-snug">
           {reply.text}
         </p>
       )}
 
       <div className="relative mt-1 flex items-center justify-between gap-2">
-        {!editing ? (
-          <Attribution author={reply.author} date={reply.date} />
-        ) : (
+        {editing ? (
           <span />
+        ) : (
+          <Attribution author={reply.author} date={reply.date} />
         )}
         {!editing && (onEdit || onDelete) ? (
           <div className="flex shrink-0 items-center gap-0.5">
             {onEdit && !deleteConfirming ? (
               <Button
-                type="button"
-                variant="ghost"
-                size="sm"
                 className="h-auto px-1.5 py-1 text-xs"
                 onClick={startEditing}
+                size="sm"
+                type="button"
+                variant="ghost"
               >
                 Edit
               </Button>
             ) : null}
             {onDelete && !deleteConfirming ? (
               <Button
-                type="button"
-                variant="ghost"
-                size="sm"
                 className="h-auto px-1.5 py-1 text-xs hover:bg-destructive/10 hover:text-destructive"
                 disabled={deleteBusy}
                 onClick={requestDelete}
+                size="sm"
+                type="button"
+                variant="ghost"
               >
                 Delete
               </Button>
@@ -1215,29 +1254,29 @@ function ReplyItem({
 
         {deleteConfirming ? (
           <div
-            className="absolute inset-y-0 right-0 flex items-center justify-end gap-1.5 bg-gradient-to-l from-background from-55% to-transparent pl-8"
+            className="absolute inset-y-0 right-0 flex items-center justify-end gap-1.5 bg-gradient-to-l from-55% from-background to-transparent pl-8"
             onClick={(e) => e.stopPropagation()}
           >
-            <span className="mr-0.5 text-xs font-medium text-foreground">
+            <span className="mr-0.5 font-medium text-foreground text-xs">
               Delete?
             </span>
             <Button
-              type="button"
-              variant="ghost"
-              size="sm"
               className="h-7 px-2 text-xs"
               disabled={deleteBusy}
               onClick={cancelDeleteConfirm}
+              size="sm"
+              type="button"
+              variant="ghost"
             >
               Cancel
             </Button>
             <Button
-              type="button"
-              variant="destructive"
-              size="sm"
               className="h-7 px-2 text-xs"
               disabled={deleteBusy}
               onClick={() => void confirmDelete()}
+              size="sm"
+              type="button"
+              variant="destructive"
             >
               {deleteBusy ? "Deleting…" : "Delete"}
             </Button>
@@ -1246,7 +1285,7 @@ function ReplyItem({
       </div>
 
       {deleteError ? (
-        <p className="m-0 mt-1 text-xs text-destructive">{deleteError}</p>
+        <p className="m-0 mt-1 text-destructive text-xs">{deleteError}</p>
       ) : null}
     </li>
   );
@@ -1269,13 +1308,13 @@ function ModeToggleButton({
   const isCompact = mode === "compact";
   return (
     <Button
+      aria-expanded={!isCompact}
+      aria-label={isCompact ? "Expand bubble" : "Collapse bubble"}
+      className="h-auto shrink-0 px-1.5 py-1 text-xs"
+      onClick={onToggle}
+      size="sm"
       type="button"
       variant="ghost"
-      size="sm"
-      aria-label={isCompact ? "Expand bubble" : "Collapse bubble"}
-      aria-expanded={!isCompact}
-      onClick={onToggle}
-      className="h-auto shrink-0 px-1.5 py-1 text-xs"
     >
       {isCompact ? "More" : "Less"}
       <ShortcutHint>Tab</ShortcutHint>
@@ -1298,27 +1337,20 @@ function ModeToggleButton({
  * always fully visible; we never crop. Falls back to 36×36 while the image
  * hasn't loaded yet so layout doesn't jump twice.
  */
-function AdaptiveThumb({
-  src,
-  onClick,
-}: {
-  src: string;
-  onClick: () => void;
-}) {
+function AdaptiveThumb({ src, onClick }: { src: string; onClick: () => void }) {
   const [natural, setNatural] = useState<{ w: number; h: number } | null>(null);
 
   const dims = useMemo(() => computeThumbDims(natural), [natural]);
 
   return (
     <button
-      type="button"
       aria-label="Show full screenshot"
-      onClick={onClick}
       className="block shrink-0 overflow-hidden rounded-md border bg-muted transition-shadow hover:ring-1 hover:ring-ring"
+      onClick={onClick}
       style={{ width: dims.width, height: dims.height }}
+      type="button"
     >
       <img
-        src={src}
         alt=""
         className="h-full w-full object-contain"
         onLoad={(e) => {
@@ -1327,6 +1359,7 @@ function AdaptiveThumb({
             setNatural({ w: img.naturalWidth, h: img.naturalHeight });
           }
         }}
+        src={src}
       />
     </button>
   );
@@ -1337,14 +1370,19 @@ function AdaptiveThumb({
  * AdaptiveThumb for the rule rationale. Returns the legacy 36×36 default
  * pre-load so the row doesn't reflow more than once.
  */
-function computeThumbDims(
-  natural: { w: number; h: number } | null,
-): { width: number; height: number } {
-  if (!natural) return { width: 36, height: 36 };
+function computeThumbDims(natural: { w: number; h: number } | null): {
+  width: number;
+  height: number;
+} {
+  if (!natural) {
+    return { width: 36, height: 36 };
+  }
   const { w, h } = natural;
   // Tiny: anything genuinely icon-sized at source. Render as a 24px icon —
   // upscaling beyond that just blurs the source.
-  if (w < 40 || h < 40) return { width: 24, height: 24 };
+  if (w < 40 || h < 40) {
+    return { width: 24, height: 24 };
+  }
   const aspect = w / h;
   if (aspect > 1.3) {
     // Wide: cap width at 80, derive height (clamped 24-48).
@@ -1381,19 +1419,19 @@ function ActionIconButton({
   children: React.ReactNode;
 }) {
   return (
-    <HotkeyTip label={label} keys={keys}>
+    <HotkeyTip keys={keys} label={label}>
       <Button
-        type="button"
-        variant="ghost"
-        size="icon"
         aria-label={label}
-        onClick={onClick}
-        disabled={disabled}
         className={cn(
           "h-9 min-w-0 flex-1 rounded-none text-muted-foreground hover:bg-muted/60 hover:text-foreground",
           active && "text-primary hover:text-primary",
-          destructive && "hover:bg-destructive/10 hover:text-destructive",
+          destructive && "hover:bg-destructive/10 hover:text-destructive"
         )}
+        disabled={disabled}
+        onClick={onClick}
+        size="icon"
+        type="button"
+        variant="ghost"
       >
         {children}
       </Button>
@@ -1420,20 +1458,28 @@ function captureAndUploadV(args: {
   v: number;
 }): void {
   const { id, anchor, v } = args;
-  if (!import.meta.hot) return;
+  if (!import.meta.hot) {
+    return;
+  }
   const hot = import.meta.hot;
 
   let done = false;
   let timeoutId: number | undefined;
   const cleanup = () => {
-    if (done) return;
+    if (done) {
+      return;
+    }
     done = true;
-    if (timeoutId !== undefined) window.clearTimeout(timeoutId);
+    if (timeoutId !== undefined) {
+      window.clearTimeout(timeoutId);
+    }
     hot.off("vite:afterUpdate", handler);
   };
 
   const handler = () => {
-    if (done) return;
+    if (done) {
+      return;
+    }
     // One rAF for React to commit the new tree before we measure.
     window.requestAnimationFrame(() => {
       void run();
@@ -1443,12 +1489,11 @@ function captureAndUploadV(args: {
   const run = async (): Promise<void> => {
     cleanup();
     const el = document.querySelector(
-      `[data-comment-anchor="${cssEscape(anchor)}"]`,
+      `[data-comment-anchor="${cssEscape(anchor)}"]`
     );
     if (!(el instanceof HTMLElement)) {
-      // eslint-disable-next-line no-console
       console.warn(
-        `[CommentBubble] post-iterate capture: anchor ${anchor} not found in DOM; keeping placeholder v${v}.png`,
+        `[CommentBubble] post-iterate capture: anchor ${anchor} not found in DOM; keeping placeholder v${v}.png`
       );
       return;
     }
@@ -1466,24 +1511,25 @@ function captureAndUploadV(args: {
         // from the capture so the screenshot reflects only the user-facing
         // design, not our own UI.
         filter: (node) => {
-          if (node instanceof HTMLElement) {
-            if (node.dataset.commentOverlay === "true") return false;
+          if (
+            node instanceof HTMLElement &&
+            node.dataset.commentOverlay === "true"
+          ) {
+            return false;
           }
           return true;
         },
       });
     } catch (err) {
-      // eslint-disable-next-line no-console
       console.warn(
         "[CommentBubble] post-iterate screenshot capture failed; keeping placeholder",
-        err,
+        err
       );
       return;
     }
     if (typeof dataUrl !== "string" || !dataUrl.startsWith("data:image/png")) {
-      // eslint-disable-next-line no-console
       console.warn(
-        "[CommentBubble] post-iterate capture produced no PNG; keeping placeholder",
+        "[CommentBubble] post-iterate capture produced no PNG; keeping placeholder"
       );
       return;
     }
@@ -1494,27 +1540,26 @@ function captureAndUploadV(args: {
         body: JSON.stringify({ id, v, screenshotPng: dataUrl }),
       });
       if (!res.ok) {
-        // eslint-disable-next-line no-console
         console.warn(
-          `[CommentBubble] /api/iterations/screenshot returned ${res.status}; keeping placeholder`,
+          `[CommentBubble] /api/iterations/screenshot returned ${res.status}; keeping placeholder`
         );
       }
     } catch (err) {
-      // eslint-disable-next-line no-console
       console.warn(
         "[CommentBubble] post-iterate screenshot upload failed; keeping placeholder",
-        err,
+        err
       );
     }
   };
 
   hot.on("vite:afterUpdate", handler);
   timeoutId = window.setTimeout(() => {
-    if (done) return;
+    if (done) {
+      return;
+    }
     cleanup();
-    // eslint-disable-next-line no-console
     console.warn(
-      `[CommentBubble] post-iterate capture: HMR did not fire within 5s; keeping placeholder v${v}.png`,
+      `[CommentBubble] post-iterate capture: HMR did not fire within 5s; keeping placeholder v${v}.png`
     );
   }, 5000);
 }
@@ -1535,9 +1580,15 @@ function cssEscape(value: string): string {
  */
 function formatProgress(event: IterateProgressEvent): string {
   const { tool, detail } = event;
-  if (tool && detail) return `${tool} ${detail}`;
-  if (tool) return tool;
-  if (detail) return detail;
+  if (tool && detail) {
+    return `${tool} ${detail}`;
+  }
+  if (tool) {
+    return tool;
+  }
+  if (detail) {
+    return detail;
+  }
   return "Working...";
 }
 
@@ -1551,7 +1602,9 @@ function formatElapsed(ms: number): string {
 
 function formatDate(iso: string): string {
   const ts = Date.parse(iso);
-  if (Number.isNaN(ts)) return iso;
+  if (Number.isNaN(ts)) {
+    return iso;
+  }
   const d = new Date(ts);
   const today = new Date();
   const sameDay =

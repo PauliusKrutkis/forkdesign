@@ -15,31 +15,36 @@
 
 export type FloaterSide = "top" | "bottom" | "left" | "right";
 
-export type FloaterPosition = {
-  /** viewport-coords left of the floater */
-  left: number;
-  /** viewport-coords top of the floater */
-  top: number;
-  /** the side of the anchor the floater landed on (after any flip) */
-  side: FloaterSide;
+export interface FloaterPosition {
   /** distance along the floater's anchor-facing edge where the arrow sits */
   arrowOffset: number;
-};
+  /** viewport-coords left of the floater */
+  left: number;
+  /** the side of the anchor the floater landed on (after any flip) */
+  side: FloaterSide;
+  /** viewport-coords top of the floater */
+  top: number;
+}
 
-type Rect = { left: number; top: number; right: number; bottom: number };
+interface Rect {
+  bottom: number;
+  left: number;
+  right: number;
+  top: number;
+}
 
-type PlaceArgs = {
+interface PlaceArgs {
   anchor: Rect;
-  size: { width: number; height: number };
-  preferredSide: FloaterSide;
-  viewport: { width: number; height: number };
-  /** keep this many px of slack between the floater and the viewport edges */
-  padding?: number;
-  /** gap between the anchor and the floater */
-  gap?: number;
   /** minimum distance from a corner the arrow may sit at */
   arrowSafePadding?: number;
-};
+  /** gap between the anchor and the floater */
+  gap?: number;
+  /** keep this many px of slack between the floater and the viewport edges */
+  padding?: number;
+  preferredSide: FloaterSide;
+  size: { width: number; height: number };
+  viewport: { width: number; height: number };
+}
 
 const OPPOSITE: Record<FloaterSide, FloaterSide> = {
   top: "bottom",
@@ -101,19 +106,21 @@ export function placeFloater({
       ? clamp(
           anchorCenterX - left,
           arrowSafePadding,
-          size.width - arrowSafePadding,
+          size.width - arrowSafePadding
         )
       : clamp(
           anchorCenterY - top,
           arrowSafePadding,
-          size.height - arrowSafePadding,
+          size.height - arrowSafePadding
         );
 
   return { left, top, side, arrowOffset };
 }
 
 function clamp(v: number, min: number, max: number): number {
-  if (max < min) return min;
+  if (max < min) {
+    return min;
+  }
   return Math.max(min, Math.min(max, v));
 }
 
@@ -129,7 +136,7 @@ function clamp(v: number, min: number, max: number): number {
 export function dotRect(
   anchor: { right: number; top: number },
   viewport: { width: number; height: number },
-  options: { size?: number; nudge?: number; viewportPadding?: number } = {},
+  options: { size?: number; nudge?: number; viewportPadding?: number } = {}
 ): { left: number; top: number; right: number; bottom: number } {
   const size = options.size ?? 14;
   const nudge = options.nudge ?? 7;

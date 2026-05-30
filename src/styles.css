@@ -105,8 +105,8 @@
 /* Refined overlay scrollbar — aligns with the zinc token palette instead of
    the chunky OS default. Track is invisible; thumb is a quiet inset pill. */
 .redline-scroll {
-  scrollbar-width: thin;
   scrollbar-color: oklch(0.85 0.004 286.32) transparent;
+  scrollbar-width: thin;
 }
 
 .redline-scroll::-webkit-scrollbar {
@@ -120,9 +120,9 @@
 
 .redline-scroll::-webkit-scrollbar-thumb {
   background-color: oklch(0.85 0.004 286.32);
-  border-radius: 9999px;
-  border: 3px solid transparent;
   background-clip: padding-box;
+  border: 3px solid transparent;
+  border-radius: 9999px;
 }
 
 .redline-scroll::-webkit-scrollbar-thumb:hover {
@@ -136,9 +136,9 @@
   padding: 0;
   margin: -1px;
   overflow: hidden;
-  clip: rect(0, 0, 0, 0);
   white-space: nowrap;
   border-width: 0;
+  clip: rect(0, 0, 0, 0);
 }
 
 /*
@@ -158,16 +158,16 @@
   align-items: center;
   justify-content: center;
   padding: 2rem;
-  background-color: rgb(0 0 0 / 0.8);
   pointer-events: auto;
+  background-color: rgb(0 0 0 / 0.8);
 }
 
 .redline-lightbox-image {
-  max-height: 80vh;
   max-width: 80vw;
-  border-radius: calc(var(--radius) - 2px);
-  border: 1px solid var(--border);
+  max-height: 80vh;
   object-fit: contain;
+  border: 1px solid var(--border);
+  border-radius: calc(var(--radius) - 2px);
   box-shadow:
     0 25px 50px -12px rgb(0 0 0 / 0.25),
     0 0 0 1px rgb(0 0 0 / 0.05);

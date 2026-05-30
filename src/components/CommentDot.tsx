@@ -1,19 +1,22 @@
-import { useEffect, useMemo, useState } from "react";
 import { Check, Pencil } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { cn } from "../lib/utils";
+import { dotRect } from "./placement";
 import type { RegisteredComment } from "./types";
 import { useAnchorRects } from "./useAnchorElement";
-import { dotRect } from "./placement";
-import { cn } from "../lib/utils";
 
-export type DotInstanceTarget = { anchor: string; instance: number };
+export interface DotInstanceTarget {
+  anchor: string;
+  instance: number;
+}
 
-type CommentDotProps = {
+interface CommentDotProps {
   anchor: string;
   comments: RegisteredComment[];
-  openTarget: DotInstanceTarget | null;
-  onOpen: (target: DotInstanceTarget) => void;
   onHover: (target: DotInstanceTarget | null) => void;
-};
+  onOpen: (target: DotInstanceTarget) => void;
+  openTarget: DotInstanceTarget | null;
+}
 
 const RECENT_WINDOW_MS = 24 * 60 * 60 * 1000;
 /**
@@ -25,7 +28,9 @@ const RECENT_WINDOW_MS = 24 * 60 * 60 * 1000;
 const PIN_SIZE = 20;
 
 function readViewport() {
-  if (typeof window === "undefined") return { width: 1024, height: 768 };
+  if (typeof window === "undefined") {
+    return { width: 1024, height: 768 };
+  }
   return { width: window.innerWidth, height: window.innerHeight };
 }
 
@@ -33,11 +38,15 @@ type PinState = "recent" | "default" | "resolved";
 
 function pinState(
   comments: RegisteredComment[],
-  unresolvedRecent: boolean,
+  unresolvedRecent: boolean
 ): PinState {
   const allResolved = comments.every((c) => c.resolved);
-  if (allResolved) return "resolved";
-  if (unresolvedRecent) return "recent";
+  if (allResolved) {
+    return "resolved";
+  }
+  if (unresolvedRecent) {
+    return "recent";
+  }
   return "default";
 }
 
@@ -71,14 +80,20 @@ export function CommentDot({
   const unresolvedRecent = useMemo(() => {
     const now = Date.now();
     return comments.some((c) => {
-      if (c.resolved) return false;
+      if (c.resolved) {
+        return false;
+      }
       const ts = Date.parse(c.date);
-      if (Number.isNaN(ts)) return false;
+      if (Number.isNaN(ts)) {
+        return false;
+      }
       return now - ts < RECENT_WINDOW_MS;
     });
   }, [comments]);
 
-  if (rects.length === 0 || !lead) return null;
+  if (rects.length === 0 || !lead) {
+    return null;
+  }
 
   const state = pinState(comments, unresolvedRecent);
   const count = comments.length;
@@ -91,55 +106,55 @@ export function CommentDot({
       {rects.map((rect, instance) => {
         const { left, top } = dotRect(
           { right: rect.right, top: rect.top },
-          viewport,
+          viewport
         );
         const isOpen =
           openTarget?.anchor === anchor && openTarget.instance === instance;
         return (
           <button
-            key={instance}
-            type="button"
             aria-label={`${count} comment${count === 1 ? "" : "s"} by ${lead.author}`}
+            className={cn(
+              "pointer-events-auto fixed z-[9100] m-0 p-0 outline-none transition-transform duration-150 ease-out hover:scale-110 focus-visible:scale-110",
+              isOpen && "scale-110"
+            )}
+            key={instance}
+            onBlur={() => onHover(null)}
             onClick={(e) => {
               e.stopPropagation();
               onOpen({ anchor, instance });
             }}
+            onFocus={() => onHover({ anchor, instance })}
             onMouseEnter={() => onHover({ anchor, instance })}
             onMouseLeave={() => onHover(null)}
-            onFocus={() => onHover({ anchor, instance })}
-            onBlur={() => onHover(null)}
-            className={cn(
-              "pointer-events-auto fixed z-[9100] m-0 p-0 outline-none transition-transform duration-150 ease-out hover:scale-110 focus-visible:scale-110",
-              isOpen && "scale-110",
-            )}
             style={{
               left: left - 3,
               top: top - PIN_SIZE + 5,
               width: PIN_SIZE,
               height: PIN_SIZE,
             }}
+            type="button"
           >
             {/* Pulse ring for recent threads — sits behind the bubble so the
                 expanding shadow never disturbs the bubble's own elevation. */}
             {state === "recent" && !isOpen ? (
               <span
                 aria-hidden
-                className="animate-pin-pulse absolute inset-0"
+                className="absolute inset-0 animate-pin-pulse"
                 style={pinShape}
               />
             ) : null}
             <span
               aria-hidden
-              style={pinShape}
               className={cn(
-                "relative flex h-full w-full items-center justify-center text-[10px] font-semibold leading-none tracking-tight tabular-nums shadow-[0_1px_2px_rgba(0,0,0,0.16),0_2px_6px_-1px_rgba(0,0,0,0.22)] ring-1 transition-[box-shadow,outline] duration-150",
+                "relative flex h-full w-full items-center justify-center font-semibold text-[10px] tabular-nums leading-none tracking-tight shadow-[0_1px_2px_rgba(0,0,0,0.16),0_2px_6px_-1px_rgba(0,0,0,0.22)] ring-1 transition-[box-shadow,outline] duration-150",
                 (state === "default" || state === "recent") &&
                   "bg-foreground text-background ring-black/10",
                 state === "resolved" &&
                   "bg-background text-muted-foreground ring-border",
                 isOpen &&
-                  "outline outline-2 outline-offset-2 outline-foreground",
+                  "outline outline-2 outline-foreground outline-offset-2"
               )}
+              style={pinShape}
             >
               {state === "resolved" ? (
                 <Check className="h-3 w-3" strokeWidth={2.75} />
@@ -150,7 +165,7 @@ export function CommentDot({
             {count > 1 ? (
               <span
                 aria-hidden
-                className="pointer-events-none absolute -right-1 -top-1 flex h-3.5 min-w-3.5 items-center justify-center rounded-full border border-background bg-foreground px-1 text-[8px] font-semibold leading-none text-background shadow-sm"
+                className="pointer-events-none absolute -top-1 -right-1 flex h-3.5 min-w-3.5 items-center justify-center rounded-full border border-background bg-foreground px-1 font-semibold text-[8px] text-background leading-none shadow-sm"
               >
                 {count}
               </span>

@@ -1,10 +1,10 @@
-import { useEffect, useRef, useState } from "react";
 import { List, MessageSquarePlus, Settings } from "lucide-react";
-import { Switch } from "./ui/switch";
-import { ShortcutHint } from "./ShortcutHint";
+import { useEffect, useRef, useState } from "react";
 import { cn } from "../lib/utils";
-import { POSITION_CLASSES, type OverlayPosition } from "./settings";
 import type { ShellTab } from "./CommentShell";
+import { ShortcutHint } from "./ShortcutHint";
+import { type OverlayPosition, POSITION_CLASSES } from "./settings";
+import { Switch } from "./ui/switch";
 
 /**
  * The redline dock — a single quiet pill in the chosen corner that expands
@@ -22,22 +22,22 @@ import type { ShellTab } from "./CommentShell";
  * hidden. The `,` hotkey still opens settings globally even with the pill
  * itself hidden via `show === false`.
  */
-export type OverlayDockProps = {
-  /** Master visibility for the pill. Hotkeys keep working when false. */
-  show: boolean;
-  position: OverlayPosition;
-  enabled: boolean;
-  onToggleEnabled: () => void;
+export interface OverlayDockProps {
   composerActive: boolean;
-  onToggleComposer: () => void;
-  shell: ShellTab | null;
-  onToggleList: () => void;
-  onToggleSettings: () => void;
-  /** Total comments across the project (drives the resting badge). */
-  totalCount: number;
+  enabled: boolean;
   /** Comments anchored on the current page (footer context). */
   onPageCount: number;
-};
+  onToggleComposer: () => void;
+  onToggleEnabled: () => void;
+  onToggleList: () => void;
+  onToggleSettings: () => void;
+  position: OverlayPosition;
+  shell: ShellTab | null;
+  /** Master visibility for the pill. Hotkeys keep working when false. */
+  show: boolean;
+  /** Total comments across the project (drives the resting badge). */
+  totalCount: number;
+}
 
 export function OverlayDock({
   show,
@@ -59,9 +59,15 @@ export function OverlayDock({
   // outside-click handler) and on Escape. Listeners are only attached while
   // the menu is open so we never swallow Escape elsewhere.
   useEffect(() => {
-    if (!open) return;
+    if (!open) {
+      return;
+    }
     const onDown = (e: MouseEvent) => {
-      if (rootRef.current && e.target instanceof Node && rootRef.current.contains(e.target)) {
+      if (
+        rootRef.current &&
+        e.target instanceof Node &&
+        rootRef.current.contains(e.target)
+      ) {
         return;
       }
       setOpen(false);
@@ -84,37 +90,41 @@ export function OverlayDock({
   // those surfaces are the "expanded" destination, so leaving the dock menu
   // hovering behind them is just noise.
   useEffect(() => {
-    if (shell || composerActive) setOpen(false);
+    if (shell || composerActive) {
+      setOpen(false);
+    }
   }, [shell, composerActive]);
 
-  if (!show) return null;
+  if (!show) {
+    return null;
+  }
 
   const openUp = position.startsWith("bottom");
   const alignEnd = position.endsWith("right");
 
   const pill = (
     <button
-      type="button"
-      onClick={() => setOpen((v) => !v)}
       aria-expanded={open}
       aria-haspopup="menu"
       aria-label="redline comments"
       className={cn(
-        "pointer-events-auto group relative inline-flex h-9 items-center gap-2 rounded-full border px-2.5",
+        "group pointer-events-auto relative inline-flex h-9 items-center gap-2 rounded-full border px-2.5",
         "border-border/70 bg-popover/80 text-popover-foreground backdrop-blur-md",
         "shadow-[0_1px_2px_rgba(0,0,0,0.06),0_4px_16px_-6px_rgba(0,0,0,0.18)]",
         "transition-[transform,border-color,opacity] duration-150",
         "hover:-translate-y-px hover:border-border focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
         open && "border-foreground/30",
-        !enabled && "opacity-60",
+        !enabled && "opacity-60"
       )}
+      onClick={() => setOpen((v) => !v)}
+      type="button"
     >
       <RedlineMark className="h-4 w-4 text-foreground" />
       {enabled && totalCount > 0 ? (
         <span
           className={cn(
             "inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-full px-1",
-            "bg-primary text-[10px] font-semibold leading-none tabular-nums text-primary-foreground",
+            "bg-primary font-semibold text-[10px] text-primary-foreground tabular-nums leading-none"
           )}
         >
           {totalCount}
@@ -125,9 +135,14 @@ export function OverlayDock({
 
   const menu = open ? (
     <div
-      role="menu"
       aria-label="redline actions"
+      className={cn(
+        "pointer-events-auto w-56 overflow-hidden rounded-xl border border-border/70 p-1",
+        "bg-popover/95 text-popover-foreground backdrop-blur-md",
+        "animate-dock-in shadow-[0_8px_40px_-12px_rgba(0,0,0,0.35)]"
+      )}
       onClick={(e) => e.stopPropagation()}
+      role="menu"
       style={
         {
           transformOrigin: `${openUp ? "bottom" : "top"} ${alignEnd ? "right" : "left"}`,
@@ -135,33 +150,28 @@ export function OverlayDock({
           ["--dock-row-shift" as string]: openUp ? "6px" : "-6px",
         } as React.CSSProperties
       }
-      className={cn(
-        "pointer-events-auto w-56 overflow-hidden rounded-xl border border-border/70 p-1",
-        "bg-popover/95 text-popover-foreground backdrop-blur-md",
-        "shadow-[0_8px_40px_-12px_rgba(0,0,0,0.35)] animate-dock-in",
-      )}
     >
       {enabled ? (
         <>
           <DockRow
-            index={0}
-            icon={<MessageSquarePlus className="h-4 w-4" />}
-            label={composerActive ? "Cancel" : "Add comment"}
-            primary
             active={composerActive}
             hint="C"
+            icon={<MessageSquarePlus className="h-4 w-4" />}
+            index={0}
+            label={composerActive ? "Cancel" : "Add comment"}
             onSelect={() => {
               onToggleComposer();
               setOpen(false);
             }}
+            primary
           />
           <DockRow
-            index={1}
-            icon={<List className="h-4 w-4" />}
-            label="Comments"
             active={shell === "list"}
             badge={totalCount > 0 ? totalCount : undefined}
             hint="L"
+            icon={<List className="h-4 w-4" />}
+            index={1}
+            label="Comments"
             onSelect={() => {
               onToggleList();
               setOpen(false);
@@ -170,11 +180,11 @@ export function OverlayDock({
         </>
       ) : null}
       <DockRow
-        index={enabled ? 2 : 0}
-        icon={<Settings className="h-4 w-4" />}
-        label="Settings"
         active={shell === "settings"}
         hint=","
+        icon={<Settings className="h-4 w-4" />}
+        index={enabled ? 2 : 0}
+        label="Settings"
         onSelect={() => {
           onToggleSettings();
           setOpen(false);
@@ -190,15 +200,19 @@ export function OverlayDock({
         <span
           className={cn(
             "inline-block h-2 w-2 shrink-0 rounded-full",
-            enabled ? "bg-foreground" : "bg-muted-foreground/40",
+            enabled ? "bg-foreground" : "bg-muted-foreground/40"
           )}
         />
         <span className="flex-1">{enabled ? "Reviewing" : "Paused"}</span>
-        <Switch checked={enabled} onCheckedChange={onToggleEnabled} aria-label="Toggle reviewing" />
+        <Switch
+          aria-label="Toggle reviewing"
+          checked={enabled}
+          onCheckedChange={onToggleEnabled}
+        />
       </label>
 
-      <div className="mt-1 flex items-center justify-between px-2.5 pb-1 pt-1.5">
-        <span className="inline-flex items-center gap-1.5 font-mono text-[10px] lowercase tracking-wide text-muted-foreground">
+      <div className="mt-1 flex items-center justify-between px-2.5 pt-1.5 pb-1">
+        <span className="inline-flex items-center gap-1.5 font-mono text-[10px] text-muted-foreground lowercase tracking-wide">
           <RedlineMark className="h-3 w-3" />
           redline
         </span>
@@ -213,13 +227,13 @@ export function OverlayDock({
 
   return (
     <div
-      ref={rootRef}
-      data-comment-overlay="true"
-      data-redline-dock="true"
       className={cn(
         "pointer-events-none fixed z-[9400] flex flex-col gap-2",
-        POSITION_CLASSES[position],
+        POSITION_CLASSES[position]
       )}
+      data-comment-overlay="true"
+      data-redline-dock="true"
+      ref={rootRef}
     >
       {openUp ? (
         <>
@@ -257,30 +271,30 @@ function DockRow({
 }) {
   return (
     <button
-      type="button"
-      role="menuitem"
-      onClick={onSelect}
-      style={{ animationDelay: `${index * 28}ms` }}
       className={cn(
-        "flex w-full items-center gap-2.5 rounded-md px-2.5 py-2 text-left text-sm animate-dock-row-in",
+        "flex w-full animate-dock-row-in items-center gap-2.5 rounded-md px-2.5 py-2 text-left text-sm",
         "hover:bg-accent hover:text-accent-foreground",
-        active && "bg-accent text-accent-foreground",
+        active && "bg-accent text-accent-foreground"
       )}
+      onClick={onSelect}
+      role="menuitem"
+      style={{ animationDelay: `${index * 28}ms` }}
+      type="button"
     >
       <span
         className={cn(
           "shrink-0",
-          primary ? "text-foreground" : "text-muted-foreground",
+          primary ? "text-foreground" : "text-muted-foreground"
         )}
       >
         {icon}
       </span>
       <span className={cn("flex-1", primary && "font-medium")}>{label}</span>
-      {badge !== undefined ? (
-        <span className="rounded-full bg-muted px-1.5 text-[10px] font-medium leading-[18px] tabular-nums text-muted-foreground">
+      {badge === undefined ? null : (
+        <span className="rounded-full bg-muted px-1.5 font-medium text-[10px] text-muted-foreground tabular-nums leading-[18px]">
           {badge}
         </span>
-      ) : null}
+      )}
       {hint ? <ShortcutHint>{hint}</ShortcutHint> : null}
     </button>
   );
@@ -293,25 +307,25 @@ function DockRow({
 function RedlineMark({ className }: { className?: string }) {
   return (
     <svg
+      aria-hidden="true"
+      className={className}
+      fill="none"
+      height="16"
       viewBox="0 0 16 16"
       width="16"
-      height="16"
-      fill="none"
-      className={className}
-      aria-hidden="true"
     >
       <path
         d="M2.5 11.75h11"
         stroke="currentColor"
-        strokeWidth="1.5"
         strokeLinecap="round"
+        strokeWidth="1.5"
       />
       <path
         d="M5.25 11.75 8 5l2.75 6.75"
         stroke="currentColor"
-        strokeWidth="1.5"
         strokeLinecap="round"
         strokeLinejoin="round"
+        strokeWidth="1.5"
       />
     </svg>
   );

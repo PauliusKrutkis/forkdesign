@@ -18,7 +18,10 @@ export function ShortcutHint({
   onPrimary?: boolean;
 }) {
   return (
-    <Kbd tone={onPrimary ? "onPrimary" : "default"} className={cn("ml-1.5", className)}>
+    <Kbd
+      className={cn("ml-1.5", className)}
+      tone={onPrimary ? "onPrimary" : "default"}
+    >
       {children}
     </Kbd>
   );
@@ -35,7 +38,9 @@ export function withCtrl(key: string): string {
 }
 
 function detectCtrlKey(): string {
-  if (typeof navigator === "undefined") return "Ctrl";
+  if (typeof navigator === "undefined") {
+    return "Ctrl";
+  }
   const uaPlatform = (
     navigator as unknown as { userAgentData?: { platform?: string } }
   ).userAgentData?.platform;

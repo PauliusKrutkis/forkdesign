@@ -21,13 +21,24 @@
  *   - Path traversal hardening: only files under `<projectRoot>/src/pages/`
  *     that end in `.tsx` are readable/writable. Anything else → 400.
  */
-import { existsSync, statSync } from "node:fs";
-import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+
 import { randomUUID } from "node:crypto";
-import path from "node:path";
+import type { Dirent } from "node:fs";
+import { existsSync, statSync } from "node:fs";
+import {
+  copyFile,
+  mkdir,
+  readdir,
+  readFile,
+  rename,
+  rm,
+  writeFile,
+} from "node:fs/promises";
 import type { IncomingMessage, ServerResponse } from "node:http";
+import path from "node:path";
 import type { Plugin } from "vite";
 import {
+  type ReadResult,
   readCommentsFromFile,
   readCommentsFromSource,
 } from "./babel-comment-reader.ts";
@@ -40,15 +51,15 @@ import {
   updateCommentActive,
   updateCommentReply,
   updateCommentText,
-  writeCommentToFile,
+  type WriteCommentResult,
   WriteError,
+  writeCommentToFile,
 } from "./babel-comment-writer.ts";
-import { copyFile, readdir } from "node:fs/promises";
 import {
   configureFixRuntime,
+  type FixModel,
   parseFixModel,
   runFix,
-  type FixModel,
 } from "./fix/index.ts";
 
 const INJECT_MARKER = "<!-- vite-plugin-comments injected -->";
@@ -59,15 +70,15 @@ const SRC_REL = "src";
  * either recurse (comments commenting on the comment system) or affect the
  * dev server pipeline itself.
  */
-export type CommentsPluginOptions = {
+export interface CommentsPluginOptions {
+  /** Path to the Cursor CLI `agent` binary. Default: `"agent"` (must be on PATH). */
+  cursorAgentPath?: string;
   /**
    * Project-relative `src/` prefixes to skip when reading/writing comments
    * (e.g. overlay infrastructure or dev-only routes in your app).
    */
   excludeSrcPrefixes?: string[];
-  /** Path to the Cursor CLI `agent` binary. Default: `"agent"` (must be on PATH). */
-  cursorAgentPath?: string;
-};
+}
 
 export function comments(options: CommentsPluginOptions = {}): Plugin {
   const excludeSrcPrefixes = options.excludeSrcPrefixes ?? [];
@@ -93,44 +104,52 @@ export function comments(options: CommentsPluginOptions = {}): Plugin {
           return;
         }
         if (req.method === "GET") {
-          handleGet(req, res, projectRoot, excludeSrcPrefixes).catch((err: unknown) => {
-            // Never let a thrown rejection crash the dev server.
-            sendError(
-              res,
-              500,
-              err instanceof Error ? err.message : String(err),
-            );
-          });
+          handleGet(req, res, projectRoot, excludeSrcPrefixes).catch(
+            (err: unknown) => {
+              // Never let a thrown rejection crash the dev server.
+              sendError(
+                res,
+                500,
+                err instanceof Error ? err.message : String(err)
+              );
+            }
+          );
           return;
         }
         if (req.method === "POST") {
-          handlePost(req, res, projectRoot, excludeSrcPrefixes).catch((err: unknown) => {
-            sendError(
-              res,
-              500,
-              err instanceof Error ? err.message : String(err),
-            );
-          });
+          handlePost(req, res, projectRoot, excludeSrcPrefixes).catch(
+            (err: unknown) => {
+              sendError(
+                res,
+                500,
+                err instanceof Error ? err.message : String(err)
+              );
+            }
+          );
           return;
         }
         if (req.method === "DELETE") {
-          handleDelete(req, res, projectRoot, excludeSrcPrefixes).catch((err: unknown) => {
-            sendError(
-              res,
-              500,
-              err instanceof Error ? err.message : String(err),
-            );
-          });
+          handleDelete(req, res, projectRoot, excludeSrcPrefixes).catch(
+            (err: unknown) => {
+              sendError(
+                res,
+                500,
+                err instanceof Error ? err.message : String(err)
+              );
+            }
+          );
           return;
         }
         if (req.method === "PATCH") {
-          handlePatch(req, res, projectRoot, excludeSrcPrefixes).catch((err: unknown) => {
-            sendError(
-              res,
-              500,
-              err instanceof Error ? err.message : String(err),
-            );
-          });
+          handlePatch(req, res, projectRoot, excludeSrcPrefixes).catch(
+            (err: unknown) => {
+              sendError(
+                res,
+                500,
+                err instanceof Error ? err.message : String(err)
+              );
+            }
+          );
           return;
         }
         // Defer to the next handler so unrelated routes still work.
@@ -150,51 +169,73 @@ export function comments(options: CommentsPluginOptions = {}): Plugin {
         const sub = url.pathname; // e.g. "", "/", "/activate", "/new"
 
         if (req.method === "GET" && (sub === "" || sub === "/")) {
-          handleIterationsList(req, res, projectRoot, excludeSrcPrefixes).catch((err: unknown) => {
-            sendError(res, 500, err instanceof Error ? err.message : String(err));
-          });
-          return;
-        }
-        if (req.method === "POST" && sub === "/activate") {
-          handleIterationsActivate(req, res, projectRoot, excludeSrcPrefixes).catch((err: unknown) => {
-            sendError(res, 500, err instanceof Error ? err.message : String(err));
-          });
-          return;
-        }
-        if (req.method === "POST" && sub === "/new") {
-          handleIterationsNew(req, res, projectRoot, excludeSrcPrefixes).catch((err: unknown) => {
-            // handleIterationsNew streams NDJSON: once headers are flushed we
-            // can't use sendError (it sets headers). If headers haven't been
-            // sent yet, fall back to a 500. Otherwise emit a terminal `done`
-            // event with the error and close the stream.
-            const message = err instanceof Error ? err.message : String(err);
-            if (res.headersSent) {
-              try {
-                res.write(`${JSON.stringify({ type: "done", ok: false, error: message })}\n`);
-              } catch {
-                /* socket already gone */
-              }
-              try {
-                res.end();
-              } catch {
-                /* already closed */
-              }
-            } else {
-              sendError(res, 500, message);
-            }
-          });
-          return;
-        }
-        if (req.method === "POST" && sub === "/screenshot") {
-          handleIterationsScreenshot(req, res, projectRoot, excludeSrcPrefixes).catch(
+          handleIterationsList(req, res, projectRoot, excludeSrcPrefixes).catch(
             (err: unknown) => {
               sendError(
                 res,
                 500,
-                err instanceof Error ? err.message : String(err),
+                err instanceof Error ? err.message : String(err)
               );
-            },
+            }
           );
+          return;
+        }
+        if (req.method === "POST" && sub === "/activate") {
+          handleIterationsActivate(
+            req,
+            res,
+            projectRoot,
+            excludeSrcPrefixes
+          ).catch((err: unknown) => {
+            sendError(
+              res,
+              500,
+              err instanceof Error ? err.message : String(err)
+            );
+          });
+          return;
+        }
+        if (req.method === "POST" && sub === "/new") {
+          handleIterationsNew(req, res, projectRoot, excludeSrcPrefixes).catch(
+            (err: unknown) => {
+              // handleIterationsNew streams NDJSON: once headers are flushed we
+              // can't use sendError (it sets headers). If headers haven't been
+              // sent yet, fall back to a 500. Otherwise emit a terminal `done`
+              // event with the error and close the stream.
+              const message = err instanceof Error ? err.message : String(err);
+              if (res.headersSent) {
+                try {
+                  res.write(
+                    `${JSON.stringify({ type: "done", ok: false, error: message })}\n`
+                  );
+                } catch {
+                  /* socket already gone */
+                }
+                try {
+                  res.end();
+                } catch {
+                  /* already closed */
+                }
+              } else {
+                sendError(res, 500, message);
+              }
+            }
+          );
+          return;
+        }
+        if (req.method === "POST" && sub === "/screenshot") {
+          handleIterationsScreenshot(
+            req,
+            res,
+            projectRoot,
+            excludeSrcPrefixes
+          ).catch((err: unknown) => {
+            sendError(
+              res,
+              500,
+              err instanceof Error ? err.message : String(err)
+            );
+          });
           return;
         }
         next();
@@ -205,7 +246,9 @@ export function comments(options: CommentsPluginOptions = {}): Plugin {
       order: "pre",
       handler(html) {
         // Idempotent: don't double-inject if HMR re-runs this hook.
-        if (html.includes(INJECT_MARKER)) return html;
+        if (html.includes(INJECT_MARKER)) {
+          return html;
+        }
         return html.replace("</head>", `  ${INJECT_MARKER}\n  </head>`);
       },
     },
@@ -220,7 +263,7 @@ async function handleGet(
   req: IncomingMessage,
   res: ServerResponse,
   projectRoot: string,
-  excludeSrcPrefixes: string[],
+  excludeSrcPrefixes: string[]
 ): Promise<void> {
   const url = new URL(req.url ?? "", "http://localhost");
   const file = url.searchParams.get("file");
@@ -233,9 +276,9 @@ async function handleGet(
     try {
       const files = await collectAllowedTsxFiles(
         projectRoot,
-        excludeSrcPrefixes,
+        excludeSrcPrefixes
       );
-      const all: Array<Record<string, unknown>> = [];
+      const all: Record<string, unknown>[] = [];
       for (const absolutePath of files) {
         const relativePath = path
           .relative(projectRoot, absolutePath)
@@ -245,7 +288,6 @@ async function handleGet(
           const { comments: list, warnings } =
             await readCommentsFromFile(absolutePath);
           for (const w of warnings) {
-            // eslint-disable-next-line no-console
             console.warn(`[vite-plugin-comments] ${relativePath}: ${w}`);
           }
           for (const c of list) {
@@ -253,9 +295,8 @@ async function handleGet(
           }
         } catch (err) {
           const message = err instanceof Error ? err.message : String(err);
-          // eslint-disable-next-line no-console
           console.warn(
-            `[vite-plugin-comments] ${relativePath}: parse error — ${message}`,
+            `[vite-plugin-comments] ${relativePath}: parse error — ${message}`
           );
         }
       }
@@ -277,20 +318,24 @@ async function handleGet(
     return;
   }
 
-  if (!existsSync(resolved.absolutePath) || !statSync(resolved.absolutePath).isFile()) {
+  if (
+    !(
+      existsSync(resolved.absolutePath) &&
+      statSync(resolved.absolutePath).isFile()
+    )
+  ) {
     sendError(res, 404, `file not found: ${file}`);
     return;
   }
 
   try {
     const { comments: list, warnings } = await readCommentsFromFile(
-      resolved.absolutePath,
+      resolved.absolutePath
     );
 
     for (const w of warnings) {
       // Dev-only convenience: surface skipped/dynamic attrs in the terminal so
       // the human can see why an `@comment` directive did not appear in the overlay.
-      // eslint-disable-next-line no-console
       console.warn(`[vite-plugin-comments] ${file}: ${w}`);
     }
 
@@ -301,7 +346,7 @@ async function handleGet(
       JSON.stringify({
         file: resolved.relativePath,
         comments: list,
-      }),
+      })
     );
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
@@ -314,7 +359,7 @@ async function handleGet(
  */
 async function collectAllowedTsxFiles(
   projectRoot: string,
-  excludeSrcPrefixes: string[],
+  excludeSrcPrefixes: string[]
 ): Promise<string[]> {
   const srcAbs = path.resolve(projectRoot, SRC_REL);
   const out: string[] = [];
@@ -323,8 +368,10 @@ async function collectAllowedTsxFiles(
       .relative(projectRoot, dir)
       .split(path.sep)
       .join(path.posix.sep);
-    if (excludeSrcPrefixes.some((p) => `${rel}/`.startsWith(p))) return;
-    let entries;
+    if (excludeSrcPrefixes.some((p) => `${rel}/`.startsWith(p))) {
+      return;
+    }
+    let entries: Dirent[];
     try {
       entries = await readdir(dir, { withFileTypes: true });
     } catch {
@@ -339,7 +386,9 @@ async function collectAllowedTsxFiles(
           .relative(projectRoot, full)
           .split(path.sep)
           .join(path.posix.sep);
-        if (excludeSrcPrefixes.some((p) => relFile.startsWith(p))) continue;
+        if (excludeSrcPrefixes.some((p) => relFile.startsWith(p))) {
+          continue;
+        }
         out.push(full);
       }
     }
@@ -352,7 +401,7 @@ async function handlePost(
   req: IncomingMessage,
   res: ServerResponse,
   projectRoot: string,
-  excludeSrcPrefixes: string[],
+  excludeSrcPrefixes: string[]
 ): Promise<void> {
   const body = await readJsonBody(req);
   if (!body.ok) {
@@ -368,15 +417,17 @@ async function handlePost(
   const resolved = resolveSafePagePath(
     projectRoot,
     parsed.value.file,
-    excludeSrcPrefixes,
+    excludeSrcPrefixes
   );
   if (!resolved.ok) {
     sendError(res, 400, resolved.reason);
     return;
   }
   if (
-    !existsSync(resolved.absolutePath) ||
-    !statSync(resolved.absolutePath).isFile()
+    !(
+      existsSync(resolved.absolutePath) &&
+      statSync(resolved.absolutePath).isFile()
+    )
   ) {
     sendError(res, 404, `file not found: ${parsed.value.file}`);
     return;
@@ -397,9 +448,8 @@ async function handlePost(
   if (parsed.value.screenshotPng) {
     screenshotBytes = decodeScreenshotPng(parsed.value.screenshotPng);
     if (!screenshotBytes) {
-      // eslint-disable-next-line no-console
       console.warn(
-        "[vite-plugin-comments] screenshotPng was not a valid PNG data URL (or too large); skipping screenshot",
+        "[vite-plugin-comments] screenshotPng was not a valid PNG data URL (or too large); skipping screenshot"
       );
     }
   }
@@ -408,7 +458,7 @@ async function handlePost(
     ? `/designs/iterations/${commentId}/v0.png`
     : undefined;
 
-  let result;
+  let result: WriteCommentResult;
   try {
     result = await writeCommentToFile({
       absolutePath: resolved.absolutePath,
@@ -450,7 +500,7 @@ async function handlePost(
         "public",
         "designs",
         "iterations",
-        commentId,
+        commentId
       );
       await mkdir(iterDir, { recursive: true });
       if (screenshotBytes) {
@@ -458,15 +508,11 @@ async function handlePost(
         savedScreenshotUrl = `/designs/iterations/${commentId}/v0.png`;
       }
       if (baselineSource !== null) {
-        await atomicWriteText(
-          path.join(iterDir, "v0.tsx"),
-          baselineSource,
-        );
+        await atomicWriteText(path.join(iterDir, "v0.tsx"), baselineSource);
       }
     } catch (err) {
-      // eslint-disable-next-line no-console
       console.warn(
-        `[vite-plugin-comments] failed to write iteration artifacts: ${err instanceof Error ? err.message : String(err)}`,
+        `[vite-plugin-comments] failed to write iteration artifacts: ${err instanceof Error ? err.message : String(err)}`
       );
       savedScreenshotUrl = null;
     }
@@ -496,7 +542,7 @@ async function handlePost(
       date: result.date,
       file: resolved.relativePath,
       ...(savedScreenshotUrl ? { screenshot: savedScreenshotUrl } : {}),
-    }),
+    })
   );
 }
 
@@ -508,7 +554,7 @@ async function handlePatch(
   req: IncomingMessage,
   res: ServerResponse,
   projectRoot: string,
-  excludeSrcPrefixes: string[],
+  excludeSrcPrefixes: string[]
 ): Promise<void> {
   const url = new URL(req.url ?? "", "http://localhost");
   const id = url.pathname.replace(/^\/+/, "");
@@ -537,7 +583,7 @@ async function handlePatch(
   const resolved = resolveSafePagePath(
     projectRoot,
     found.relativePath,
-    excludeSrcPrefixes,
+    excludeSrcPrefixes
   );
   if (!resolved.ok) {
     sendError(res, 400, resolved.reason);
@@ -560,7 +606,7 @@ async function handlePatch(
           id,
           file: resolved.relativePath,
           text: parsed.value.text,
-        }),
+        })
       );
       return;
     }
@@ -580,7 +626,7 @@ async function handlePatch(
           id,
           file: resolved.relativePath,
           reply,
-        }),
+        })
       );
       return;
     }
@@ -602,7 +648,7 @@ async function handlePatch(
           file: resolved.relativePath,
           replyIndex: parsed.value.replyIndex,
           text: parsed.value.text,
-        }),
+        })
       );
       return;
     }
@@ -621,7 +667,7 @@ async function handlePatch(
         id,
         file: resolved.relativePath,
         replyIndex: parsed.value.replyIndex,
-      }),
+      })
     );
   } catch (err) {
     if (err instanceof WriteError) {
@@ -653,7 +699,7 @@ async function handleDelete(
   req: IncomingMessage,
   res: ServerResponse,
   projectRoot: string,
-  excludeSrcPrefixes: string[],
+  excludeSrcPrefixes: string[]
 ): Promise<void> {
   // The middleware is mounted at `/api/comments`, so `req.url` is the suffix
   // (e.g. "/<id>"). Slice off the leading slash and trim any query string.
@@ -676,7 +722,7 @@ async function handleDelete(
   const resolved = resolveSafePagePath(
     projectRoot,
     found.relativePath,
-    excludeSrcPrefixes,
+    excludeSrcPrefixes
   );
   if (!resolved.ok) {
     sendError(res, 400, resolved.reason);
@@ -708,9 +754,8 @@ async function handleDelete(
     try {
       await rm(dir, { recursive: true, force: true });
     } catch (err) {
-      // eslint-disable-next-line no-console
       console.warn(
-        `[vite-plugin-comments] failed to remove ${dir}: ${err instanceof Error ? err.message : String(err)}`,
+        `[vite-plugin-comments] failed to remove ${dir}: ${err instanceof Error ? err.message : String(err)}`
       );
     }
   }
@@ -724,7 +769,7 @@ async function handleDelete(
       id,
       file: resolved.relativePath,
       removedAnchor,
-    }),
+    })
   );
 }
 
@@ -745,9 +790,8 @@ async function handleDelete(
 // human can see what's about to be lost.
 // ---------------------------------------------------------------------------
 
-type FoundComment = {
+interface FoundComment {
   absolutePath: string;
-  relativePath: string;
   comment: {
     id: string;
     anchor: string;
@@ -756,9 +800,10 @@ type FoundComment = {
     view?: string;
     active?: number;
   };
+  relativePath: string;
   /** ids of OTHER @comment markers in the same file (for the activate warning). */
   siblingIds: string[];
-};
+}
 
 /**
  * Walk all allowed .tsx files under src/ and find the one carrying the marker
@@ -767,18 +812,20 @@ type FoundComment = {
 async function findCommentById(
   projectRoot: string,
   commentId: string,
-  excludeSrcPrefixes: string[],
+  excludeSrcPrefixes: string[]
 ): Promise<FoundComment | null> {
   const files = await collectAllowedTsxFiles(projectRoot, excludeSrcPrefixes);
   for (const absolutePath of files) {
-    let result;
+    let result: ReadResult;
     try {
       result = await readCommentsFromFile(absolutePath);
     } catch {
       continue;
     }
     const match = result.comments.find((c) => c.id === commentId);
-    if (!match) continue;
+    if (!match) {
+      continue;
+    }
     const relativePath = path
       .relative(projectRoot, absolutePath)
       .split(path.sep)
@@ -814,7 +861,7 @@ async function handleIterationsList(
   req: IncomingMessage,
   res: ServerResponse,
   projectRoot: string,
-  excludeSrcPrefixes: string[],
+  excludeSrcPrefixes: string[]
 ): Promise<void> {
   const url = new URL(req.url ?? "", "http://localhost");
   const id = url.searchParams.get("id");
@@ -830,7 +877,7 @@ async function handleIterationsList(
   }
 
   const iterDir = path.join(projectRoot, "designs", "iterations", id);
-  if (!existsSync(iterDir) || !statSync(iterDir).isDirectory()) {
+  if (!(existsSync(iterDir) && statSync(iterDir).isDirectory())) {
     sendError(res, 404, `iterations dir not found: ${id}`);
     return;
   }
@@ -847,12 +894,23 @@ async function handleIterationsList(
   const present: Map<number, { tsx: boolean; png: boolean }> = new Map();
   for (const name of entries) {
     const m = name.match(/^v(\d+)\.(tsx|png)$/);
-    if (!m) continue;
-    const n = Number.parseInt(m[1]!, 10);
-    if (!Number.isFinite(n)) continue;
+    if (!m) {
+      continue;
+    }
+    const version = m[1];
+    if (version === undefined) {
+      continue;
+    }
+    const n = Number.parseInt(version, 10);
+    if (!Number.isFinite(n)) {
+      continue;
+    }
     const slot = present.get(n) ?? { tsx: false, png: false };
-    if (m[2] === "tsx") slot.tsx = true;
-    else slot.png = true;
+    if (m[2] === "tsx") {
+      slot.tsx = true;
+    } else {
+      slot.png = true;
+    }
     present.set(n, slot);
   }
 
@@ -877,7 +935,7 @@ async function handleIterationsList(
       file: found.relativePath,
       active,
       versions,
-    }),
+    })
   );
 }
 
@@ -894,7 +952,7 @@ async function handleIterationsActivate(
   req: IncomingMessage,
   res: ServerResponse,
   projectRoot: string,
-  excludeSrcPrefixes: string[],
+  excludeSrcPrefixes: string[]
 ): Promise<void> {
   const body = await readJsonBody(req);
   if (!body.ok) {
@@ -919,9 +977,9 @@ async function handleIterationsActivate(
     "designs",
     "iterations",
     id,
-    `v${v}.tsx`,
+    `v${v}.tsx`
   );
-  if (!existsSync(snapshotPath) || !statSync(snapshotPath).isFile()) {
+  if (!(existsSync(snapshotPath) && statSync(snapshotPath).isFile())) {
     sendError(res, 400, `version snapshot not found: v${v}.tsx`);
     return;
   }
@@ -929,9 +987,8 @@ async function handleIterationsActivate(
   // Warn loudly when there are other markers in this file — they will be
   // overwritten by the snapshot's contents.
   if (found.siblingIds.length > 0) {
-    // eslint-disable-next-line no-console
     console.warn(
-      `[vite-plugin-comments] activating v${v} for comment ${id} will overwrite ${found.siblingIds.length} other comment(s) in ${found.relativePath}`,
+      `[vite-plugin-comments] activating v${v} for comment ${id} will overwrite ${found.siblingIds.length} other comment(s) in ${found.relativePath}`
     );
   }
 
@@ -963,11 +1020,13 @@ async function handleIterationsActivate(
     //      on some element (otherwise we have no insertion point).
     //   2. The CURRENT source file must contain the marker for `id`, so we
     //      can pull the verbatim directive text from it.
-    if (!snapshotSource.includes(`data-comment-anchor="${found.comment.anchor}"`)) {
+    if (
+      !snapshotSource.includes(`data-comment-anchor="${found.comment.anchor}"`)
+    ) {
       sendError(
         res,
         400,
-        "snapshot is too old to safely activate; it pre-dates the anchor attribute.",
+        "snapshot is too old to safely activate; it pre-dates the anchor attribute."
       );
       return;
     }
@@ -983,7 +1042,7 @@ async function handleIterationsActivate(
       sendError(
         res,
         500,
-        `could not extract directive for comment ${id} from current source`,
+        `could not extract directive for comment ${id} from current source`
       );
       return;
     }
@@ -991,7 +1050,7 @@ async function handleIterationsActivate(
       snapshotSource = injectExistingMarkerIntoSource(
         snapshotSource,
         found.comment.anchor,
-        directiveInner,
+        directiveInner
       );
     } catch (err) {
       if (err instanceof WriteError) {
@@ -1001,9 +1060,8 @@ async function handleIterationsActivate(
       sendError(res, 500, err instanceof Error ? err.message : String(err));
       return;
     }
-    // eslint-disable-next-line no-console
     console.warn(
-      `[vite-plugin-comments] injected marker into v${v} snapshot of comment ${id} before activating (snapshot pre-dated the marker)`,
+      `[vite-plugin-comments] injected marker into v${v} snapshot of comment ${id} before activating (snapshot pre-dated the marker)`
     );
   }
 
@@ -1042,7 +1100,7 @@ async function handleIterationsActivate(
       id,
       file: found.relativePath,
       active: v,
-    }),
+    })
   );
 }
 
@@ -1065,7 +1123,7 @@ async function handleIterationsNew(
   req: IncomingMessage,
   res: ServerResponse,
   projectRoot: string,
-  excludeSrcPrefixes: string[],
+  excludeSrcPrefixes: string[]
 ): Promise<void> {
   const body = await readJsonBody(req);
   if (!body.ok) {
@@ -1116,14 +1174,18 @@ async function handleIterationsNew(
   const abortController = new AbortController();
   let clientGone = false;
   const onClose = () => {
-    if (clientGone) return;
+    if (clientGone) {
+      return;
+    }
     clientGone = true;
     abortController.abort();
   };
   req.on("close", onClose);
 
   const writeEvent = (event: object): void => {
-    if (clientGone || res.destroyed) return;
+    if (clientGone || res.destroyed) {
+      return;
+    }
     try {
       res.write(`${JSON.stringify(event)}\n`);
     } catch {
@@ -1161,9 +1223,8 @@ async function handleIterationsNew(
   // ----- Step 2: invoke the selected fix strategy -----------------------------
   // Claude: SDK reads credentials from env (Console API key or subscription).
   // Cursor CLI: `agent login` or CURSOR_API_KEY. See src/fix/strategies/.
-  // eslint-disable-next-line no-console
   console.info(
-    `[vite-plugin-comments] dispatching fix (${model}) for comment ${id} on ${found.relativePath}`,
+    `[vite-plugin-comments] dispatching fix (${model}) for comment ${id} on ${found.relativePath}`
   );
 
   const agentResult = await runFix({
@@ -1237,9 +1298,17 @@ async function handleIterationsNew(
       let max = -1;
       for (const name of entries) {
         const m = name.match(/^v(\d+)\.tsx$/);
-        if (!m) continue;
-        const n = Number.parseInt(m[1]!, 10);
-        if (Number.isFinite(n) && n > max) max = n;
+        if (!m) {
+          continue;
+        }
+        const version = m[1];
+        if (version === undefined) {
+          continue;
+        }
+        const n = Number.parseInt(version, 10);
+        if (Number.isFinite(n) && n > max) {
+          max = n;
+        }
       }
       nextV = max >= 0 ? max + 1 : 1;
     } else {
@@ -1282,9 +1351,8 @@ async function handleIterationsNew(
       await copyFile(v0Png, nextPng);
     }
   } catch (err) {
-    // eslint-disable-next-line no-console
     console.warn(
-      `[vite-plugin-comments] failed to copy v0.png → v${nextV}.png: ${err instanceof Error ? err.message : String(err)}`,
+      `[vite-plugin-comments] failed to copy v0.png → v${nextV}.png: ${err instanceof Error ? err.message : String(err)}`
     );
   }
 
@@ -1340,7 +1408,7 @@ async function handleIterationsScreenshot(
   req: IncomingMessage,
   res: ServerResponse,
   projectRoot: string,
-  excludeSrcPrefixes: string[],
+  excludeSrcPrefixes: string[]
 ): Promise<void> {
   const body = await readJsonBody(req);
   if (!body.ok) {
@@ -1361,7 +1429,7 @@ async function handleIterationsScreenshot(
   }
 
   const iterDir = path.join(projectRoot, "designs", "iterations", id);
-  if (!existsSync(iterDir) || !statSync(iterDir).isDirectory()) {
+  if (!(existsSync(iterDir) && statSync(iterDir).isDirectory())) {
     sendError(res, 404, `iterations dir not found: ${id}`);
     return;
   }
@@ -1389,15 +1457,19 @@ async function handleIterationsScreenshot(
       id,
       v,
       png: `/designs/iterations/${id}/v${v}.png`,
-    }),
+    })
   );
 }
 
-type ScreenshotBody = { id: string; v: number; screenshotPng: string };
+interface ScreenshotBody {
+  id: string;
+  screenshotPng: string;
+  v: number;
+}
 
-function parseScreenshotBody(value: unknown):
-  | { ok: true; value: ScreenshotBody }
-  | { ok: false; reason: string } {
+function parseScreenshotBody(
+  value: unknown
+): { ok: true; value: ScreenshotBody } | { ok: false; reason: string } {
   if (!value || typeof value !== "object") {
     return { ok: false, reason: "body must be a JSON object" };
   }
@@ -1420,11 +1492,14 @@ function parseScreenshotBody(value: unknown):
   return { ok: true, value: { id, v, screenshotPng } };
 }
 
-type ActivateBody = { id: string; v: number };
+interface ActivateBody {
+  id: string;
+  v: number;
+}
 
-function parseActivateBody(value: unknown):
-  | { ok: true; value: ActivateBody }
-  | { ok: false; reason: string } {
+function parseActivateBody(
+  value: unknown
+): { ok: true; value: ActivateBody } | { ok: false; reason: string } {
   if (!value || typeof value !== "object") {
     return { ok: false, reason: "body must be a JSON object" };
   }
@@ -1458,18 +1533,28 @@ const PNG_SIGNATURE = Buffer.from([
  * without a screenshot.
  */
 function decodeScreenshotPng(dataUrl: string): Buffer | null {
-  if (!dataUrl.startsWith(PNG_DATA_URL_PREFIX)) return null;
+  if (!dataUrl.startsWith(PNG_DATA_URL_PREFIX)) {
+    return null;
+  }
   const payload = dataUrl.slice(PNG_DATA_URL_PREFIX.length);
-  if (payload.length === 0) return null;
+  if (payload.length === 0) {
+    return null;
+  }
   let bytes: Buffer;
   try {
     bytes = Buffer.from(payload, "base64");
   } catch {
     return null;
   }
-  if (bytes.length === 0) return null;
-  if (bytes.length > MAX_PNG_BYTES) return null;
-  if (bytes.length < PNG_SIGNATURE.length) return null;
+  if (bytes.length === 0) {
+    return null;
+  }
+  if (bytes.length > MAX_PNG_BYTES) {
+    return null;
+  }
+  if (bytes.length < PNG_SIGNATURE.length) {
+    return null;
+  }
   if (!bytes.subarray(0, PNG_SIGNATURE.length).equals(PNG_SIGNATURE)) {
     return null;
   }
@@ -1478,7 +1563,7 @@ function decodeScreenshotPng(dataUrl: string): Buffer | null {
 
 async function atomicWriteBytes(
   absolutePath: string,
-  bytes: Buffer,
+  bytes: Buffer
 ): Promise<void> {
   const dir = path.dirname(absolutePath);
   const base = path.basename(absolutePath);
@@ -1489,7 +1574,7 @@ async function atomicWriteBytes(
 
 async function atomicWriteText(
   absolutePath: string,
-  content: string,
+  content: string
 ): Promise<void> {
   const dir = path.dirname(absolutePath);
   const base = path.basename(absolutePath);
@@ -1548,13 +1633,14 @@ async function readJsonBody(req: IncomingMessage): Promise<ReadBodyResult> {
   });
 }
 
-type PostBody = {
+interface PostBody {
+  author: string;
+  column: number;
+  existingAnchor?: string;
   file: string;
   line: number;
-  column: number;
-  text: string;
-  author: string;
-  existingAnchor?: string;
+  /** App route (pathname + search + hash) where the comment was created. */
+  route?: string;
   /**
    * Optional `data:image/png;base64,...` URL captured client-side by the
    * composer. The server decodes it, saves a `v0.png` baseline under
@@ -1562,9 +1648,8 @@ type PostBody = {
    * onto the `@comment` directive's `screenshot` attribute.
    */
   screenshotPng?: string;
-  /** App route (pathname + search + hash) where the comment was created. */
-  route?: string;
-};
+  text: string;
+}
 
 type ParseBodyResult =
   | { ok: true; value: PostBody }
@@ -1590,7 +1675,7 @@ function parsePatchBody(value: unknown): ParsePatchBodyResult {
   const hasEditReply = "editReply" in obj;
   const hasDeleteReply = "deleteReply" in obj;
   const fieldCount = [hasText, hasReply, hasEditReply, hasDeleteReply].filter(
-    Boolean,
+    Boolean
   ).length;
 
   if (fieldCount !== 1) {
@@ -1747,7 +1832,7 @@ type SafePathResult =
 function resolveSafePagePath(
   projectRoot: string,
   file: string,
-  excludeSrcPrefixes: string[],
+  excludeSrcPrefixes: string[]
 ): SafePathResult {
   if (path.isAbsolute(file)) {
     return { ok: false, reason: "file must be a relative path" };

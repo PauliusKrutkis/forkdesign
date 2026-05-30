@@ -1,17 +1,17 @@
 import type { ReactNode } from "react";
+import { cn } from "../lib/utils";
 import { Dialog, DialogContent } from "./ui/dialog";
 import { Tabs, TabsList, TabsTrigger } from "./ui/tabs";
-import { cn } from "../lib/utils";
 
 export type ShellTab = "list" | "settings";
 
-type CommentShellProps = {
-  tab: ShellTab;
-  onTabChange: (tab: ShellTab) => void;
-  onClose: () => void;
-  listSubtitle?: string;
+interface CommentShellProps {
   children: ReactNode;
-};
+  listSubtitle?: string;
+  onClose: () => void;
+  onTabChange: (tab: ShellTab) => void;
+  tab: ShellTab;
+}
 
 export function CommentShell({
   tab,
@@ -22,19 +22,19 @@ export function CommentShell({
 }: CommentShellProps) {
   return (
     <div data-comment-overlay="true">
-      <Dialog open onOpenChange={(open) => !open && onClose()}>
+      <Dialog onOpenChange={(open) => !open && onClose()} open>
         <DialogContent
           className={cn(
-            "flex h-[70vh] max-h-[85vh] min-h-[480px] w-full max-w-[460px] flex-col gap-0 overflow-hidden p-0",
+            "flex h-[70vh] max-h-[85vh] min-h-[480px] w-full max-w-[460px] flex-col gap-0 overflow-hidden p-0"
           )}
           onClick={(e) => e.stopPropagation()}
         >
           <Tabs
-            value={tab}
-            onValueChange={(v) => onTabChange(v as ShellTab)}
             className="flex min-h-0 flex-1 flex-col"
+            onValueChange={(v) => onTabChange(v as ShellTab)}
+            value={tab}
           >
-            <div className="flex shrink-0 items-center border-b py-3 pl-4 pr-14">
+            <div className="flex shrink-0 items-center border-b py-3 pr-14 pl-4">
               <TabsList>
                 <TabsTrigger value="list">Comments</TabsTrigger>
                 <TabsTrigger value="settings">Settings</TabsTrigger>
@@ -42,7 +42,7 @@ export function CommentShell({
             </div>
 
             {tab === "list" && listSubtitle ? (
-              <p className="m-0 shrink-0 border-b px-4 py-2 text-xs text-muted-foreground">
+              <p className="m-0 shrink-0 border-b px-4 py-2 text-muted-foreground text-xs">
                 {listSubtitle}
               </p>
             ) : null}

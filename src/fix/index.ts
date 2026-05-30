@@ -3,11 +3,11 @@ import { claudeStrategy } from "./strategies/claude.ts";
 import { cursorCliStrategy } from "./strategies/cursor-cli.ts";
 import type { FixInput, FixResult, FixStrategy } from "./types.ts";
 
+export { configureFixRuntime, resetFixRuntimeConfig } from "./config.ts";
 export type { FixModel } from "./models.ts";
 export { parseFixModel, VALID_FIX_MODELS } from "./models.ts";
-export type { FixInput, FixProgress, FixResult, FixStrategy } from "./types.ts";
-export { configureFixRuntime, resetFixRuntimeConfig } from "./config.ts";
 export { buildIteratePrompt } from "./prompt.ts";
+export type { FixInput, FixProgress, FixResult, FixStrategy } from "./types.ts";
 
 export function resolveFixStrategy(model: FixModel): FixStrategy {
   switch (model) {

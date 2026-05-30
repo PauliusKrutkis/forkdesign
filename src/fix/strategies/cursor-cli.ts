@@ -1,14 +1,14 @@
 import { spawn } from "node:child_process";
-import { buildIteratePrompt } from "../prompt.ts";
+import { getFixRuntimeConfig } from "../config.ts";
 import {
+  type CursorCliStreamEvent,
   countCursorCliAssistantTurn,
   countCursorCliToolStart,
   mapCursorCliError,
   projectCursorCliProgress,
-  type CursorCliStreamEvent,
 } from "../progress/cursor-cli.ts";
+import { buildIteratePrompt } from "../prompt.ts";
 import type { FixInput, FixResult, FixStrategy } from "../types.ts";
-import { getFixRuntimeConfig } from "../config.ts";
 
 export const cursorCliStrategy: FixStrategy = {
   id: "cursor-cli",
@@ -30,7 +30,9 @@ async function runCursorCliFix(input: FixInput): Promise<FixResult> {
   return new Promise<FixResult>((resolve) => {
     let settled = false;
     const finish = (result: FixResult) => {
-      if (settled) return;
+      if (settled) {
+        return;
+      }
       settled = true;
       resolve(result);
     };
@@ -51,7 +53,7 @@ async function runCursorCliFix(input: FixInput): Promise<FixResult> {
         cwd: input.projectRoot,
         env: process.env,
         stdio: ["ignore", "pipe", "pipe"],
-      },
+      }
     );
 
     let stderr = "";
@@ -80,7 +82,9 @@ async function runCursorCliFix(input: FixInput): Promise<FixResult> {
       while ((nl = stdoutBuffer.indexOf("\n")) >= 0) {
         const line = stdoutBuffer.slice(0, nl).trim();
         stdoutBuffer = stdoutBuffer.slice(nl + 1);
-        if (!line) continue;
+        if (!line) {
+          continue;
+        }
 
         let event: CursorCliStreamEvent;
         try {
@@ -95,13 +99,17 @@ async function runCursorCliFix(input: FixInput): Promise<FixResult> {
         if (event.type === "result") {
           sawResult = true;
           const isError = (event as { is_error?: boolean }).is_error;
-          if (isError === true) resultOk = false;
+          if (isError === true) {
+            resultOk = false;
+          }
         }
 
         if (input.onEvent) {
           try {
             const progress = projectCursorCliProgress(event);
-            if (progress) input.onEvent(progress);
+            if (progress) {
+              input.onEvent(progress);
+            }
           } catch {
             // best-effort progress
           }
@@ -130,7 +138,7 @@ async function runCursorCliFix(input: FixInput): Promise<FixResult> {
         return;
       }
 
-      if (!sawResult || !resultOk || (code !== null && code !== 0)) {
+      if (!(sawResult && resultOk) || (code !== null && code !== 0)) {
         finish({ ok: false, error: mapCursorCliError(stderr, code) });
         return;
       }

@@ -1,9 +1,13 @@
-import { AbortError, query, type Options } from "@anthropic-ai/claude-agent-sdk";
-import { buildIteratePrompt } from "../prompt.ts";
+import {
+  AbortError,
+  type Options,
+  query,
+} from "@anthropic-ai/claude-agent-sdk";
 import {
   countClaudeToolUseBlocks,
   projectClaudeProgress,
 } from "../progress/claude.ts";
+import { buildIteratePrompt } from "../prompt.ts";
 import type { FixInput, FixResult, FixStrategy } from "../types.ts";
 
 export const claudeStrategy: FixStrategy = {
@@ -16,8 +20,13 @@ async function runClaudeFix(input: FixInput): Promise<FixResult> {
 
   const abortController = new AbortController();
   if (input.signal) {
-    if (input.signal.aborted) abortController.abort();
-    else input.signal.addEventListener("abort", () => abortController.abort(), { once: true });
+    if (input.signal.aborted) {
+      abortController.abort();
+    } else {
+      input.signal.addEventListener("abort", () => abortController.abort(), {
+        once: true,
+      });
+    }
   }
 
   const options: Options = {
@@ -42,21 +51,27 @@ async function runClaudeFix(input: FixInput): Promise<FixResult> {
         turnsUsed += 1;
         toolCalls += countClaudeToolUseBlocks(event);
       }
-      // eslint-disable-next-line no-console
       console.info(`[claude-agent] ${t ?? "event"}`);
 
       if (input.onEvent) {
         try {
           const progress = projectClaudeProgress(event);
-          if (progress) input.onEvent(progress);
+          if (progress) {
+            input.onEvent(progress);
+          }
         } catch {
           // never let progress reporting derail the loop
         }
       }
     }
   } catch (err) {
-    if (err instanceof AbortError) return { ok: false, error: "aborted" };
-    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    if (err instanceof AbortError) {
+      return { ok: false, error: "aborted" };
+    }
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : String(err),
+    };
   }
 
   return { ok: true, turnsUsed, toolCalls };

@@ -16,7 +16,9 @@ export function useAnchorRects(anchorId: string): DOMRect[] {
   const [rects, setRects] = useState<DOMRect[]>([]);
 
   useEffect(() => {
-    if (typeof document === "undefined") return;
+    if (typeof document === "undefined") {
+      return;
+    }
 
     let elements: HTMLElement[] = [];
     let observers: ResizeObserver[] = [];
@@ -48,8 +50,8 @@ export function useAnchorRects(anchorId: string): DOMRect[] {
       observers = [];
       elements = Array.from(
         document.querySelectorAll<HTMLElement>(
-          `[data-comment-anchor="${cssEscape(anchorId)}"]`,
-        ),
+          `[data-comment-anchor="${cssEscape(anchorId)}"]`
+        )
       );
       if (typeof ResizeObserver !== "undefined") {
         elements.forEach((el) => {

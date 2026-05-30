@@ -1,24 +1,24 @@
-import { useCallback, useEffect, useState } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
-import { Button } from "./ui/button";
+import { useCallback, useEffect, useState } from "react";
 import { cn } from "../lib/utils";
+import { Button } from "./ui/button";
 
-type CommentVersionSwitcherProps = {
+interface CommentVersionSwitcherProps {
   commentId: string;
-};
+}
 
-type IterationVersion = {
-  v: number;
-  tsx: string;
+interface IterationVersion {
   png: string;
-};
+  tsx: string;
+  v: number;
+}
 
-type IterationsResponse = {
-  id: string;
-  file: string;
+interface IterationsResponse {
   active: number;
+  file: string;
+  id: string;
   versions: IterationVersion[];
-};
+}
 
 export function CommentVersionSwitcher({
   commentId,
@@ -29,7 +29,7 @@ export function CommentVersionSwitcher({
   const load = useCallback(async () => {
     try {
       const res = await fetch(
-        `/api/iterations?id=${encodeURIComponent(commentId)}`,
+        `/api/iterations?id=${encodeURIComponent(commentId)}`
       );
       if (!res.ok) {
         setData(null);
@@ -46,7 +46,9 @@ export function CommentVersionSwitcher({
     let cancelled = false;
     const run = async () => {
       await load();
-      if (cancelled) return;
+      if (cancelled) {
+        return;
+      }
     };
     void run();
 
@@ -65,7 +67,9 @@ export function CommentVersionSwitcher({
 
   const activate = useCallback(
     async (v: number) => {
-      if (switching) return;
+      if (switching) {
+        return;
+      }
       setSwitching(true);
       try {
         const res = await fetch("/api/iterations/activate", {
@@ -82,24 +86,32 @@ export function CommentVersionSwitcher({
         setSwitching(false);
       }
     },
-    [commentId, switching],
+    [commentId, switching]
   );
 
   useEffect(() => {
-    if (switching && data) setSwitching(false);
+    if (switching && data) {
+      setSwitching(false);
+    }
   }, [data, switching]);
 
   useEffect(() => {
-    if (!data || data.versions.length <= 1) return;
+    if (!data || data.versions.length <= 1) {
+      return;
+    }
     const onKey = (e: KeyboardEvent) => {
-      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      if (e.metaKey || e.ctrlKey || e.altKey) {
+        return;
+      }
       const active = document.activeElement;
       const inInput =
         active &&
         (active.tagName === "INPUT" ||
           active.tagName === "TEXTAREA" ||
           (active instanceof HTMLElement && active.isContentEditable));
-      if (inInput) return;
+      if (inInput) {
+        return;
+      }
       if (e.key === "ArrowLeft" && data.active > 0 && !switching) {
         e.preventDefault();
         void activate(data.active - 1);
@@ -116,16 +128,20 @@ export function CommentVersionSwitcher({
     return () => document.removeEventListener("keydown", onKey);
   }, [data, switching, activate]);
 
-  if (!data) return null;
+  if (!data) {
+    return null;
+  }
   const total = data.versions.length;
-  if (total <= 0) return null;
+  if (total <= 0) {
+    return null;
+  }
 
   const active = data.active;
   const display = active + 1;
 
   if (total === 1) {
     return (
-      <span className="inline-flex h-7 items-center px-2 font-mono text-xs text-muted-foreground tabular-nums">
+      <span className="inline-flex h-7 items-center px-2 font-mono text-muted-foreground text-xs tabular-nums">
         v{display}
       </span>
     );
@@ -137,19 +153,19 @@ export function CommentVersionSwitcher({
   return (
     <div
       className={cn(
-        "inline-flex items-center gap-0.5 font-mono text-xs text-muted-foreground",
-        switching && "opacity-60",
+        "inline-flex items-center gap-0.5 font-mono text-muted-foreground text-xs",
+        switching && "opacity-60"
       )}
     >
       <Button
+        aria-label="Previous version"
+        className="h-7 w-7"
+        disabled={!canPrev}
+        onClick={() => void activate(active - 1)}
+        size="icon"
+        title="Previous version (←)"
         type="button"
         variant="outline"
-        size="icon"
-        className="h-7 w-7"
-        onClick={() => void activate(active - 1)}
-        disabled={!canPrev}
-        aria-label="Previous version"
-        title="Previous version (←)"
       >
         <ChevronLeft className="h-3.5 w-3.5" />
       </Button>
@@ -157,14 +173,14 @@ export function CommentVersionSwitcher({
         v{display} of {total}
       </span>
       <Button
+        aria-label="Next version"
+        className="h-7 w-7"
+        disabled={!canNext}
+        onClick={() => void activate(active + 1)}
+        size="icon"
+        title="Next version (→)"
         type="button"
         variant="outline"
-        size="icon"
-        className="h-7 w-7"
-        onClick={() => void activate(active + 1)}
-        disabled={!canNext}
-        aria-label="Next version"
-        title="Next version (→)"
       >
         <ChevronRight className="h-3.5 w-3.5" />
       </Button>

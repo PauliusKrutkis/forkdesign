@@ -1,26 +1,22 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { CommentData } from "./types";
-import { CommentDot } from "./CommentDot";
 import { CommentBubble } from "./CommentBubble";
 import {
   CommentComposer,
   type ComposerSubmission,
   type ComposerSubmitResult,
 } from "./CommentComposer";
+import type { DotInstanceTarget } from "./CommentDot";
+import { CommentDot } from "./CommentDot";
 import { CommentManagementPanel } from "./CommentManagementPanel";
 import { CommentSettingsPanel } from "./CommentSettingsPanel";
 import { CommentShell, type ShellTab } from "./CommentShell";
 import { OverlayDock } from "./OverlayDock";
+import { dotRect, placeFloater } from "./placement";
+import { loadSettings, type OverlaySettings, saveSettings } from "./settings";
+import { findSourceLoc } from "./sourceLoc";
+import type { CommentData } from "./types";
 import { TooltipProvider } from "./ui/tooltip";
 import { useAnchorRects } from "./useAnchorElement";
-import type { DotInstanceTarget } from "./CommentDot";
-import { findSourceLoc } from "./sourceLoc";
-import { dotRect, placeFloater } from "./placement";
-import {
-  loadSettings,
-  saveSettings,
-  type OverlaySettings,
-} from "./settings";
 
 /**
  * Top-level comment overlay. Mounted once globally in App.tsx, guarded by
@@ -40,18 +36,15 @@ import {
  * mechanism. The composer POSTs and waits for the file write to flow back
  * through the next /api/comments fetch.
  */
-export type CommentOverlayProps = {
-  /** React Router `navigate`, or any in-app navigation fn. Falls back to full page load. */
-  navigate?: (to: string) => void;
+export interface CommentOverlayProps {
   /**
    * Resolve a source file to an app route for legacy comments without a stored
    * `route` attribute.
    */
-  fileToRoute?: (
-    file: string,
-    ctx: { view?: string | null },
-  ) => string | null;
-};
+  fileToRoute?: (file: string, ctx: { view?: string | null }) => string | null;
+  /** React Router `navigate`, or any in-app navigation fn. Falls back to full page load. */
+  navigate?: (to: string) => void;
+}
 
 export function CommentOverlay({
   navigate: navigateProp,
@@ -60,7 +53,7 @@ export function CommentOverlay({
   const [comments, setComments] = useState<CommentData[]>([]);
   const [openTarget, setOpenTarget] = useState<DotInstanceTarget | null>(null);
   const [hoveredTarget, setHoveredTarget] = useState<DotInstanceTarget | null>(
-    null,
+    null
   );
   const [composerActive, setComposerActive] = useState(false);
   const [shell, setShell] = useState<ShellTab | null>(null);
@@ -70,7 +63,7 @@ export function CommentOverlay({
    * mount, then mirrored back on every change.
    */
   const [settings, setSettings] = useState<OverlaySettings>(() =>
-    loadSettings(),
+    loadSettings()
   );
   /**
    * Anchors currently present in the DOM. Recomputed whenever the comments
@@ -78,7 +71,9 @@ export function CommentOverlay({
    * `data-comment-anchor` attributes). Drives the on-page vs orphaned split
    * in the management panel.
    */
-  const [inDomAnchors, setInDomAnchors] = useState<Set<string>>(() => new Set());
+  const [inDomAnchors, setInDomAnchors] = useState<Set<string>>(
+    () => new Set()
+  );
   /**
    * After a successful composer submit, the new comment lands in source via
    * HMR. We capture its id here so once the next /api/comments fetch returns
@@ -104,13 +99,19 @@ export function CommentOverlay({
       try {
         const res = await fetch("/api/comments");
         if (!res.ok) {
-          if (!cancelled) setComments([]);
+          if (!cancelled) {
+            setComments([]);
+          }
           return;
         }
         const body = (await res.json()) as { comments?: CommentData[] };
-        if (!cancelled) setComments(body.comments ?? []);
+        if (!cancelled) {
+          setComments(body.comments ?? []);
+        }
       } catch {
-        if (!cancelled) setComments([]);
+        if (!cancelled) {
+          setComments([]);
+        }
       }
     };
     void load();
@@ -136,7 +137,9 @@ export function CommentOverlay({
   // remains pending harmlessly — it'll resolve on the next user-triggered
   // refetch or get cleared on unmount.
   useEffect(() => {
-    if (!pendingOpenId) return;
+    if (!pendingOpenId) {
+      return;
+    }
     const c = comments.find((x) => x.id === pendingOpenId);
     if (c) {
       setOpenTarget({ anchor: c.anchor, instance: 0 });
@@ -145,10 +148,16 @@ export function CommentOverlay({
   }, [comments, pendingOpenId]);
 
   useEffect(() => {
-    if (!pendingOpen) return;
-    if (!inDomAnchors.has(pendingOpen.anchor)) return;
+    if (!pendingOpen) {
+      return;
+    }
+    if (!inDomAnchors.has(pendingOpen.anchor)) {
+      return;
+    }
     setOpenTarget({ anchor: pendingOpen.anchor, instance: 0 });
-    if (pendingOpen.view) scrollToDataView(pendingOpen.view);
+    if (pendingOpen.view) {
+      scrollToDataView(pendingOpen.view);
+    }
     setPendingOpen(null);
     setShell(null);
   }, [pendingOpen, inDomAnchors]);
@@ -160,16 +169,24 @@ export function CommentOverlay({
   // Global hotkeys: `C` composer, `L` list shell, `,` settings shell.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.metaKey || e.ctrlKey || e.altKey) return;
-      if (isInTextInput(document.activeElement)) return;
+      if (e.metaKey || e.ctrlKey || e.altKey) {
+        return;
+      }
+      if (isInTextInput(document.activeElement)) {
+        return;
+      }
       if (e.key === ",") {
         e.preventDefault();
         toggleShell("settings");
         return;
       }
-      if (!settings.enabled) return;
+      if (!settings.enabled) {
+        return;
+      }
       if (e.key === "c" || e.key === "C") {
-        if (openTarget) return;
+        if (openTarget) {
+          return;
+        }
         if (composerActive) {
           e.preventDefault();
           setComposerActive(false);
@@ -180,7 +197,9 @@ export function CommentOverlay({
         return;
       }
       if (e.key === "l" || e.key === "L") {
-        if (composerActive || openTarget) return;
+        if (composerActive || openTarget) {
+          return;
+        }
         e.preventDefault();
         toggleShell("list");
       }
@@ -198,12 +217,14 @@ export function CommentOverlay({
   // Mirror the author override into the global the composer sniffs. Empty
   // string clears the override so the composer falls back to its default.
   useEffect(() => {
-    if (typeof window === "undefined") return;
+    if (typeof window === "undefined") {
+      return;
+    }
     const w = window as unknown as { __COMMENT_AUTHOR__?: string };
     if (settings.author.trim()) {
       w.__COMMENT_AUTHOR__ = settings.author.trim();
     } else {
-      delete w.__COMMENT_AUTHOR__;
+      w.__COMMENT_AUTHOR__ = undefined;
     }
   }, [settings.author]);
 
@@ -211,7 +232,9 @@ export function CommentOverlay({
   // way to reach it — but keep the settings shell open if the user just
   // toggled comments off from there (otherwise the panel vanishes mid-edit).
   useEffect(() => {
-    if (settings.enabled) return;
+    if (settings.enabled) {
+      return;
+    }
     setComposerActive(false);
     setShell((prev) => (prev === "settings" ? prev : null));
     setOpenTarget(null);
@@ -235,10 +258,12 @@ export function CommentOverlay({
     const next = new Set<string>();
     nodes.forEach((el) => {
       const v = el.getAttribute("data-comment-anchor");
-      if (v) next.add(v);
+      if (v) {
+        next.add(v);
+      }
     });
     setInDomAnchors(next);
-  }, [comments]);
+  }, []);
 
   // Group by anchor.
   const grouped = useMemo(() => {
@@ -259,13 +284,16 @@ export function CommentOverlay({
 
   // Close the open bubble on outside-click or Escape.
   useEffect(() => {
-    if (!openTarget) return;
+    if (!openTarget) {
+      return;
+    }
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setOpenTarget(null);
+      if (e.key === "Escape") {
+        setOpenTarget(null);
+      }
     };
     const onClick = (e: MouseEvent) => {
-      let cur: Element | null =
-        e.target instanceof Element ? e.target : null;
+      let cur: Element | null = e.target instanceof Element ? e.target : null;
       while (cur) {
         if (
           cur instanceof HTMLElement &&
@@ -313,11 +341,11 @@ export function CommentOverlay({
         "dev@local";
 
       const route =
-        typeof window !== "undefined"
-          ? window.location.pathname +
+        typeof window === "undefined"
+          ? undefined
+          : window.location.pathname +
             window.location.search +
-            window.location.hash
-          : undefined;
+            window.location.hash;
 
       try {
         const res = await fetch("/api/comments", {
@@ -330,7 +358,9 @@ export function CommentOverlay({
             text: entry.text,
             author: String(author),
             ...(existingAnchor ? { existingAnchor } : {}),
-            ...(entry.screenshotPng ? { screenshotPng: entry.screenshotPng } : {}),
+            ...(entry.screenshotPng
+              ? { screenshotPng: entry.screenshotPng }
+              : {}),
             ...(route ? { route } : {}),
           }),
         });
@@ -349,7 +379,9 @@ export function CommentOverlay({
         const body = (await res.json().catch(() => ({}))) as {
           id?: string;
         };
-        if (body.id) setPendingOpenId(body.id);
+        if (body.id) {
+          setPendingOpenId(body.id);
+        }
         // Success: Vite HMR will fire `vite:afterUpdate` once it picks up the
         // file write, the load() effect re-runs, and the new dot appears.
         // Close the composer after the panel finishes its "Saved" pulse.
@@ -362,7 +394,7 @@ export function CommentOverlay({
         return { ok: false, error: `network error: ${message}` };
       }
     },
-    [],
+    []
   );
 
   const handleEdit = useCallback(async (id: string, text: string) => {
@@ -386,7 +418,7 @@ export function CommentOverlay({
             .__COMMENT_AUTHOR__ &&
           String(
             (window as unknown as { __COMMENT_AUTHOR__?: unknown })
-              .__COMMENT_AUTHOR__,
+              .__COMMENT_AUTHOR__
           )) ||
         "dev@local";
       const res = await fetch(`/api/comments/${encodeURIComponent(id)}`, {
@@ -399,7 +431,7 @@ export function CommentOverlay({
         throw new Error(body.error ?? `request failed (${res.status})`);
       }
     },
-    [settings.author],
+    [settings.author]
   );
 
   const handleEditReply = useCallback(
@@ -414,7 +446,7 @@ export function CommentOverlay({
         throw new Error(body.error ?? `request failed (${res.status})`);
       }
     },
-    [],
+    []
   );
 
   const handleDeleteReply = useCallback(
@@ -429,7 +461,7 @@ export function CommentOverlay({
         throw new Error(body.error ?? `request failed (${res.status})`);
       }
     },
-    [],
+    []
   );
 
   const handleResolve = useCallback((id: string) => {
@@ -446,40 +478,48 @@ export function CommentOverlay({
         window.location.assign(to);
       }
     },
-    [navigateProp],
+    [navigateProp]
   );
 
   const resolveCommentRoute = useCallback(
     (comment: CommentData & { file?: string }) => {
-      if (comment.route) return comment.route;
+      if (comment.route) {
+        return comment.route;
+      }
       const file = comment.file;
-      if (!file || !fileToRoute) return null;
+      if (!(file && fileToRoute)) {
+        return null;
+      }
       return fileToRoute(file, { view: comment.view });
     },
-    [fileToRoute],
+    [fileToRoute]
   );
 
   const handleJump = useCallback(
     (target: { anchor: string; instance: number }) => {
       const c = comments.find((x) => x.anchor === target.anchor);
-      if (c?.view) scrollToDataView(c.view);
+      if (c?.view) {
+        scrollToDataView(c.view);
+      }
       setOpenTarget(target);
       setShell(null);
     },
-    [comments],
+    [comments]
   );
 
   const handleGoToPage = useCallback(
     (comment: CommentData & { file?: string }) => {
       const route = resolveCommentRoute(comment);
-      if (!route) return;
+      if (!route) {
+        return;
+      }
 
       const currentRoute =
-        typeof window !== "undefined"
-          ? window.location.pathname +
+        typeof window === "undefined"
+          ? ""
+          : window.location.pathname +
             window.location.search +
-            window.location.hash
-          : "";
+            window.location.hash;
 
       setShell(null);
       setPendingOpen({
@@ -499,148 +539,153 @@ export function CommentOverlay({
 
       navigateTo(route);
     },
-    [resolveCommentRoute, inDomAnchors, handleJump, navigateTo],
+    [resolveCommentRoute, inDomAnchors, handleJump, navigateTo]
   );
 
-  const handleDelete = useCallback(async (id: string) => {
-    // Optimistic: the row will disappear on the next HMR-triggered refetch.
-    // Errors propagate to the panel row so the user gets inline feedback
-    // instead of a swallowed failure.
-    const res = await fetch(`/api/comments/${encodeURIComponent(id)}`, {
-      method: "DELETE",
-    });
-    if (!res.ok) {
-      const body = (await res.json().catch(() => ({}))) as { error?: string };
-      throw new Error(body.error ?? `request failed (${res.status})`);
-    }
-    // If the open bubble was anchored on the deleted comment's anchor, close
-    // it. The HMR refetch will reconcile the rest.
-    setOpenTarget((prev) => {
-      if (!prev) return prev;
-      const stillThere = comments.some(
-        (c) => c.id !== id && c.anchor === prev.anchor,
-      );
-      return stillThere ? prev : null;
-    });
-  }, [comments]);
+  const handleDelete = useCallback(
+    async (id: string) => {
+      // Optimistic: the row will disappear on the next HMR-triggered refetch.
+      // Errors propagate to the panel row so the user gets inline feedback
+      // instead of a swallowed failure.
+      const res = await fetch(`/api/comments/${encodeURIComponent(id)}`, {
+        method: "DELETE",
+      });
+      if (!res.ok) {
+        const body = (await res.json().catch(() => ({}))) as { error?: string };
+        throw new Error(body.error ?? `request failed (${res.status})`);
+      }
+      // If the open bubble was anchored on the deleted comment's anchor, close
+      // it. The HMR refetch will reconcile the rest.
+      setOpenTarget((prev) => {
+        if (!prev) {
+          return prev;
+        }
+        const stillThere = comments.some(
+          (c) => c.id !== id && c.anchor === prev.anchor
+        );
+        return stillThere ? prev : null;
+      });
+    },
+    [comments]
+  );
 
   return (
     <TooltipProvider delayDuration={250} skipDelayDuration={120}>
-    <div
-      data-comment-overlay="true"
-      data-redline-overlay-root="true"
-      className="pointer-events-none fixed inset-0 z-[9000]"
-      aria-live="polite"
-    >
-      {settings.enabled
-        ? anchors.map((anchor) => (
-            <CommentDot
-              key={anchor}
-              anchor={anchor}
-              comments={grouped.get(anchor) ?? []}
-              openTarget={openTarget}
-              onOpen={(target) =>
-                setOpenTarget((prev) =>
-                  prev &&
-                  prev.anchor === target.anchor &&
-                  prev.instance === target.instance
-                    ? null
-                    : target,
-                )
-              }
-              onHover={setHoveredTarget}
-            />
-          ))
-        : null}
+      <div
+        aria-live="polite"
+        className="pointer-events-none fixed inset-0 z-[9000]"
+        data-comment-overlay="true"
+        data-redline-overlay-root="true"
+      >
+        {settings.enabled
+          ? anchors.map((anchor) => (
+              <CommentDot
+                anchor={anchor}
+                comments={grouped.get(anchor) ?? []}
+                key={anchor}
+                onHover={setHoveredTarget}
+                onOpen={(target) =>
+                  setOpenTarget((prev) =>
+                    prev &&
+                    prev.anchor === target.anchor &&
+                    prev.instance === target.instance
+                      ? null
+                      : target
+                  )
+                }
+                openTarget={openTarget}
+              />
+            ))
+          : null}
 
-      {/* Hover preview — only when nothing is open, to avoid double layers. */}
-      {settings.enabled &&
-      hoveredTarget &&
-      (!openTarget ||
-        hoveredTarget.anchor !== openTarget.anchor ||
-        hoveredTarget.instance !== openTarget.instance) ? (
-        <HoverPreview
-          target={hoveredTarget}
-          comments={grouped.get(hoveredTarget.anchor) ?? []}
-        />
-      ) : null}
+        {/* Hover preview — only when nothing is open, to avoid double layers. */}
+        {settings.enabled &&
+        hoveredTarget &&
+        (!openTarget ||
+          hoveredTarget.anchor !== openTarget.anchor ||
+          hoveredTarget.instance !== openTarget.instance) ? (
+          <HoverPreview
+            comments={grouped.get(hoveredTarget.anchor) ?? []}
+            target={hoveredTarget}
+          />
+        ) : null}
 
-      {/* Open bubble. */}
-      {settings.enabled && openTarget ? (
-        <OpenBubble
-          target={openTarget}
-          comments={grouped.get(openTarget.anchor) ?? []}
-          fixModel={settings.model}
-          skipDeleteConfirmation={settings.skipDeleteConfirmation}
-          onClose={() => setOpenTarget(null)}
-          onResolve={handleResolve}
-          onDelete={handleDelete}
-          onEdit={handleEdit}
-          onSubmitReply={handleSubmitReply}
-          onEditReply={handleEditReply}
-          onDeleteReply={handleDeleteReply}
-        />
-      ) : null}
+        {/* Open bubble. */}
+        {settings.enabled && openTarget ? (
+          <OpenBubble
+            comments={grouped.get(openTarget.anchor) ?? []}
+            fixModel={settings.model}
+            onClose={() => setOpenTarget(null)}
+            onDelete={handleDelete}
+            onDeleteReply={handleDeleteReply}
+            onEdit={handleEdit}
+            onEditReply={handleEditReply}
+            onResolve={handleResolve}
+            onSubmitReply={handleSubmitReply}
+            skipDeleteConfirmation={settings.skipDeleteConfirmation}
+            target={openTarget}
+          />
+        ) : null}
 
-      {/* Composer mode is suppressed when comments are off. */}
-      {settings.enabled ? (
-        <CommentComposer
-          active={composerActive}
-          onCancel={() => setComposerActive(false)}
-          onSubmit={handleSubmit}
-        />
-      ) : null}
+        {/* Composer mode is suppressed when comments are off. */}
+        {settings.enabled ? (
+          <CommentComposer
+            active={composerActive}
+            onCancel={() => setComposerActive(false)}
+            onSubmit={handleSubmit}
+          />
+        ) : null}
 
-      <OverlayDock
-        show={settings.showFloatingControls}
-        position={settings.position}
-        enabled={settings.enabled}
-        onToggleEnabled={() => updateSettings({ enabled: !settings.enabled })}
-        composerActive={composerActive}
-        onToggleComposer={() => setComposerActive((v) => !v)}
-        shell={shell}
-        onToggleList={() => toggleShell("list")}
-        onToggleSettings={() => toggleShell("settings")}
-        totalCount={comments.length}
-        onPageCount={
-          comments.filter((c) => inDomAnchors.has(c.anchor)).length
-        }
-      />
-
-      {shell ? (
-        <CommentShell
-          tab={shell}
-          onTabChange={setShell}
-          onClose={() => setShell(null)}
-          listSubtitle={
-            shell === "list"
-              ? (() => {
-                  const onPage = comments.filter((c) =>
-                    inDomAnchors.has(c.anchor),
-                  ).length;
-                  return `${comments.length} total · ${onPage} on this page`;
-                })()
-              : undefined
+        <OverlayDock
+          composerActive={composerActive}
+          enabled={settings.enabled}
+          onPageCount={
+            comments.filter((c) => inDomAnchors.has(c.anchor)).length
           }
-        >
-          {shell === "list" ? (
-            <CommentManagementPanel
-              comments={comments}
-              inDomAnchors={inDomAnchors}
-              onJump={handleJump}
-              onGoToPage={handleGoToPage}
-              fileToRoute={fileToRoute}
-              onDelete={handleDelete}
-            />
-          ) : (
-            <CommentSettingsPanel
-              settings={settings}
-              onChange={updateSettings}
-            />
-          )}
-        </CommentShell>
-      ) : null}
-    </div>
+          onToggleComposer={() => setComposerActive((v) => !v)}
+          onToggleEnabled={() => updateSettings({ enabled: !settings.enabled })}
+          onToggleList={() => toggleShell("list")}
+          onToggleSettings={() => toggleShell("settings")}
+          position={settings.position}
+          shell={shell}
+          show={settings.showFloatingControls}
+          totalCount={comments.length}
+        />
+
+        {shell ? (
+          <CommentShell
+            listSubtitle={
+              shell === "list"
+                ? (() => {
+                    const onPage = comments.filter((c) =>
+                      inDomAnchors.has(c.anchor)
+                    ).length;
+                    return `${comments.length} total · ${onPage} on this page`;
+                  })()
+                : undefined
+            }
+            onClose={() => setShell(null)}
+            onTabChange={setShell}
+            tab={shell}
+          >
+            {shell === "list" ? (
+              <CommentManagementPanel
+                comments={comments}
+                fileToRoute={fileToRoute}
+                inDomAnchors={inDomAnchors}
+                onDelete={handleDelete}
+                onGoToPage={handleGoToPage}
+                onJump={handleJump}
+              />
+            ) : (
+              <CommentSettingsPanel
+                onChange={updateSettings}
+                settings={settings}
+              />
+            )}
+          </CommentShell>
+        ) : null}
+      </div>
     </TooltipProvider>
   );
 }
@@ -672,7 +717,9 @@ function HoverPreview({
 
   useEffect(() => {
     const el = previewRef.current;
-    if (!el) return;
+    if (!el) {
+      return;
+    }
     const obs = new ResizeObserver((entries) => {
       for (const e of entries) {
         setSize({ width: e.contentRect.width, height: e.contentRect.height });
@@ -685,7 +732,9 @@ function HoverPreview({
   const lead = comments[0];
 
   const position = useMemo(() => {
-    if (!rect) return null;
+    if (!rect) {
+      return null;
+    }
     // Anchor to the dot's clamped rect (same source of truth as the dot
     // itself), so the preview visually sits next to the handle the user is
     // hovering even when the dot has been pulled inward to stay on-screen.
@@ -700,20 +749,24 @@ function HoverPreview({
     });
   }, [rect, size.height, viewport]);
 
-  if (!rect || !lead || !position) return null;
+  if (!(rect && lead && position)) {
+    return null;
+  }
 
   return (
     <div
-      ref={previewRef}
-      data-comment-overlay="true"
       className="pointer-events-none fixed z-[9150] rounded-md border bg-popover p-2.5 text-popover-foreground shadow-md"
-      style={{ left: position.left, top: position.top, width: PREVIEW_WIDTH }}
+      data-comment-overlay="true"
+      ref={previewRef}
       role="tooltip"
+      style={{ left: position.left, top: position.top, width: PREVIEW_WIDTH }}
     >
-      <p className="m-0 truncate text-xs text-muted-foreground">{lead.author}</p>
+      <p className="m-0 truncate text-muted-foreground text-xs">
+        {lead.author}
+      </p>
       <p className="m-0 mt-1 truncate text-sm">{lead.text}</p>
       {comments.length > 1 ? (
-        <p className="m-0 mt-1 text-xs text-muted-foreground">
+        <p className="m-0 mt-1 text-muted-foreground text-xs">
           +{comments.length - 1} more
         </p>
       ) : null}
@@ -722,7 +775,9 @@ function HoverPreview({
 }
 
 function readViewport() {
-  if (typeof window === "undefined") return { width: 1024, height: 768 };
+  if (typeof window === "undefined") {
+    return { width: 1024, height: 768 };
+  }
   return { width: window.innerWidth, height: window.innerHeight };
 }
 
@@ -732,10 +787,16 @@ function readViewport() {
  * the same definition.
  */
 export function isInTextInput(el: Element | null): boolean {
-  if (!el) return false;
+  if (!el) {
+    return false;
+  }
   const tag = el.tagName;
-  if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return true;
-  if (el instanceof HTMLElement && el.isContentEditable) return true;
+  if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") {
+    return true;
+  }
+  if (el instanceof HTMLElement && el.isContentEditable) {
+    return true;
+  }
   return false;
 }
 
@@ -773,22 +834,24 @@ function OpenBubble({
   return (
     <CommentBubble
       comments={comments}
-      rect={rect}
       fixModel={fixModel}
-      skipDeleteConfirmation={skipDeleteConfirmation}
       onClose={onClose}
-      onResolve={onResolve}
       onDelete={onDelete}
-      onEdit={onEdit}
-      onSubmitReply={onSubmitReply}
-      onEditReply={onEditReply}
       onDeleteReply={onDeleteReply}
+      onEdit={onEdit}
+      onEditReply={onEditReply}
+      onResolve={onResolve}
+      onSubmitReply={onSubmitReply}
+      rect={rect}
+      skipDeleteConfirmation={skipDeleteConfirmation}
     />
   );
 }
 
 function scrollToDataView(view: string) {
-  if (typeof document === "undefined") return;
+  if (typeof document === "undefined") {
+    return;
+  }
   const escaped =
     typeof CSS !== "undefined" && typeof CSS.escape === "function"
       ? CSS.escape(view)

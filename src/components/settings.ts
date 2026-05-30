@@ -4,10 +4,7 @@
  * — this module is just a defensive (de)serializer over `localStorage`.
  */
 
-import {
-  type FixModel,
-  VALID_FIX_MODELS,
-} from "../fix/models.ts";
+import { type FixModel, VALID_FIX_MODELS } from "../fix/models.ts";
 
 export type OverlayPosition =
   | "bottom-right"
@@ -17,20 +14,20 @@ export type OverlayPosition =
 
 export type OverlayModel = FixModel;
 
-export type OverlaySettings = {
-  /** false = system fully muted (no dots/bubbles/panel, only settings access). */
-  enabled: boolean;
-  /** Whether the corner dock pill renders. Hotkeys keep working when false. */
-  showFloatingControls: boolean;
-  /** Which corner the dock pill anchors to. */
-  position: OverlayPosition;
+export interface OverlaySettings {
   /** Override for window.__COMMENT_AUTHOR__. Empty string disables override. */
   author: string;
+  /** false = system fully muted (no dots/bubbles/panel, only settings access). */
+  enabled: boolean;
   /** AI model for Fix runs; sent to the server with each iteration request. */
   model: OverlayModel;
+  /** Which corner the dock pill anchors to. */
+  position: OverlayPosition;
+  /** Whether the corner dock pill renders. Hotkeys keep working when false. */
+  showFloatingControls: boolean;
   /** When true, delete hotkey/button removes the comment without confirming. */
   skipDeleteConfirmation: boolean;
-};
+}
 
 export const DEFAULT_SETTINGS: OverlaySettings = {
   enabled: true,
@@ -57,14 +54,18 @@ const VALID_MODELS = VALID_FIX_MODELS;
  * its default so the caller never has to defend against partial state.
  */
 export function loadSettings(): OverlaySettings {
-  if (typeof window === "undefined") return { ...DEFAULT_SETTINGS };
+  if (typeof window === "undefined") {
+    return { ...DEFAULT_SETTINGS };
+  }
   let raw: string | null = null;
   try {
     raw = window.localStorage.getItem(STORAGE_KEY);
   } catch {
     return { ...DEFAULT_SETTINGS };
   }
-  if (!raw) return { ...DEFAULT_SETTINGS };
+  if (!raw) {
+    return { ...DEFAULT_SETTINGS };
+  }
 
   let parsed: unknown;
   try {
@@ -87,8 +88,7 @@ export function loadSettings(): OverlaySettings {
   const author =
     typeof obj.author === "string" ? obj.author : DEFAULT_SETTINGS.author;
   const model =
-    typeof obj.model === "string" &&
-    VALID_MODELS.has(obj.model as OverlayModel)
+    typeof obj.model === "string" && VALID_MODELS.has(obj.model as OverlayModel)
       ? (obj.model as OverlayModel)
       : DEFAULT_SETTINGS.model;
   const showFloatingControls =
@@ -112,7 +112,9 @@ export function loadSettings(): OverlaySettings {
 
 /** Persist settings; silently no-ops if storage is unavailable. */
 export function saveSettings(s: OverlaySettings): void {
-  if (typeof window === "undefined") return;
+  if (typeof window === "undefined") {
+    return;
+  }
   try {
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify(s));
   } catch {

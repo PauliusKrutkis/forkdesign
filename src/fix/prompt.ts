@@ -1,13 +1,13 @@
 import path from "node:path";
 
-export type PromptInput = {
-  projectRoot: string;
-  file: string;
+export interface PromptInput {
   anchor: string;
-  text: string;
+  file: string;
+  projectRoot: string;
   screenshot?: string;
+  text: string;
   view?: string;
-};
+}
 
 export function buildIteratePrompt(input: PromptInput): string {
   const parts: string[] = [];
@@ -21,25 +21,29 @@ export function buildIteratePrompt(input: PromptInput): string {
     "## Location",
     `File: ${input.file}`,
     `Element anchor: \`data-comment-anchor="${input.anchor}"\``,
-    "Find the element by searching for the anchor attribute in the file. Modify code AROUND that element to address the feedback.",
+    "Find the element by searching for the anchor attribute in the file. Modify code AROUND that element to address the feedback."
   );
 
   if (input.screenshot) {
     const absScreenshot = path.join(
       input.projectRoot,
       "public",
-      input.screenshot.replace(/^\//, ""),
+      input.screenshot.replace(/^\//, "")
     );
     parts.push(
       "",
       "## Visual context",
       `Screenshot taken at the time of feedback: \`${absScreenshot}\``,
-      "Read this image to see what the user is looking at when they wrote the feedback.",
+      "Read this image to see what the user is looking at when they wrote the feedback."
     );
   }
 
   if (input.view) {
-    parts.push("", "## View context", `The element is inside the \`data-view="${input.view}"\` region.`);
+    parts.push(
+      "",
+      "## View context",
+      `The element is inside the \`data-view="${input.view}"\` region.`
+    );
   }
 
   parts.push(
@@ -51,7 +55,7 @@ export function buildIteratePrompt(input: PromptInput): string {
     "- Make focused changes. Don't rewrite unrelated parts of the file.",
     "- Don't run tests or builds — the user verifies visually.",
     "",
-    "Now read the file, locate the element by its anchor, and apply the changes. Once you're satisfied, stop.",
+    "Now read the file, locate the element by its anchor, and apply the changes. Once you're satisfied, stop."
   );
 
   return parts.join("\n");

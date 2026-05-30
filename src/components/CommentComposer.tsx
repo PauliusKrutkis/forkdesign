@@ -1,24 +1,18 @@
-import { useEffect, useRef, useState } from "react";
 import { toPng } from "html-to-image";
-import { SquareDashedMousePointer, Check } from "lucide-react";
-import { Button } from "./ui/button";
-import { Textarea } from "./ui/textarea";
-import { Kbd } from "./ui/kbd";
-import { withCtrl } from "./ShortcutHint";
+import { Check, SquareDashedMousePointer } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 import { HotkeyTip } from "./HotkeyTip";
+import { withCtrl } from "./ShortcutHint";
 import { effectiveBackgroundColor } from "./screenshot";
+import { Button } from "./ui/button";
+import { Kbd } from "./ui/kbd";
+import { Textarea } from "./ui/textarea";
 
-export type ComposerSubmission = {
+export interface ComposerSubmission {
   /** anchor uuid assigned to the targeted element */
   anchor: string;
-  /** the element that was clicked to seed the comment */
-  target: HTMLElement;
   /** anchor point (page x/y of the click) for positioning the panel */
   clickPoint: { x: number; y: number };
-  /** the slug of the nearest data-view ancestor, if any */
-  view: string | undefined;
-  /** the typed body */
-  text: string;
   /**
    * Optional `data:image/png;base64,...` capture of the targeted element's
    * bounding box. Undefined when the client-side capture failed (cross-origin
@@ -26,18 +20,22 @@ export type ComposerSubmission = {
    * a screenshot rather than fail the request.
    */
   screenshotPng?: string;
-};
+  /** the element that was clicked to seed the comment */
+  target: HTMLElement;
+  /** the typed body */
+  text: string;
+  /** the slug of the nearest data-view ancestor, if any */
+  view: string | undefined;
+}
 
 /**
  * Outcome of an async submission. The composer panel uses this to drive its
  * inline saving/saved/error UI without the parent having to mount its own
  * status surface.
  */
-export type ComposerSubmitResult =
-  | { ok: true }
-  | { ok: false; error: string };
+export type ComposerSubmitResult = { ok: true } | { ok: false; error: string };
 
-type CommentComposerProps = {
+interface CommentComposerProps {
   /** when true, the composer mode is active (highlight + capture next click) */
   active: boolean;
   /** turn composer mode off */
@@ -49,7 +47,7 @@ type CommentComposerProps = {
    * pick a different target.
    */
   onSubmit: (entry: ComposerSubmission) => Promise<ComposerSubmitResult>;
-};
+}
 
 const PANEL_WIDTH = 320;
 const VIEWPORT_PADDING = 12;
@@ -86,8 +84,12 @@ export function CommentComposer({
 
   // Capture: highlight hovered element, suppress click on real UI, freeze on click.
   useEffect(() => {
-    if (!active || target) return;
-    if (typeof document === "undefined") return;
+    if (!active || target) {
+      return;
+    }
+    if (typeof document === "undefined") {
+      return;
+    }
 
     const isOverlayChrome = (el: Element | null): boolean => {
       let cur: Element | null = el;
@@ -105,7 +107,9 @@ export function CommentComposer({
 
     const highlight = (el: HTMLElement | null) => {
       const node = highlightRef.current;
-      if (!node) return;
+      if (!node) {
+        return;
+      }
       if (!el) {
         node.style.display = "none";
         return;
@@ -136,16 +140,22 @@ export function CommentComposer({
         e instanceof MouseEvent
           ? pickTarget(e.clientX, e.clientY)
           : (e.target as HTMLElement | null);
-      if (!target || isOverlayChrome(target)) return false;
+      if (!target || isOverlayChrome(target)) {
+        return false;
+      }
       e.preventDefault();
       e.stopImmediatePropagation();
       return true;
     };
 
     const onClick = (e: MouseEvent) => {
-      if (!swallow(e)) return;
+      if (!swallow(e)) {
+        return;
+      }
       const el = pickTarget(e.clientX, e.clientY);
-      if (!el) return;
+      if (!el) {
+        return;
+      }
       highlight(null);
       setTarget({ el, clickPoint: { x: e.clientX, y: e.clientY } });
     };
@@ -159,7 +169,9 @@ export function CommentComposer({
     };
 
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onCancel();
+      if (e.key === "Escape") {
+        onCancel();
+      }
     };
 
     document.addEventListener("mousemove", onMove, true);
@@ -185,32 +197,39 @@ export function CommentComposer({
     }
   }, [target]);
 
-  if (!active) return null;
+  if (!active) {
+    return null;
+  }
 
   return (
     <>
       {/* hover highlight; absolute over the page using viewport coordinates */}
       <div
-        ref={highlightRef}
-        data-comment-overlay="true"
         aria-hidden
-        className="pointer-events-none fixed z-[9300] hidden outline-dashed outline-2 outline-offset-2 outline-ring"
+        className="pointer-events-none fixed z-[9300] hidden outline-dashed outline-2 outline-ring outline-offset-2"
+        data-comment-overlay="true"
+        ref={highlightRef}
         style={{ display: "none" }}
       />
       {target ? (
         <ComposerPanel
-          target={target.el}
           clickPoint={target.clickPoint}
-          text={text}
-          textareaRef={textareaRef}
-          onTextChange={setText}
           onCancel={() => {
             setTarget(null);
             setText("");
           }}
+          onSaved={() => {
+            // Defer the reset slightly so the "saved" pill is visible.
+            window.setTimeout(() => {
+              setTarget(null);
+              setText("");
+            }, 600);
+          }}
           onSubmit={async () => {
             const trimmed = text.trim();
-            if (!trimmed) return { ok: false, error: "empty body" };
+            if (!trimmed) {
+              return { ok: false, error: "empty body" };
+            }
             const anchor = ensureAnchor(target.el);
             const view =
               target.el.closest("[data-view]")?.getAttribute("data-view") ??
@@ -226,13 +245,10 @@ export function CommentComposer({
             });
             return result;
           }}
-          onSaved={() => {
-            // Defer the reset slightly so the "saved" pill is visible.
-            window.setTimeout(() => {
-              setTarget(null);
-              setText("");
-            }, 600);
-          }}
+          onTextChange={setText}
+          target={target.el}
+          text={text}
+          textareaRef={textareaRef}
         />
       ) : null}
     </>
@@ -270,13 +286,13 @@ function ComposerPanel({
   // element's bounding box — for page-wide elements whose `bottom` is below
   // the viewport, anchoring to the element would push the panel off-screen.
   // Estimated panel height covers header + textarea + action row.
-  const viewportW = typeof window !== "undefined" ? window.innerWidth : 1024;
-  const viewportH = typeof window !== "undefined" ? window.innerHeight : 768;
+  const viewportW = typeof window === "undefined" ? 1024 : window.innerWidth;
+  const viewportH = typeof window === "undefined" ? 768 : window.innerHeight;
   const ESTIMATED_PANEL_HEIGHT = 200;
   const desiredLeft = clickPoint.x - PANEL_WIDTH / 2;
   const left = Math.max(
     VIEWPORT_PADDING,
-    Math.min(desiredLeft, viewportW - PANEL_WIDTH - VIEWPORT_PADDING),
+    Math.min(desiredLeft, viewportW - PANEL_WIDTH - VIEWPORT_PADDING)
   );
   // Prefer placing below the click point; if the click is near the viewport
   // bottom and the panel would clip, flip above.
@@ -293,14 +309,20 @@ function ComposerPanel({
   // panel reads as one writing surface rather than a fixed box you type into.
   useEffect(() => {
     const ta = textareaRef.current;
-    if (!ta) return;
+    if (!ta) {
+      return;
+    }
     ta.style.height = "auto";
     ta.style.height = `${Math.min(ta.scrollHeight, 168)}px`;
-  }, [text, textareaRef]);
+  }, [textareaRef]);
 
   const submit = async () => {
-    if (submitting || saved) return;
-    if (!text.trim()) return;
+    if (submitting || saved) {
+      return;
+    }
+    if (!text.trim()) {
+      return;
+    }
     setStatus({ kind: "saving" });
     let result: ComposerSubmitResult;
     try {
@@ -320,10 +342,10 @@ function ComposerPanel({
 
   return (
     <div
-      data-comment-overlay="true"
       className="pointer-events-auto fixed z-[9300] flex flex-col overflow-hidden rounded-lg border bg-background shadow-lg"
-      style={{ left, top, width: PANEL_WIDTH }}
+      data-comment-overlay="true"
       onClick={(e) => e.stopPropagation()}
+      style={{ left, top, width: PANEL_WIDTH }}
     >
       {/* Header — orients the user: what they're doing (left) and which element
           the note is anchored to (right). The dashed-cursor glyph echoes the
@@ -334,13 +356,13 @@ function ComposerPanel({
             aria-hidden
             className="h-3.5 w-3.5 shrink-0 text-muted-foreground"
           />
-          <span className="text-xs font-medium text-foreground">
+          <span className="font-medium text-foreground text-xs">
             New comment
           </span>
         </div>
         <span
+          className="max-w-[150px] shrink-0 truncate rounded bg-muted px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground leading-none"
           title={describeElement(target)}
-          className="max-w-[150px] shrink-0 truncate rounded bg-muted px-1.5 py-0.5 font-mono text-[10px] leading-none text-muted-foreground"
         >
           {describeElement(target)}
         </span>
@@ -351,13 +373,9 @@ function ComposerPanel({
           rather than a box-in-a-box. */}
       <div className="px-3.5 py-3">
         <Textarea
-          ref={textareaRef}
-          value={text}
-          onChange={(e) => onTextChange(e.target.value)}
-          placeholder="Describe the change you want…"
-          rows={3}
-          disabled={submitting || saved}
           className="min-h-[66px] resize-none border-0 bg-transparent p-0 text-sm shadow-none focus-visible:ring-0"
+          disabled={submitting || saved}
+          onChange={(e) => onTextChange(e.target.value)}
           onKeyDown={(e) => {
             if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
               e.preventDefault();
@@ -368,9 +386,13 @@ function ComposerPanel({
               onCancel();
             }
           }}
+          placeholder="Describe the change you want…"
+          ref={textareaRef}
+          rows={3}
+          value={text}
         />
         {status.kind === "error" ? (
-          <p role="alert" className="m-0 mt-2 text-xs text-destructive">
+          <p className="m-0 mt-2 text-destructive text-xs" role="alert">
             {status.message}
           </p>
         ) : null}
@@ -386,24 +408,24 @@ function ComposerPanel({
           <span>to save</span>
         </span>
         <div className="flex items-center gap-2">
-          <HotkeyTip label="Cancel" keys="Esc">
+          <HotkeyTip keys="Esc" label="Cancel">
             <Button
+              disabled={submitting}
+              onClick={onCancel}
+              size="sm"
               type="button"
               variant="ghost"
-              size="sm"
-              onClick={onCancel}
-              disabled={submitting}
             >
               Cancel
             </Button>
           </HotkeyTip>
           <Button
-            type="button"
-            size="sm"
+            disabled={!text.trim() || submitting || saved}
             onClick={() => {
               void submit();
             }}
-            disabled={!text.trim() || submitting || saved}
+            size="sm"
+            type="button"
           >
             {submitting ? (
               "Saving…"
@@ -424,11 +446,17 @@ function ComposerPanel({
 
 function describeElement(el: HTMLElement): string {
   const aria = el.getAttribute("aria-label")?.trim();
-  if (aria) return aria;
+  if (aria) {
+    return aria;
+  }
   const tag = el.tagName.toLowerCase();
-  if (el.id) return `${tag} #${el.id}`;
+  if (el.id) {
+    return `${tag} #${el.id}`;
+  }
   const testId = el.getAttribute("data-testid");
-  if (testId) return `${tag} · ${testId}`;
+  if (testId) {
+    return `${tag} · ${testId}`;
+  }
   return tag;
 }
 
@@ -436,8 +464,12 @@ function describeElement(el: HTMLElement): string {
 function pickTarget(x: number, y: number): HTMLElement | null {
   const stack = document.elementsFromPoint(x, y);
   for (const node of stack) {
-    if (!(node instanceof HTMLElement)) continue;
-    if (isOverlayNode(node)) continue;
+    if (!(node instanceof HTMLElement)) {
+      continue;
+    }
+    if (isOverlayNode(node)) {
+      continue;
+    }
     return node;
   }
   return null;
@@ -446,7 +478,9 @@ function pickTarget(x: number, y: number): HTMLElement | null {
 function isOverlayNode(el: HTMLElement): boolean {
   let cur: HTMLElement | null = el;
   while (cur) {
-    if (cur.dataset.commentOverlay === "true") return true;
+    if (cur.dataset.commentOverlay === "true") {
+      return true;
+    }
     cur = cur.parentElement;
   }
   return false;
@@ -460,7 +494,9 @@ function isOverlayNode(el: HTMLElement): boolean {
  */
 function ensureAnchor(el: HTMLElement): string {
   const existing = el.getAttribute("data-comment-anchor");
-  if (existing) return existing;
+  if (existing) {
+    return existing;
+  }
   const uuid = randomUuid();
   el.setAttribute("data-comment-anchor", uuid);
   return uuid;
@@ -480,7 +516,7 @@ function ensureAnchor(el: HTMLElement): string {
  * errors and log them rather than propagate.
  */
 async function captureElementScreenshot(
-  el: HTMLElement,
+  el: HTMLElement
 ): Promise<string | undefined> {
   try {
     const pixelRatio =
@@ -494,24 +530,26 @@ async function captureElementScreenshot(
       // Drop the overlay's own chrome from the capture in case it overlaps
       // the target (the highlight + dot live on data-comment-overlay nodes).
       filter: (node) => {
-        if (node instanceof HTMLElement) {
-          if (node.dataset.commentOverlay === "true") return false;
+        if (
+          node instanceof HTMLElement &&
+          node.dataset.commentOverlay === "true"
+        ) {
+          return false;
         }
         return true;
       },
       cacheBust: true,
     });
     if (typeof dataUrl !== "string" || !dataUrl.startsWith("data:image/png")) {
-      return undefined;
+      return;
     }
     return dataUrl;
   } catch (err) {
-    // eslint-disable-next-line no-console
     console.warn(
       "[CommentComposer] screenshot capture failed; submitting without it",
-      err,
+      err
     );
-    return undefined;
+    return;
   }
 }
 
