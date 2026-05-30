@@ -570,6 +570,7 @@ export function CommentOverlay({
         <OpenBubble
           target={openTarget}
           comments={grouped.get(openTarget.anchor) ?? []}
+          fixModel={settings.model}
           skipDeleteConfirmation={settings.skipDeleteConfirmation}
           onClose={() => setOpenTarget(null)}
           onResolve={handleResolve}
@@ -741,6 +742,7 @@ export function isInTextInput(el: Element | null): boolean {
 function OpenBubble({
   target,
   comments,
+  fixModel,
   skipDeleteConfirmation,
   onClose,
   onResolve,
@@ -752,6 +754,7 @@ function OpenBubble({
 }: {
   target: DotInstanceTarget;
   comments: CommentData[];
+  fixModel: OverlaySettings["model"];
   skipDeleteConfirmation: boolean;
   onClose: () => void;
   onResolve: (id: string) => void;
@@ -771,6 +774,7 @@ function OpenBubble({
     <CommentBubble
       comments={comments}
       rect={rect}
+      fixModel={fixModel}
       skipDeleteConfirmation={skipDeleteConfirmation}
       onClose={onClose}
       onResolve={onResolve}

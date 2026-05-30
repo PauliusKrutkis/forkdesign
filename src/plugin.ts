@@ -44,7 +44,12 @@ import {
   WriteError,
 } from "./babel-comment-writer.ts";
 import { copyFile, readdir } from "node:fs/promises";
-import { iterateWithAgent } from "./iterate-with-agent.ts";
+import {
+  configureFixRuntime,
+  parseFixModel,
+  runFix,
+  type FixModel,
+} from "./fix/index.ts";
 
 const INJECT_MARKER = "<!-- vite-plugin-comments injected -->";
 const SRC_REL = "src";
@@ -60,10 +65,13 @@ export type CommentsPluginOptions = {
    * (e.g. overlay infrastructure or dev-only routes in your app).
    */
   excludeSrcPrefixes?: string[];
+  /** Path to the Cursor CLI `agent` binary. Default: `"agent"` (must be on PATH). */
+  cursorAgentPath?: string;
 };
 
 export function comments(options: CommentsPluginOptions = {}): Plugin {
   const excludeSrcPrefixes = options.excludeSrcPrefixes ?? [];
+  const cursorAgentPath = options.cursorAgentPath;
   let projectRoot = process.cwd();
 
   return {
@@ -72,6 +80,9 @@ export function comments(options: CommentsPluginOptions = {}): Plugin {
 
     configResolved(config) {
       projectRoot = config.root;
+      configureFixRuntime({
+        ...(cursorAgentPath ? { cursorAgentPath } : {}),
+      });
     },
 
     configureServer(server) {
@@ -1071,6 +1082,17 @@ async function handleIterationsNew(
     return;
   }
 
+  let model: FixModel = "default";
+  const rawModel = (body.value as Record<string, unknown>).model;
+  if (rawModel !== undefined) {
+    const parsed = parseFixModel(rawModel);
+    if (!parsed) {
+      sendError(res, 400, "field `model` must be a supported fix model id");
+      return;
+    }
+    model = parsed;
+  }
+
   const found = await findCommentById(projectRoot, id, excludeSrcPrefixes);
   if (!found) {
     sendError(res, 404, `comment id not found: ${id}`);
@@ -1136,22 +1158,22 @@ async function handleIterationsNew(
     return;
   }
 
-  // ----- Step 2: invoke the Claude Agent SDK -------------------------------
-  // The SDK reads credentials from the user's env (Console API key OR the
-  // logged-in subscription via ~/.claude/.credentials.json). Nothing to set
-  // up server-side. See iterate-with-agent.ts for the full prompt.
+  // ----- Step 2: invoke the selected fix strategy -----------------------------
+  // Claude: SDK reads credentials from env (Console API key or subscription).
+  // Cursor CLI: `agent login` or CURSOR_API_KEY. See src/fix/strategies/.
   // eslint-disable-next-line no-console
   console.info(
-    `[vite-plugin-comments] dispatching agent for comment ${id} on ${found.relativePath}`,
+    `[vite-plugin-comments] dispatching fix (${model}) for comment ${id} on ${found.relativePath}`,
   );
 
-  const agentResult = await iterateWithAgent({
+  const agentResult = await runFix({
     projectRoot,
     file: found.relativePath,
     anchor: found.comment.anchor,
     text: found.comment.text,
     screenshot: found.comment.screenshot,
     view: found.comment.view,
+    model,
     signal: abortController.signal,
     onEvent: (e) => {
       writeEvent({

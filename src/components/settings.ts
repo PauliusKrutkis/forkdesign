@@ -4,16 +4,18 @@
  * — this module is just a defensive (de)serializer over `localStorage`.
  */
 
+import {
+  type FixModel,
+  VALID_FIX_MODELS,
+} from "../fix/models.ts";
+
 export type OverlayPosition =
   | "bottom-right"
   | "bottom-left"
   | "top-right"
   | "top-left";
 
-export type OverlayModel =
-  | "default"
-  | "claude-sonnet-4-6"
-  | "claude-opus-4-7";
+export type OverlayModel = FixModel;
 
 export type OverlaySettings = {
   /** false = system fully muted (no dots/bubbles/panel, only settings access). */
@@ -24,7 +26,7 @@ export type OverlaySettings = {
   position: OverlayPosition;
   /** Override for window.__COMMENT_AUTHOR__. Empty string disables override. */
   author: string;
-  /** Future-wired model preference; persisted now, sent to server in #28+. */
+  /** AI model for Fix runs; sent to the server with each iteration request. */
   model: OverlayModel;
   /** When true, delete hotkey/button removes the comment without confirming. */
   skipDeleteConfirmation: boolean;
@@ -48,11 +50,7 @@ const VALID_POSITIONS: ReadonlySet<OverlayPosition> = new Set([
   "top-left",
 ]);
 
-const VALID_MODELS: ReadonlySet<OverlayModel> = new Set([
-  "default",
-  "claude-sonnet-4-6",
-  "claude-opus-4-7",
-]);
+const VALID_MODELS = VALID_FIX_MODELS;
 
 /**
  * Load settings from localStorage. Any malformed/missing field falls back to

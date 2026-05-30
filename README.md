@@ -21,7 +21,12 @@ pnpm add -D github:PauliusKrutkis/redline
 
 **Peer dependencies:** `react`, `react-dom`, `react-router-dom`, `vite`.
 
-**AI iteration** uses the [Claude Agent SDK](https://www.npmjs.com/package/@anthropic-ai/claude-agent-sdk). Credentials come from your environment (`ANTHROPIC_API_KEY`, Claude Code login, etc.) — redline ships no telemetry and no credential handling.
+**AI iteration (Fix)** supports multiple backends selected in overlay Settings → AI model:
+
+- **Claude models** (`default`, `claude-sonnet-4-6`, `claude-opus-4-7`) use the [Claude Agent SDK](https://www.npmjs.com/package/@anthropic-ai/claude-agent-sdk). Credentials come from your environment (`ANTHROPIC_API_KEY`, Claude Code login, etc.).
+- **Composer 2.5** uses the [Cursor CLI](https://cursor.com/docs/cli) (`agent`). Authenticate with `agent login` or set `CURSOR_API_KEY`.
+
+Redline ships no telemetry and no credential handling. A future Cursor SDK backend is planned.
 
 ## Quick start
 
@@ -128,6 +133,8 @@ Comment markers in source look like:
 comments({
   // Skip comment read/write under these project-relative prefixes:
   excludeSrcPrefixes: ["src/dev/", "src/components/comments/"],
+  // Optional: path to Cursor CLI when `agent` is not on PATH
+  cursorAgentPath: "/usr/local/bin/agent",
 });
 
 sourceLoc({

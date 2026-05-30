@@ -19,10 +19,12 @@ import { ShortcutHint, withCtrl } from "./ShortcutHint";
 import { HotkeyTip } from "./HotkeyTip";
 import { cn } from "../lib/utils";
 import { dotRect, placeFloater, type FloaterSide } from "./placement";
+import type { OverlayModel } from "./settings";
 
 type CommentBubbleProps = {
   comments: RegisteredComment[];
   rect: DOMRect;
+  fixModel?: OverlayModel;
   skipDeleteConfirmation?: boolean;
   onClose: () => void;
   onResolve?: (id: string) => void;
@@ -79,6 +81,7 @@ type BubbleMode = "compact" | "detailed";
 export function CommentBubble({
   comments,
   rect,
+  fixModel = "default",
   skipDeleteConfirmation = false,
   onClose,
   onResolve,
@@ -250,7 +253,7 @@ export function CommentBubble({
     setDeleteConfirming(false);
   };
 
-  // Fires the Claude Agent SDK server-side via POST /api/iterations/new.
+  // Fires the selected fix strategy server-side via POST /api/iterations/new.
   // The agent reads the file, locates the anchored element, applies the
   // change, and the server snapshots the post-edit source as the next
   // version. Round-trip is typically 20-90s; the response is NDJSON
@@ -271,7 +274,7 @@ export function CommentBubble({
       const res = await fetch("/api/iterations/new", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ id: lead.id }),
+        body: JSON.stringify({ id: lead.id, model: fixModel }),
       });
       if (!res.ok || !res.body) {
         // Validation errors (400/404) still come back as plain JSON.
