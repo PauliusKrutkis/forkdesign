@@ -3,7 +3,11 @@ import { toPng } from "html-to-image";
 import { effectiveBackgroundColor } from "./screenshot";
 import type { RegisteredComment } from "./types";
 import { CommentVersionSwitcher } from "./CommentVersionSwitcher";
-import { Kbd, ctrlKey } from "./Kbd";
+import { GripVertical, X } from "lucide-react";
+import { Button } from "./ui/button";
+import { Separator } from "./ui/separator";
+import { ShortcutHint, ctrlKey } from "./ShortcutHint";
+import { cn } from "../lib/utils";
 import { dotRect, placeFloater, type FloaterSide } from "./placement";
 
 type CommentBubbleProps = {
@@ -304,7 +308,7 @@ export function CommentBubble({
       role="dialog"
       aria-label="Comment"
       data-comment-overlay="true"
-      className="pointer-events-auto fixed z-[9200] flex flex-col overflow-hidden rounded-[8px] border border-[var(--co-line-strong)] bg-[var(--co-surface)] shadow-lg transition-[width] duration-200"
+      className="pointer-events-auto fixed z-[9200] flex flex-col overflow-hidden rounded-lg border bg-background shadow-lg transition-[width] duration-200"
       style={{
         left: userPosition?.left ?? placement.left,
         top: userPosition?.top ?? placement.top,
@@ -322,7 +326,7 @@ export function CommentBubble({
           the drag area; buttons inside opt out via the closest('button')
           guard in the pointerdown handler. */}
       <div
-        className="relative flex shrink-0 cursor-grab items-center border-b border-[var(--co-line)] bg-[var(--co-surface-2)] active:cursor-grabbing"
+        className="relative flex shrink-0 cursor-grab items-center border-b active:cursor-grabbing"
         style={{ height: BUBBLE_HEADER_HEIGHT }}
         onPointerDown={(e) => {
           if ((e.target as Element).closest("button")) return;
@@ -345,55 +349,43 @@ export function CommentBubble({
           document.addEventListener("pointerup", onUp);
         }}
       >
-        {/* Grip glyph: 2×3 dot grid. Standard "drag handle" affordance —
-            reads as a dedicated grab area independent of any button. */}
-        <span
+        <GripVertical
           aria-hidden
-          className="pointer-events-none flex shrink-0 flex-col gap-[2px] pl-3 pr-1"
-        >
-          <span className="flex gap-[2px]">
-            <span className="block h-[2px] w-[2px] rounded-full bg-[color-mix(in_srgb,var(--co-ink)_40%,transparent)]" />
-            <span className="block h-[2px] w-[2px] rounded-full bg-[color-mix(in_srgb,var(--co-ink)_40%,transparent)]" />
-          </span>
-          <span className="flex gap-[2px]">
-            <span className="block h-[2px] w-[2px] rounded-full bg-[color-mix(in_srgb,var(--co-ink)_40%,transparent)]" />
-            <span className="block h-[2px] w-[2px] rounded-full bg-[color-mix(in_srgb,var(--co-ink)_40%,transparent)]" />
-          </span>
-          <span className="flex gap-[2px]">
-            <span className="block h-[2px] w-[2px] rounded-full bg-[color-mix(in_srgb,var(--co-ink)_40%,transparent)]" />
-            <span className="block h-[2px] w-[2px] rounded-full bg-[color-mix(in_srgb,var(--co-ink)_40%,transparent)]" />
-          </span>
-        </span>
+          className="pointer-events-none ml-2 h-4 w-4 shrink-0 text-muted-foreground"
+        />
 
         {/* Version switcher centered in the bar. */}
         <div className="flex flex-1 items-center justify-center">
           <CommentVersionSwitcher commentId={lead.id} />
         </div>
 
-        <button
+        <Button
           type="button"
+          variant="ghost"
+          size="icon"
+          className="mr-1 h-7 w-7 shrink-0"
           aria-label="Close"
           onClick={onClose}
-          className="mr-2 grid h-7 w-7 shrink-0 place-items-center rounded-[4px] text-[var(--co-ink-2)] transition-colors hover:bg-[var(--co-surface-3)] hover:text-[var(--co-ink)]"
         >
-          <span aria-hidden className="text-[15px] leading-none">
-            ×
-          </span>
-        </button>
+          <X className="h-4 w-4" />
+        </Button>
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-3 pt-3">
         <p
-          className={`m-0 whitespace-pre-wrap text-[13px] leading-[1.5] text-[var(--co-ink)] ${
-            mode === "compact" ? "line-clamp-3" : ""
-          }`}
+          className={cn(
+            "m-0 whitespace-pre-wrap text-sm leading-relaxed text-foreground",
+            mode === "compact" && "line-clamp-3",
+          )}
         >
           {lead.text}
         </p>
         <div className="mt-3 flex items-center justify-between gap-3">
-          <div className="flex min-w-0 flex-col gap-0.5 font-[var(--co-font-mono)] text-[10.5px] uppercase tracking-[0.04em] text-[var(--co-ink-3)]">
-            <span className="truncate">{lead.author}</span>
-            <span className="tabular-nums text-[var(--co-ink-4)]">
+          <div className="flex min-w-0 flex-col gap-0.5">
+            <span className="truncate text-xs text-muted-foreground">
+              {lead.author}
+            </span>
+            <span className="font-mono text-[10px] tabular-nums text-muted-foreground">
               {formatDate(lead.date)}
             </span>
           </div>
@@ -418,15 +410,19 @@ export function CommentBubble({
         </div>
 
         {mode === "detailed" && comments.length > 1 ? (
-          <ul className="m-0 mt-3 list-none space-y-2 border-t border-[var(--co-line)] p-0 pt-2">
+          <ul className="m-0 mt-3 list-none space-y-2 border-t p-0 pt-2">
             {comments.slice(1).map((extra) => (
               <li key={extra.id}>
-                <p className="m-0 text-[12.5px] leading-[1.5] text-[var(--co-ink-2)]">
+                <p className="m-0 text-sm leading-snug text-muted-foreground">
                   {extra.text}
                 </p>
-                <div className="mt-1 flex items-center justify-between gap-2 font-[var(--co-font-mono)] text-[10px] uppercase tracking-[0.04em] text-[var(--co-ink-3)]">
-                  <span className="truncate">{extra.author}</span>
-                  <span className="tabular-nums">{formatDate(extra.date)}</span>
+                <div className="mt-1 flex items-center justify-between gap-2">
+                  <span className="truncate text-xs text-muted-foreground">
+                    {extra.author}
+                  </span>
+                  <span className="font-mono text-[10px] tabular-nums text-muted-foreground">
+                    {formatDate(extra.date)}
+                  </span>
                 </div>
               </li>
             ))}
@@ -434,15 +430,19 @@ export function CommentBubble({
         ) : null}
 
         {mode === "detailed" && lead.replies && lead.replies.length > 0 ? (
-          <ul className="m-0 mt-3 list-none space-y-2 border-t border-[var(--co-line)] p-0 pt-2">
+          <ul className="m-0 mt-3 list-none space-y-2 border-t p-0 pt-2">
             {lead.replies.map((reply, i) => (
               <li key={`${reply.author}-${reply.date}-${i}`}>
-                <p className="m-0 text-[12.5px] leading-[1.5] text-[var(--co-ink-2)]">
+                <p className="m-0 text-sm leading-snug text-muted-foreground">
                   {reply.text}
                 </p>
-                <div className="mt-1 flex items-center justify-between gap-2 font-[var(--co-font-mono)] text-[10px] uppercase tracking-[0.04em] text-[var(--co-ink-3)]">
-                  <span className="truncate">{reply.author}</span>
-                  <span className="tabular-nums">{formatDate(reply.date)}</span>
+                <div className="mt-1 flex items-center justify-between gap-2">
+                  <span className="truncate text-xs text-muted-foreground">
+                    {reply.author}
+                  </span>
+                  <span className="font-mono text-[10px] tabular-nums text-muted-foreground">
+                    {formatDate(reply.date)}
+                  </span>
                 </div>
               </li>
             ))}
@@ -454,16 +454,14 @@ export function CommentBubble({
         <div
           role="status"
           aria-live="polite"
-          className="flex shrink-0 items-center gap-2 border-t border-[var(--co-line)] bg-[var(--co-surface-3)] px-4 py-1.5 font-[var(--co-font-mono)] text-[10px] uppercase tracking-[0.04em] text-[var(--co-ink-3)]"
+          className="flex shrink-0 items-center gap-2 border-t bg-muted/50 px-4 py-1.5 text-xs text-muted-foreground"
         >
           {iterateStartedAt !== null ? (
             <span className="tabular-nums">
               {formatElapsed(iterateNow - iterateStartedAt)}
             </span>
           ) : null}
-          <span aria-hidden className="text-[var(--co-ink-4)]">
-            ·
-          </span>
+          <span aria-hidden>·</span>
           <span className="min-w-0 flex-1 truncate">
             {iterateStatus ?? "Working..."}
           </span>
@@ -473,33 +471,33 @@ export function CommentBubble({
       {mode === "detailed" && iterateError ? (
         <div
           role="alert"
-          className="shrink-0 border-t border-[var(--co-line)] bg-[color-mix(in_srgb,var(--co-sev-warning)_10%,transparent)] px-4 py-1.5 text-[11px] leading-[1.4] text-[var(--co-sev-warning)]"
+          className="shrink-0 border-t bg-amber-500/10 px-4 py-1.5 text-xs text-amber-700"
         >
           {iterateError}
         </div>
       ) : null}
 
       {mode === "detailed" ? (
-        <div className="flex shrink-0 items-stretch border-t border-[var(--co-line)]">
+        <div className="flex shrink-0 items-stretch border-t">
           <ActionButton onClick={() => onReply?.(lead.id)}>Reply</ActionButton>
-          <span aria-hidden className="w-px bg-[var(--co-line)]" />
+          <Separator orientation="vertical" className="h-auto" />
           <ActionButton onClick={() => onResolve?.(lead.id)}>
             {lead.resolved ? "Resolved" : "Resolve"}
             {lead.resolved ? null : (
-              <Kbd>
+              <ShortcutHint>
                 {ctrlKey}
                 {ctrlKey === "⌘" ? "" : "+"}R
-              </Kbd>
+              </ShortcutHint>
             )}
           </ActionButton>
-          <span aria-hidden className="w-px bg-[var(--co-line)]" />
+          <Separator orientation="vertical" className="h-auto" />
           <ActionButton onClick={handleIterate} disabled={iterating}>
             {iterating ? "Running AI..." : "Fix with AI"}
             {iterating ? null : (
-              <Kbd>
+              <ShortcutHint>
                 {ctrlKey}
                 {ctrlKey === "⌘" ? "" : "+"}I
-              </Kbd>
+              </ShortcutHint>
             )}
           </ActionButton>
         </div>
@@ -535,25 +533,25 @@ function Lightbox({ src, onClose }: { src: string; onClose: () => void }) {
       data-comment-overlay="true"
       role="dialog"
       aria-label="Comment screenshot"
-      className="fixed inset-0 z-[9500] flex items-center justify-center bg-[color-mix(in_srgb,var(--co-ink)_80%,transparent)] p-8"
+      className="fixed inset-0 z-[9500] flex items-center justify-center bg-black/80 p-8"
       onClick={onClose}
     >
       <img
         src={src}
         alt=""
-        className="max-h-[80vh] max-w-[80vw] rounded-[4px] border border-white/10 object-contain shadow-2xl"
+        className="max-h-[80vh] max-w-[80vw] rounded-md border object-contain shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       />
-      <button
+      <Button
         type="button"
+        variant="secondary"
+        size="icon"
         aria-label="Close screenshot"
+        className="absolute right-6 top-6"
         onClick={onClose}
-        className="absolute right-6 top-6 grid h-9 w-9 place-items-center rounded-full bg-[color-mix(in_srgb,var(--co-surface)_90%,transparent)] text-[var(--co-ink-2)] shadow-lg transition-colors hover:bg-[var(--co-surface)] hover:text-[var(--co-ink)]"
       >
-        <span aria-hidden className="text-[18px] leading-none">
-          ×
-        </span>
-      </button>
+        <X className="h-4 w-4" />
+      </Button>
     </div>
   );
 }
@@ -570,7 +568,7 @@ function Pointer({ side, offset }: { side: FloaterSide; offset: number }) {
     return (
       <span
         aria-hidden
-        className="absolute -top-[7px] block h-3 w-3 rotate-45 border-l border-t border-[var(--co-line-strong)] bg-[var(--co-surface)]"
+        className="absolute -top-[7px] block h-3 w-3 rotate-45 border-l border-t border-border bg-background"
         style={{ left: offset - 6 }}
       />
     );
@@ -579,7 +577,7 @@ function Pointer({ side, offset }: { side: FloaterSide; offset: number }) {
     return (
       <span
         aria-hidden
-        className="absolute -bottom-[7px] block h-3 w-3 rotate-45 border-b border-r border-[var(--co-line-strong)] bg-[var(--co-surface)]"
+        className="absolute -bottom-[7px] block h-3 w-3 rotate-45 border-b border-r border-border bg-background"
         style={{ left: offset - 6 }}
       />
     );
@@ -588,7 +586,7 @@ function Pointer({ side, offset }: { side: FloaterSide; offset: number }) {
     return (
       <span
         aria-hidden
-        className="absolute -left-[7px] block h-3 w-3 rotate-45 border-b border-l border-[var(--co-line-strong)] bg-[var(--co-surface)]"
+        className="absolute -left-[7px] block h-3 w-3 rotate-45 border-b border-l border-border bg-background"
         style={{ top: offset - 6 }}
       />
     );
@@ -596,7 +594,7 @@ function Pointer({ side, offset }: { side: FloaterSide; offset: number }) {
   return (
     <span
       aria-hidden
-      className="absolute -right-[7px] block h-3 w-3 rotate-45 border-r border-t border-[var(--co-line-strong)] bg-[var(--co-surface)]"
+      className="absolute -right-[7px] block h-3 w-3 rotate-45 border-r border-t border-border bg-background"
       style={{ top: offset - 6 }}
     />
   );
@@ -623,21 +621,18 @@ function ModeToggleButton({
 }) {
   const isCompact = mode === "compact";
   return (
-    <button
+    <Button
       type="button"
+      variant="ghost"
+      size="sm"
       aria-label={isCompact ? "Expand bubble" : "Collapse bubble"}
       aria-expanded={!isCompact}
       onClick={onToggle}
-      className="inline-flex shrink-0 items-center gap-1 rounded-[4px] px-1.5 py-1 text-[var(--co-ink-3)] transition-colors hover:bg-[var(--co-surface-3)] hover:text-[var(--co-ink)]"
+      className="h-auto shrink-0 px-1.5 py-1 text-xs"
     >
-      <span className="font-[var(--co-font-mono)] text-[10px] uppercase tracking-[0.04em]">
-        Details
-      </span>
-      <span aria-hidden className="text-[11px] leading-none">
-        {isCompact ? "⌄" : "⌃"}
-      </span>
-      <Kbd className="ml-0">Tab</Kbd>
-    </button>
+      {isCompact ? "More" : "Less"}
+      <ShortcutHint>Tab</ShortcutHint>
+    </Button>
   );
 }
 
@@ -672,7 +667,7 @@ function AdaptiveThumb({
       type="button"
       aria-label="Show full screenshot"
       onClick={onClick}
-      className="block shrink-0 overflow-hidden rounded-[4px] border border-[var(--co-line)] bg-[var(--co-surface-3)] transition-shadow hover:ring-1 hover:ring-[var(--co-line-strong)]"
+      className="block shrink-0 overflow-hidden rounded-md border bg-muted transition-shadow hover:ring-1 hover:ring-ring"
       style={{ width: dims.width, height: dims.height }}
     >
       <img
@@ -730,14 +725,15 @@ function ActionButton({
   disabled?: boolean;
 }) {
   return (
-    <button
+    <Button
       type="button"
+      variant="ghost"
       onClick={onClick}
       disabled={disabled}
-      className="flex-1 px-2 py-2 text-[11.5px] font-medium text-[var(--co-ink-2)] transition-colors hover:enabled:bg-[var(--co-surface-3)] hover:enabled:text-[var(--co-ink)] disabled:cursor-not-allowed disabled:text-[var(--co-ink-4)]"
+      className="h-auto flex-1 rounded-none py-2.5 text-sm"
     >
       {children}
-    </button>
+    </Button>
   );
 }
 

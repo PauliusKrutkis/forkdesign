@@ -1,7 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import { toPng } from "html-to-image";
-import { Kbd, ctrlKey } from "./Kbd";
 import { PROMPT_SHORTCUTS } from "./promptTemplates";
+import { Button } from "./ui/button";
+import { Badge } from "./ui/badge";
+import { Textarea } from "./ui/textarea";
+import { ShortcutHint, ctrlKey } from "./ShortcutHint";
+import { cn } from "../lib/utils";
 import { effectiveBackgroundColor } from "./screenshot";
 
 export type ComposerSubmission = {
@@ -190,7 +194,7 @@ export function CommentComposer({
         ref={highlightRef}
         data-comment-overlay="true"
         aria-hidden
-        className="pointer-events-none fixed z-[9300] hidden outline-dashed outline-2 outline-offset-2 outline-[var(--co-sev-info)]"
+        className="pointer-events-none fixed z-[9300] hidden outline-dashed outline-2 outline-offset-2 outline-ring"
         style={{ display: "none" }}
       />
       {target ? (
@@ -309,55 +313,19 @@ function ComposerPanel({
   return (
     <div
       data-comment-overlay="true"
-      className="pointer-events-auto fixed z-[9300] overflow-hidden rounded-[8px] border border-[var(--co-line-strong)] bg-[var(--co-surface)] shadow-lg"
+      className="pointer-events-auto fixed z-[9300] overflow-hidden rounded-lg border bg-background shadow-lg"
       style={{ left, top, width: PANEL_WIDTH }}
       onClick={(e) => e.stopPropagation()}
     >
-      <div className="border-b border-[var(--co-line)] bg-[var(--co-surface-2)] px-4 py-2 font-[var(--co-font-mono)] text-[10px] uppercase tracking-[0.06em] text-[var(--co-ink-3)]">
-        New comment
-      </div>
-      <div className="px-4 py-3">
-        <div className="mb-2">
-          <button
-            type="button"
-            disabled={submitting || saved}
-            aria-expanded={templatesOpen}
-            onClick={() => setTemplatesOpen((v) => !v)}
-            className="inline-flex items-center gap-1.5 rounded-[4px] px-1.5 py-1 font-[var(--co-font-mono)] text-[10px] uppercase tracking-[0.06em] text-[var(--co-ink-3)] transition-colors hover:bg-[var(--co-surface-3)] hover:text-[var(--co-ink)] disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            <span aria-hidden className="text-[10px] leading-none">
-              {templatesOpen ? "⌃" : "⌄"}
-            </span>
-            Templates
-          </button>
-          {templatesOpen ? (
-            <div className="mt-2 flex flex-wrap gap-1.5">
-              {PROMPT_SHORTCUTS.map((prompt) => (
-                <button
-                  key={prompt}
-                  type="button"
-                  disabled={submitting || saved}
-                  onClick={() => {
-                    onTextChange(prompt);
-                    textareaRef.current?.focus();
-                  }}
-                  className="inline-flex items-center rounded-[var(--co-radius-pill)] border border-[var(--co-line)] bg-[var(--co-surface-3)] px-2.5 py-1 text-[11px] font-medium text-[var(--co-ink-2)] transition-colors hover:border-[var(--co-line-strong)] hover:bg-[var(--co-surface-2)] hover:text-[var(--co-ink)] disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  {prompt}
-                </button>
-              ))}
-            </div>
-          ) : null}
-        </div>
-        <textarea
+      <div className="px-3.5 pb-2 pt-3.5">
+        <Textarea
           ref={textareaRef}
           value={text}
           onChange={(e) => onTextChange(e.target.value)}
           placeholder="Leave a note for the next agent…"
           rows={3}
           disabled={submitting || saved}
-          className="block w-full resize-y rounded-[4px] border border-[var(--co-line)] bg-[var(--co-surface)] px-2.5 py-2 text-[13px] leading-[1.5] text-[var(--co-ink)] outline-none placeholder:text-[var(--co-ink-4)] focus:border-[var(--co-line-strong)] disabled:cursor-not-allowed disabled:bg-[var(--co-surface-2)]"
-          style={{ minHeight: 64 }}
+          className="min-h-[72px] resize-y"
           onKeyDown={(e) => {
             if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
               e.preventDefault();
@@ -370,52 +338,90 @@ function ComposerPanel({
           }}
         />
         {status.kind === "error" ? (
-          <p
-            role="alert"
-            className="m-0 mt-2 font-[var(--co-font-mono)] text-[10px] uppercase tracking-[0.06em] text-[var(--co-sev-critical)]"
-          >
+          <p role="alert" className="m-0 mt-2 text-xs text-destructive">
             {status.message}
           </p>
         ) : null}
-      </div>
-      <div className="flex items-center justify-between gap-2 border-t border-[var(--co-line)] bg-[var(--co-surface-2)] px-3 py-2">
-        <span className="font-[var(--co-font-mono)] text-[10px] uppercase tracking-[0.06em] text-[var(--co-ink-3)]">
-          {`<${target.tagName.toLowerCase()}>`}
-        </span>
-        <div className="flex items-center gap-2">
-          {saved ? (
-            <span className="font-[var(--co-font-mono)] text-[10px] uppercase tracking-[0.06em] text-[var(--co-sev-info)]">
-              Saved
-            </span>
-          ) : null}
-          <button
+        <div className="mt-2 flex flex-wrap items-center gap-2">
+          <Button
             type="button"
-            onClick={onCancel}
-            disabled={submitting}
-            className="rounded-[4px] px-2.5 py-1.5 text-[12px] font-medium text-[var(--co-ink-2)] hover:bg-[var(--co-surface-3)] hover:text-[var(--co-ink)] disabled:cursor-not-allowed disabled:text-[var(--co-ink-4)]"
+            variant="ghost"
+            size="sm"
+            disabled={submitting || saved}
+            aria-expanded={templatesOpen}
+            onClick={() => setTemplatesOpen((v) => !v)}
+            className="h-auto px-1 py-0 text-xs text-muted-foreground"
           >
-            Cancel
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              void submit();
-            }}
-            disabled={!text.trim() || submitting || saved}
-            className="rounded-[4px] bg-[var(--co-ink)] px-3 py-1.5 text-[12px] font-medium tracking-[0.01em] text-[var(--co-page)] disabled:cursor-not-allowed disabled:bg-[var(--co-ink-4)]"
-          >
-            {submitting ? "Saving…" : saved ? "Saved" : "Save"}
-            {!submitting && !saved ? (
-              <Kbd className="!text-[color-mix(in_srgb,var(--co-page)_70%,transparent)] !border-[color-mix(in_srgb,var(--co-page)_30%,transparent)] !bg-[color-mix(in_srgb,var(--co-page)_10%,transparent)]">
-                {ctrlKey}
-                {ctrlKey === "⌘" ? "" : "+"}⏎
-              </Kbd>
-            ) : null}
-          </button>
+            {templatesOpen ? "Hide templates" : "Insert template"}
+          </Button>
+          <span className="truncate font-mono text-[10px] text-muted-foreground">
+            {describeElement(target)}
+          </span>
         </div>
+        {templatesOpen ? (
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            {PROMPT_SHORTCUTS.map((prompt) => (
+              <Badge
+                key={prompt}
+                variant="secondary"
+                className={cn(
+                  "cursor-pointer font-normal hover:bg-secondary/80",
+                  (submitting || saved) && "pointer-events-none opacity-60",
+                )}
+                onClick={() => {
+                  if (submitting || saved) return;
+                  onTextChange(prompt);
+                  textareaRef.current?.focus();
+                }}
+              >
+                {prompt}
+              </Badge>
+            ))}
+          </div>
+        ) : null}
+      </div>
+      <div className="flex items-center justify-end gap-2 border-t px-3 py-2">
+        {saved ? (
+          <span className="text-xs text-muted-foreground">Saved</span>
+        ) : null}
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          onClick={onCancel}
+          disabled={submitting}
+        >
+          Cancel
+        </Button>
+        <Button
+          type="button"
+          size="sm"
+          onClick={() => {
+            void submit();
+          }}
+          disabled={!text.trim() || submitting || saved}
+        >
+          {submitting ? "Saving…" : saved ? "Saved" : "Save"}
+          {!submitting && !saved ? (
+            <ShortcutHint onPrimary>
+              {ctrlKey}
+              {ctrlKey === "⌘" ? "" : "+"}⏎
+            </ShortcutHint>
+          ) : null}
+        </Button>
       </div>
     </div>
   );
+}
+
+function describeElement(el: HTMLElement): string {
+  const aria = el.getAttribute("aria-label")?.trim();
+  if (aria) return aria;
+  const tag = el.tagName.toLowerCase();
+  if (el.id) return `${tag} #${el.id}`;
+  const testId = el.getAttribute("data-testid");
+  if (testId) return `${tag} · ${testId}`;
+  return tag;
 }
 
 /** Returns the topmost element under the cursor that isn't part of overlay chrome. */

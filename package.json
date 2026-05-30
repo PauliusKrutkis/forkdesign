@@ -11,7 +11,9 @@
   },
   "bugs": "https://github.com/PauliusKrutkis/redline/issues",
   "homepage": "https://github.com/PauliusKrutkis/redline#readme",
-  "sideEffects": ["**/*.css"],
+  "sideEffects": [
+    "**/*.css"
+  ],
   "scripts": {
     "build": "tsup",
     "dev": "tsup --watch",
@@ -44,6 +46,11 @@
       "import": "./tailwind.content.js",
       "require": "./tailwind.content.js",
       "default": "./tailwind.content.js"
+    },
+    "./tailwind.preset": {
+      "import": "./tailwind.preset.js",
+      "require": "./tailwind.preset.js",
+      "default": "./tailwind.preset.js"
     }
   },
   "peerDependencies": {
@@ -57,8 +64,19 @@
     "@babel/parser": "^7.29.3",
     "@babel/traverse": "^7.29.0",
     "@babel/types": "^7.29.0",
+    "@radix-ui/react-dialog": "^1.1.15",
+    "@radix-ui/react-label": "^2.1.8",
+    "@radix-ui/react-separator": "^1.1.8",
+    "@radix-ui/react-slot": "^1.2.4",
+    "@radix-ui/react-switch": "^1.2.6",
+    "@radix-ui/react-tabs": "^1.1.13",
+    "@radix-ui/react-tooltip": "^1.2.8",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
     "html-to-image": "^1.11.13",
-    "recast": "^0.23.11"
+    "lucide-react": "^1.17.0",
+    "recast": "^0.23.11",
+    "tailwind-merge": "^3.6.0"
   },
   "devDependencies": {
     "@types/babel__traverse": "^7.28.0",
@@ -72,7 +90,14 @@
     "typescript": "~6.0.2",
     "vitest": "^4.1.7"
   },
-  "files": ["dist", "src/styles.css", "tailwind.content.js", "README.md", "LICENSE"],
+  "files": [
+    "dist",
+    "src/styles.css",
+    "tailwind.content.js",
+    "tailwind.preset.js",
+    "README.md",
+    "LICENSE"
+  ],
   "keywords": [
     "vite",
     "react",

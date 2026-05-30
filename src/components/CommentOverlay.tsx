@@ -10,7 +10,10 @@ import {
 import { CommentManagementPanel } from "./CommentManagementPanel";
 import { CommentSettingsPanel } from "./CommentSettingsPanel";
 import { CommentShell, type ShellTab } from "./CommentShell";
-import { Kbd } from "./Kbd";
+import { Settings } from "lucide-react";
+import { Button } from "./ui/button";
+import { ShortcutHint } from "./ShortcutHint";
+import { cn } from "../lib/utils";
 import { useAnchorRects } from "./useAnchorElement";
 import type { DotInstanceTarget } from "./CommentDot";
 import { findSourceLoc } from "./sourceLoc";
@@ -65,8 +68,8 @@ export function CommentOverlay({
   const [composerActive, setComposerActive] = useState(false);
   const [shell, setShell] = useState<ShellTab | null>(null);
   /**
-   * User-visible overlay settings: enabled flag, toggle corner, theme,
-   * author override, AI model. Persisted to localStorage; loaded once on
+   * User-visible overlay settings: enabled flag, toggle corner, author
+   * override, AI model. Persisted to localStorage; loaded once on
    * mount, then mirrored back on every change.
    */
   const [settings, setSettings] = useState<OverlaySettings>(() =>
@@ -190,7 +193,7 @@ export function CommentOverlay({
   }, [composerActive, openTarget, settings.enabled, toggleShell]);
 
   // Persist settings on change and apply the side-effects that the rest of
-  // the overlay reads via globals (author) or className gating (theme).
+  // the overlay reads author via globals when configured.
   useEffect(() => {
     saveSettings(settings);
   }, [settings]);
@@ -219,22 +222,6 @@ export function CommentOverlay({
     setHoveredTarget(null);
     setPendingOpen(null);
   }, [settings.enabled]);
-
-  /** Resolve theme=auto by reading the OS preference. */
-  const [systemDark, setSystemDark] = useState<boolean>(() => {
-    if (typeof window === "undefined" || !window.matchMedia) return false;
-    return window.matchMedia("(prefers-color-scheme: dark)").matches;
-  });
-  useEffect(() => {
-    if (typeof window === "undefined" || !window.matchMedia) return;
-    const mq = window.matchMedia("(prefers-color-scheme: dark)");
-    const handler = (e: MediaQueryListEvent) => setSystemDark(e.matches);
-    mq.addEventListener("change", handler);
-    return () => mq.removeEventListener("change", handler);
-  }, []);
-  const darkActive =
-    settings.theme === "dark" ||
-    (settings.theme === "auto" && systemDark);
 
   const updateSettings = useCallback((patch: Partial<OverlaySettings>) => {
     setSettings((prev) => ({ ...prev, ...patch }));
@@ -481,9 +468,7 @@ export function CommentOverlay({
   return (
     <div
       data-comment-overlay="true"
-      className={`pointer-events-none fixed inset-0 z-[9000] ${
-        darkActive ? "comment-overlay--dark" : ""
-      }`}
+      className="pointer-events-none fixed inset-0 z-[9000]"
       aria-live="polite"
     >
       {settings.enabled
@@ -649,18 +634,14 @@ function HoverPreview({
     <div
       ref={previewRef}
       data-comment-overlay="true"
-      className="pointer-events-none fixed z-[9150] rounded-[6px] border border-[var(--co-line-strong)] bg-[var(--co-surface)] p-2 shadow"
+      className="pointer-events-none fixed z-[9150] rounded-md border bg-popover p-2.5 text-popover-foreground shadow-md"
       style={{ left: position.left, top: position.top, width: PREVIEW_WIDTH }}
       role="tooltip"
     >
-      <p className="m-0 font-[var(--co-font-mono)] text-[10px] uppercase tracking-[0.06em] text-[var(--co-ink-3)]">
-        {lead.author}
-      </p>
-      <p className="m-0 mt-1 truncate text-[12px] leading-[1.4] text-[var(--co-ink)]">
-        {lead.text}
-      </p>
+      <p className="m-0 truncate text-xs text-muted-foreground">{lead.author}</p>
+      <p className="m-0 mt-1 truncate text-sm">{lead.text}</p>
       {comments.length > 1 ? (
-        <p className="m-0 mt-1 font-[var(--co-font-mono)] text-[10px] uppercase tracking-[0.06em] text-[var(--co-ink-3)]">
+        <p className="m-0 mt-1 text-xs text-muted-foreground">
           +{comments.length - 1} more
         </p>
       ) : null}
@@ -752,66 +733,45 @@ function OverlayToggle({
     >
       {showFabStack ? (
         <>
-          <button
+          <Button
             type="button"
+            variant={shell === "list" ? "default" : "secondary"}
+            className="pointer-events-auto shadow-md"
             onClick={onToggleList}
             aria-pressed={shell === "list"}
             aria-label="Toggle comment list"
-            className={`pointer-events-auto inline-flex items-center gap-2 rounded-[var(--co-radius-pill)] px-4 py-2 font-[var(--co-font-mono)] text-[11px] uppercase tracking-[0.08em] shadow-lg transition-colors ${
-              shell === "list"
-                ? "bg-[var(--co-sev-info)] text-[var(--co-page)]"
-                : "bg-[var(--co-surface)] text-[var(--co-ink)] hover:bg-[var(--co-surface-2)]"
-            }`}
           >
-            <span
-              aria-hidden
-              className={`block h-2 w-2 rounded-full ${
-                shell === "list" ? "bg-[var(--co-page)]" : "bg-[var(--co-ink-3)]"
-              }`}
-            />
-            List
-            <Kbd>L</Kbd>
-          </button>
-          <button
+            Comments
+            <ShortcutHint onPrimary={shell === "list"}>L</ShortcutHint>
+          </Button>
+          <Button
             type="button"
+            variant={active ? "secondary" : "default"}
+            className={cn(
+              "pointer-events-auto shadow-md",
+              active && "border-primary/30 bg-accent text-accent-foreground",
+            )}
             onClick={onToggle}
             aria-pressed={active}
-            className={`pointer-events-auto inline-flex items-center gap-2 rounded-[var(--co-radius-pill)] px-4 py-2 font-[var(--co-font-mono)] text-[11px] uppercase tracking-[0.08em] shadow-lg transition-colors ${
-              active
-                ? "bg-[var(--co-sev-info)] text-[var(--co-page)]"
-                : "bg-[var(--co-ink)] text-[var(--co-page)] hover:bg-[var(--co-ink-2)]"
-            }`}
           >
-            <span
-              aria-hidden
-              className={`block h-2 w-2 rounded-full ${
-                active ? "bg-[var(--co-page)]" : "bg-[var(--co-sev-info)]"
-              }`}
-            />
-            {active ? "Cancel" : "Comment"}
-            {active ? null : <Kbd>C</Kbd>}
-          </button>
+            {active ? "Cancel" : "Add comment"}
+            {active ? null : <ShortcutHint onPrimary>C</ShortcutHint>}
+          </Button>
         </>
       ) : null}
       {showGear ? (
-        <button
+        <Button
           type="button"
+          variant={shell === "settings" ? "default" : enabled ? "secondary" : "default"}
+          size="icon"
+          className="pointer-events-auto shadow-md"
           onClick={onToggleSettings}
           aria-pressed={shell === "settings"}
           aria-label="Toggle comment settings"
           title={enabled ? "Settings" : "Comments hidden — open settings"}
-          className={`pointer-events-auto inline-flex h-8 w-8 items-center justify-center rounded-[var(--co-radius-pill)] shadow-lg transition-colors ${
-            shell === "settings"
-              ? "bg-[var(--co-sev-info)] text-[var(--co-page)]"
-              : enabled
-                ? "bg-[var(--co-surface)] text-[var(--co-ink-2)] hover:bg-[var(--co-surface-2)]"
-                : "bg-[var(--co-ink)] text-[var(--co-page)] hover:bg-[var(--co-ink-2)]"
-          }`}
         >
-          <span aria-hidden className="text-[14px] leading-none">
-            •••
-          </span>
-        </button>
+          <Settings className="h-4 w-4" />
+        </Button>
       ) : null}
     </div>
   );

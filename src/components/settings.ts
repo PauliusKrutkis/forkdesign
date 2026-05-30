@@ -10,8 +10,6 @@ export type OverlayPosition =
   | "top-right"
   | "top-left";
 
-export type OverlayTheme = "auto" | "light" | "dark";
-
 export type OverlayModel =
   | "default"
   | "claude-sonnet-4-6"
@@ -29,8 +27,6 @@ export type OverlaySettings = {
   showFloatingControls: boolean;
   /** Which corner the floating toggle stack docks to. */
   position: OverlayPosition;
-  /** Overlay chrome theme. Auto follows OS via `prefers-color-scheme`. */
-  theme: OverlayTheme;
   /** Override for window.__COMMENT_AUTHOR__. Empty string disables override. */
   author: string;
   /** Future-wired model preference; persisted now, sent to server in #28+. */
@@ -39,10 +35,9 @@ export type OverlaySettings = {
 
 export const DEFAULT_SETTINGS: OverlaySettings = {
   enabled: true,
-  uiMode: "full",
+  uiMode: "minimal",
   showFloatingControls: true,
   position: "bottom-right",
-  theme: "auto",
   author: "",
   model: "default",
 };
@@ -54,12 +49,6 @@ const VALID_POSITIONS: ReadonlySet<OverlayPosition> = new Set([
   "bottom-left",
   "top-right",
   "top-left",
-]);
-
-const VALID_THEMES: ReadonlySet<OverlayTheme> = new Set([
-  "auto",
-  "light",
-  "dark",
 ]);
 
 const VALID_MODELS: ReadonlySet<OverlayModel> = new Set([
@@ -102,11 +91,6 @@ export function loadSettings(): OverlaySettings {
     VALID_POSITIONS.has(obj.position as OverlayPosition)
       ? (obj.position as OverlayPosition)
       : DEFAULT_SETTINGS.position;
-  const theme =
-    typeof obj.theme === "string" &&
-    VALID_THEMES.has(obj.theme as OverlayTheme)
-      ? (obj.theme as OverlayTheme)
-      : DEFAULT_SETTINGS.theme;
   const author =
     typeof obj.author === "string" ? obj.author : DEFAULT_SETTINGS.author;
   const model =
@@ -129,7 +113,6 @@ export function loadSettings(): OverlaySettings {
     uiMode,
     showFloatingControls,
     position,
-    theme,
     author,
     model,
   };

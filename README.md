@@ -58,19 +58,36 @@ export function App() {
 }
 ```
 
-Your app needs **Tailwind CSS** enabled. Overlay components use utility classes with CSS-variable fallbacks (`bg-[var(--co-surface)]`, etc.). Import `redline/styles.css` for defaults; override `--co-*` variables to retheme.
+Import `redline/styles.css` for overlay theme tokens (`--background`, `--primary`, …). Scan redline so utility classes (`bg-background`, `text-primary`, …) are emitted.
 
-**Important:** Tailwind must scan redline's component files or those utilities won't be emitted. Spread the package content globs into your config:
+**Tailwind v4** — add `@source` for redline dist (or linked `src`):
+
+```css
+@import "tailwindcss";
+@import "redline/styles.css";
+@source "../node_modules/redline/dist/**/*.{js,mjs}";
+```
+
+**Tailwind v3** — import the preset and content paths:
 
 ```js
-// tailwind.config.js
 import { tailwindContent } from "redline/tailwind.content";
+import redlinePreset from "redline/tailwind.preset";
 
 export default {
+  presets: [redlinePreset],
   content: ["./index.html", "./src/**/*.{js,ts,jsx,tsx}", ...tailwindContent],
-  // ...
 };
 ```
+
+```css
+@import "redline/styles.css";
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+```
+
+**Linked local dev (`pnpm link:../redline`)** — resolve the built package (default), not raw `source` exports. The published `dist` bundles Radix/lucide so Vite does not pull a second copy of React from `redline/node_modules` (that mismatch blanks the page in Firefox/Zen). Run `pnpm dev` in the redline checkout for overlay HMR, then refresh the host app. If you still see “Invalid hook call”, add `resolve.dedupe: ["react", "react-dom"]` in the host `vite.config.ts` and use `http://127.0.0.1:5173` instead of `localhost` in Zen.
 
 Optional author override for new comments:
 
@@ -135,7 +152,7 @@ Wrap distinct views in `<section data-view="empty">…</section>`. Single-view p
 
 ## Theming
 
-Override CSS variables after importing `redline/styles.css`. See [`src/styles.css`](./src/styles.css) for the full `--co-*` set. The overlay adds `.comment-overlay--dark` when the user picks dark mode in settings.
+The overlay uses shadcn semantic tokens (`--background`, `--primary`, `--muted`, etc.) defined in [`src/styles.css`](./src/styles.css). Override `:root` variables in your app after importing `redline/styles.css` to retheme the overlay chrome.
 
 ## Public API
 
@@ -144,7 +161,7 @@ Override CSS variables after importing `redline/styles.css`. See [`src/styles.cs
 | `CommentOverlay` | Root React component (mount once, gate on `import.meta.env.DEV`) |
 | `comments()` | Vite plugin — `/api/comments`, `/api/iterations` |
 | `sourceLoc()` | Vite plugin — `data-source-loc` transform |
-| `redline/styles.css` | Default theme tokens |
+| `redline/styles.css` | Shadcn zinc theme + pin animations |
 | `redline/tailwind.content` | Tailwind `content` globs — required for overlay utilities |
 
 Types: `CommentData`, `RegisteredComment`, `OverlaySettings`, etc. from the main entry.

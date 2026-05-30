@@ -1,5 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { MoreHorizontal } from "lucide-react";
 import type { CommentData } from "./types";
+import { Button } from "./ui/button";
+import { Badge } from "./ui/badge";
+import { cn } from "../lib/utils";
 
 type CommentWithFile = CommentData & { file?: string };
 
@@ -15,10 +19,6 @@ export type CommentManagementPanelProps = {
   onDelete: (id: string) => Promise<void>;
 };
 
-/**
- * Comment list body for CommentShell. On-page rows jump to the pin; off-page
- * rows navigate via stored `route` or optional `fileToRoute` when available.
- */
 export function CommentManagementPanel({
   comments,
   inDomAnchors,
@@ -58,7 +58,7 @@ export function CommentManagementPanel({
 
   if (total === 0) {
     return (
-      <div className="grid min-h-[200px] place-items-center px-6 py-12 text-center font-[var(--co-font-mono)] text-[11px] uppercase tracking-[0.06em] text-[var(--co-ink-3)]">
+      <div className="grid min-h-[200px] place-items-center px-6 py-12 text-center text-sm text-muted-foreground">
         No comments yet
       </div>
     );
@@ -77,8 +77,8 @@ export function CommentManagementPanel({
       ))}
 
       {offPage.length > 0 ? (
-        <section className="border-t border-[var(--co-line)]">
-          <h3 className="m-0 px-4 py-2 font-[var(--co-font-mono)] text-[10px] italic uppercase tracking-[0.06em] text-[var(--co-ink-3)]">
+        <section className="border-t">
+          <h3 className="m-0 px-4 py-2 text-xs italic text-muted-foreground">
             Off-page or orphaned
           </h3>
           <div className="opacity-90">
@@ -123,19 +123,22 @@ function FileGroup({
 }) {
   const [open, setOpen] = useState(true);
   return (
-    <section className="border-b border-[var(--co-line)]">
-      <button
+    <section className="border-b">
+      <Button
         type="button"
+        variant="ghost"
+        className="h-auto w-full justify-between rounded-none px-4 py-2 text-xs text-muted-foreground hover:bg-muted"
         onClick={() => setOpen((v) => !v)}
-        className="flex w-full items-center justify-between px-4 py-2 text-left font-[var(--co-font-mono)] text-[10px] uppercase tracking-[0.06em] text-[var(--co-ink-3)] transition-colors hover:bg-[var(--co-surface-2)]"
         aria-expanded={open}
       >
         <span className="truncate">{file}</span>
         <span className="flex items-center gap-2">
-          <span className="tabular-nums">{comments.length}</span>
+          <Badge variant="secondary" className="font-normal">
+            {comments.length}
+          </Badge>
           <Chevron rotated={!open} />
         </span>
-      </button>
+      </Button>
       {open ? (
         <div>
           {comments.map((c) => (
@@ -218,18 +221,19 @@ function CommentRow({
   };
 
   const interactive = jumpable || navigable;
-  const rowClass = `group relative flex w-full items-start gap-3 border-t border-[var(--co-line)] px-4 py-3 text-left transition-colors ${
-    interactive
-      ? "cursor-pointer hover:bg-[var(--co-surface-2)]"
-      : "cursor-default"
-  } ${busy ? "opacity-50" : ""}`;
+  const rowClass = cn(
+    "group relative flex w-full items-start gap-3 border-t px-4 py-3 text-left transition-colors",
+    interactive && "cursor-pointer hover:bg-muted/50",
+    !interactive && "cursor-default",
+    busy && "opacity-50",
+  );
 
   const inner = (
     <>
       <Thumbnail src={comment.screenshot} />
       <div className="min-w-0 flex-1">
         <p
-          className="m-0 overflow-hidden text-[12.5px] leading-[1.4] text-[var(--co-ink)]"
+          className="m-0 overflow-hidden text-sm leading-snug text-foreground"
           style={{
             display: "-webkit-box",
             WebkitLineClamp: 2,
@@ -238,58 +242,59 @@ function CommentRow({
         >
           {comment.text}
         </p>
-        <div className="mt-1 flex flex-wrap items-center justify-between gap-2 font-[var(--co-font-mono)] text-[10px] uppercase tracking-[0.04em] text-[var(--co-ink-3)]">
-          <span className="truncate">{comment.author}</span>
-          <span className="shrink-0 tabular-nums text-[var(--co-ink-4)]">
+        <div className="mt-1 flex flex-wrap items-center justify-between gap-2">
+          <span className="truncate text-xs text-muted-foreground">
+            {comment.author}
+          </span>
+          <span className="shrink-0 font-mono text-[10px] tabular-nums text-muted-foreground">
             {formatRelative(comment.date)}
           </span>
         </div>
         {navigable ? (
-          <span className="mt-1 inline-block font-[var(--co-font-mono)] text-[10px] uppercase tracking-[0.04em] text-[var(--co-sev-info)]">
+          <span className="mt-1 inline-block text-xs text-primary">
             Go to page
           </span>
         ) : null}
         {!jumpable && !navigable && comment.file ? (
-          <span className="mt-1 block truncate font-[var(--co-font-mono)] text-[10px] uppercase tracking-[0.04em] text-[var(--co-ink-4)]">
+          <span className="mt-1 block truncate font-mono text-[10px] text-muted-foreground">
             {comment.file}
           </span>
         ) : null}
         {error ? (
-          <p className="m-0 mt-1 font-[var(--co-font-mono)] text-[10px] uppercase tracking-[0.04em] text-[var(--co-sev-critical)]">
-            {error}
-          </p>
+          <p className="m-0 mt-1 text-xs text-destructive">{error}</p>
         ) : null}
       </div>
       <div ref={menuRef} className="relative shrink-0">
-        <button
+        <Button
           type="button"
+          variant="ghost"
+          size="icon"
+          className="h-7 w-7"
           aria-label="Comment actions"
           onClick={(e) => {
             e.stopPropagation();
             setMenuOpen((v) => !v);
           }}
-          className="grid h-7 w-7 place-items-center rounded-[4px] text-[var(--co-ink-3)] transition-colors hover:bg-[var(--co-surface-3)] hover:text-[var(--co-ink)]"
         >
-          <span aria-hidden className="text-[16px] leading-none">
-            …
-          </span>
-        </button>
+          <MoreHorizontal className="h-4 w-4" />
+        </Button>
         {menuOpen ? (
           <div
             role="menu"
-            className="absolute right-0 top-8 z-10 min-w-[120px] rounded-[6px] border border-[var(--co-line-strong)] bg-[var(--co-surface)] py-1 shadow-lg"
+            className="absolute right-0 top-8 z-10 min-w-[120px] rounded-md border bg-popover py-1 shadow-md"
           >
-            <button
+            <Button
               type="button"
+              variant="ghost"
               role="menuitem"
+              className="h-auto w-full justify-start rounded-none px-3 py-1.5 text-sm text-destructive hover:bg-destructive/10 hover:text-destructive"
               onClick={(e) => {
                 e.stopPropagation();
                 void handleDelete();
               }}
-              className="block w-full px-3 py-1.5 text-left font-[var(--co-font-mono)] text-[11px] uppercase tracking-[0.04em] text-[var(--co-sev-critical)] transition-colors hover:bg-[var(--co-sev-critical-bg)]"
             >
               Delete
-            </button>
+            </Button>
           </div>
         ) : null}
       </div>
@@ -314,14 +319,14 @@ function Thumbnail({ src }: { src?: string }) {
         src={src}
         alt=""
         loading="lazy"
-        className="block h-9 w-9 shrink-0 rounded-[4px] border border-[var(--co-line)] bg-[var(--co-surface-3)] object-cover"
+        className="block h-9 w-9 shrink-0 rounded-md border bg-muted object-cover"
       />
     );
   }
   return (
     <span
       aria-hidden
-      className="block h-9 w-9 shrink-0 rounded-[4px] border border-[var(--co-line)] bg-gradient-to-br from-[var(--co-surface-3)] to-[var(--co-surface-2)]"
+      className="block h-9 w-9 shrink-0 rounded-md border bg-muted"
     />
   );
 }
@@ -339,7 +344,7 @@ function Chevron({ rotated }: { rotated: boolean }) {
       strokeWidth="1.75"
       strokeLinecap="round"
       strokeLinejoin="round"
-      className={`transition-transform ${rotated ? "-rotate-90" : ""}`}
+      className={cn("transition-transform", rotated && "-rotate-90")}
     >
       <polyline points="3,5 8,11 13,5" />
     </svg>

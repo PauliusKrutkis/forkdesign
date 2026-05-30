@@ -246,7 +246,7 @@ function buildIteratePrompt(input: IterateInput): string {
     "## Constraints (from CLAUDE.md and the comment-bubble system)",
     "- Do NOT remove or modify the `{/* @comment ... */}` block — it's preserved human feedback.",
     "- Do NOT change the `data-comment-anchor` attribute value.",
-    "- Follow the existing design tokens (tailwind.config.js): `bg-page`, surface variants, ink/sev color scales, `font-display`/`font-mono`.",
+    "- Follow the host app's existing Tailwind/shadcn tokens (`bg-background`, `text-foreground`, `bg-primary`, `text-muted-foreground`, etc.).",
     "- Make focused changes. Don't rewrite unrelated parts of the file.",
     "- Don't run tests or builds — the user verifies visually.",
     "",

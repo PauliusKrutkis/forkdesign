@@ -1,7 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
+import { MessageSquare } from "lucide-react";
 import type { RegisteredComment } from "./types";
 import { useAnchorRects } from "./useAnchorElement";
 import { dotRect } from "./placement";
+import { Badge } from "./ui/badge";
+import { cn } from "../lib/utils";
 
 export type DotInstanceTarget = { anchor: string; instance: number };
 
@@ -14,18 +17,28 @@ type CommentDotProps = {
 };
 
 const RECENT_WINDOW_MS = 24 * 60 * 60 * 1000;
+const PIN_W = 22;
+const PIN_H = 26;
 
 function readViewport() {
   if (typeof window === "undefined") return { width: 1024, height: 768 };
   return { width: window.innerWidth, height: window.innerHeight };
 }
 
+type PinState = "recent" | "default" | "resolved";
+
+function pinState(
+  comments: RegisteredComment[],
+  unresolvedRecent: boolean,
+): PinState {
+  const allResolved = comments.every((c) => c.resolved);
+  if (allResolved) return "resolved";
+  if (unresolvedRecent) return "recent";
+  return "default";
+}
+
 /**
- * At-rest dot rendered over an anchored element. Stacks with a count
- * badge when multiple comments share the same anchor.
- *
- * Position is computed from the live DOMRect of the anchor; the dot
- * follows scroll, resize, and DOM mutations.
+ * Map-pin comment marker anchored to DOM elements.
  */
 export function CommentDot({
   anchor,
@@ -60,9 +73,7 @@ export function CommentDot({
 
   if (rects.length === 0 || !lead) return null;
 
-  const fill = unresolvedRecent
-    ? "bg-[var(--co-sev-warning)]"
-    : "bg-[var(--co-sev-info)]";
+  const state = pinState(comments, unresolvedRecent);
   const count = comments.length;
 
   return (
@@ -87,23 +98,59 @@ export function CommentDot({
             onMouseLeave={() => onHover(null)}
             onFocus={() => onHover({ anchor, instance })}
             onBlur={() => onHover(null)}
-            className="pointer-events-auto fixed z-[9100] m-0 flex h-[14px] w-[14px] -translate-y-0 items-center justify-center rounded-full p-0 outline-none transition-transform duration-150 hover:scale-110 focus-visible:ring-2 focus-visible:ring-[var(--co-sev-info)] focus-visible:ring-offset-1 focus-visible:ring-offset-[var(--co-page)]"
-            style={{ left, top }}
+            className={cn(
+              "pointer-events-auto fixed z-[9100] m-0 flex items-center justify-center p-0 outline-none transition-transform duration-150 hover:scale-110 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
+              isOpen && "scale-110",
+            )}
+            style={{
+              left: left - PIN_W / 2 + 6,
+              top: top - PIN_H + 4,
+              width: PIN_W,
+              height: PIN_H,
+            }}
           >
             <span
-              className={`block h-[14px] w-[14px] rounded-full ring-2 ring-[var(--co-surface)] shadow-[0_1px_4px_color-mix(in_srgb,var(--co-ink)_22%,transparent)] ${fill} ${
-                isOpen ? "comment-dot-pulse" : ""
-              }`}
               aria-hidden
-            />
-            {count > 1 ? (
-              <span
+              className={cn(
+                "relative flex h-full w-full items-center justify-center drop-shadow-md",
+                state === "recent" && !isOpen && "animate-pin-pulse",
+                isOpen && "ring-2 ring-ring ring-offset-2 ring-offset-background rounded-sm",
+              )}
+            >
+              <svg
+                viewBox="0 0 24 28"
+                width={PIN_W}
+                height={PIN_H}
+                className="overflow-visible"
                 aria-hidden
-                className="pointer-events-none absolute -right-2 -top-2 inline-flex min-w-[14px] items-center justify-center rounded-[var(--co-radius-pill)] bg-[var(--co-ink)] px-1 font-[var(--co-font-mono)] text-[9px] font-medium leading-none text-[var(--co-page)]"
-                style={{ paddingTop: 2, paddingBottom: 2 }}
+              >
+                <path
+                  d="M12 1C7.03 1 3 5.03 3 10c0 5.25 9 16 9 16s9-10.75 9-16c0-4.97-4.03-9-9-9z"
+                  className={cn(
+                    state === "resolved" && "fill-muted stroke-border stroke-[1.5]",
+                    state === "default" && "fill-primary stroke-primary stroke-[0.5]",
+                    state === "recent" && "fill-amber-500 stroke-amber-600 stroke-[0.5]",
+                  )}
+                />
+              </svg>
+              <MessageSquare
+                className={cn(
+                  "absolute left-1/2 top-[5px] h-2.5 w-2.5 -translate-x-1/2",
+                  state === "resolved"
+                    ? "text-muted-foreground"
+                    : "text-primary-foreground",
+                  state === "recent" && "text-white",
+                )}
+                strokeWidth={2.5}
+              />
+            </span>
+            {count > 1 ? (
+              <Badge
+                variant="secondary"
+                className="pointer-events-none absolute -right-2 -top-1.5 h-4 min-w-4 justify-center px-1 text-[9px] font-semibold"
               >
                 {count}
-              </span>
+              </Badge>
             ) : null}
           </button>
         );
