@@ -25,7 +25,7 @@ export function CommentShell({
       <Dialog open onOpenChange={(open) => !open && onClose()}>
         <DialogContent
           className={cn(
-            "flex max-h-[85vh] w-full max-w-[460px] flex-col gap-0 overflow-hidden p-0",
+            "flex h-[70vh] max-h-[85vh] min-h-[480px] w-full max-w-[460px] flex-col gap-0 overflow-hidden p-0",
           )}
           onClick={(e) => e.stopPropagation()}
         >
@@ -47,7 +47,9 @@ export function CommentShell({
               </p>
             ) : null}
 
-            <div className="min-h-0 flex-1 overflow-y-auto">{children}</div>
+            <div className="redline-scroll min-h-0 flex-1 overflow-y-auto">
+              {children}
+            </div>
           </Tabs>
         </DialogContent>
       </Dialog>

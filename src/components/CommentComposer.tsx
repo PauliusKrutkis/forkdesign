@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { toPng } from "html-to-image";
+import { SquareDashedMousePointer, Check } from "lucide-react";
 import { PROMPT_SHORTCUTS } from "./promptTemplates";
 import { Button } from "./ui/button";
 import { Badge } from "./ui/badge";
@@ -273,7 +274,7 @@ function ComposerPanel({
   // Estimated panel height covers header + textarea + action row.
   const viewportW = typeof window !== "undefined" ? window.innerWidth : 1024;
   const viewportH = typeof window !== "undefined" ? window.innerHeight : 768;
-  const ESTIMATED_PANEL_HEIGHT = 180;
+  const ESTIMATED_PANEL_HEIGHT = 200;
   const desiredLeft = clickPoint.x - PANEL_WIDTH / 2;
   const left = Math.max(
     VIEWPORT_PADDING,
@@ -289,6 +290,15 @@ function ComposerPanel({
 
   const submitting = status.kind === "saving";
   const saved = status.kind === "saved";
+
+  // Auto-grow the textarea with its content (up to a cap, then scroll), so the
+  // panel reads as one writing surface rather than a fixed box you type into.
+  useEffect(() => {
+    const ta = textareaRef.current;
+    if (!ta) return;
+    ta.style.height = "auto";
+    ta.style.height = `${Math.min(ta.scrollHeight, 168)}px`;
+  }, [text, textareaRef]);
 
   const submit = async () => {
     if (submitting || saved) return;
@@ -313,11 +323,35 @@ function ComposerPanel({
   return (
     <div
       data-comment-overlay="true"
-      className="pointer-events-auto fixed z-[9300] overflow-hidden rounded-lg border bg-background shadow-lg"
+      className="pointer-events-auto fixed z-[9300] flex flex-col overflow-hidden rounded-lg border bg-background shadow-lg"
       style={{ left, top, width: PANEL_WIDTH }}
       onClick={(e) => e.stopPropagation()}
     >
-      <div className="px-3.5 pb-2 pt-3.5">
+      {/* Header — orients the user: what they're doing (left) and which element
+          the note is anchored to (right). The dashed-cursor glyph echoes the
+          composer's own dashed selection outline. */}
+      <div className="flex h-9 shrink-0 items-center justify-between gap-2 border-b px-3.5">
+        <div className="flex min-w-0 items-center gap-1.5">
+          <SquareDashedMousePointer
+            aria-hidden
+            className="h-3.5 w-3.5 shrink-0 text-muted-foreground"
+          />
+          <span className="text-xs font-medium text-foreground">
+            New comment
+          </span>
+        </div>
+        <span
+          title={describeElement(target)}
+          className="max-w-[150px] shrink-0 truncate rounded bg-muted px-1.5 py-0.5 font-mono text-[10px] leading-none text-muted-foreground"
+        >
+          {describeElement(target)}
+        </span>
+      </div>
+
+      {/* Writing surface — the textarea is flush inside the panel (no inner
+          border/shadow) and auto-grows, so the whole panel reads as one input
+          rather than a box-in-a-box. */}
+      <div className="px-3.5 py-3">
         <Textarea
           ref={textareaRef}
           value={text}
@@ -325,7 +359,7 @@ function ComposerPanel({
           placeholder="Leave a note for the next agent…"
           rows={3}
           disabled={submitting || saved}
-          className="min-h-[72px] resize-y"
+          className="min-h-[66px] resize-none border-0 bg-transparent p-0 text-sm shadow-none focus-visible:ring-0"
           onKeyDown={(e) => {
             if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
               e.preventDefault();
@@ -342,24 +376,8 @@ function ComposerPanel({
             {status.message}
           </p>
         ) : null}
-        <div className="mt-2 flex flex-wrap items-center gap-2">
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            disabled={submitting || saved}
-            aria-expanded={templatesOpen}
-            onClick={() => setTemplatesOpen((v) => !v)}
-            className="h-auto px-1 py-0 text-xs text-muted-foreground"
-          >
-            {templatesOpen ? "Hide templates" : "Insert template"}
-          </Button>
-          <span className="truncate font-mono text-[10px] text-muted-foreground">
-            {describeElement(target)}
-          </span>
-        </div>
         {templatesOpen ? (
-          <div className="mt-2 flex flex-wrap gap-1.5">
+          <div className="mt-2.5 flex flex-wrap gap-1.5">
             {PROMPT_SHORTCUTS.map((prompt) => (
               <Badge
                 key={prompt}
@@ -380,35 +398,56 @@ function ComposerPanel({
           </div>
         ) : null}
       </div>
-      <div className="flex items-center justify-end gap-2 border-t px-3 py-2">
-        {saved ? (
-          <span className="text-xs text-muted-foreground">Saved</span>
-        ) : null}
+
+      {/* Footer — templates toggle (left) · actions (right). */}
+      <div className="flex shrink-0 items-center justify-between gap-2 border-t px-3 py-2">
         <Button
           type="button"
           variant="ghost"
           size="sm"
-          onClick={onCancel}
-          disabled={submitting}
+          disabled={submitting || saved}
+          aria-expanded={templatesOpen}
+          onClick={() => setTemplatesOpen((v) => !v)}
+          className="h-7 px-2 text-xs text-muted-foreground"
         >
-          Cancel
+          {templatesOpen ? "Hide templates" : "Templates"}
         </Button>
-        <Button
-          type="button"
-          size="sm"
-          onClick={() => {
-            void submit();
-          }}
-          disabled={!text.trim() || submitting || saved}
-        >
-          {submitting ? "Saving…" : saved ? "Saved" : "Save"}
-          {!submitting && !saved ? (
-            <ShortcutHint onPrimary>
-              {ctrlKey}
-              {ctrlKey === "⌘" ? "" : "+"}⏎
-            </ShortcutHint>
-          ) : null}
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={onCancel}
+            disabled={submitting}
+          >
+            Cancel
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            onClick={() => {
+              void submit();
+            }}
+            disabled={!text.trim() || submitting || saved}
+          >
+            {submitting ? (
+              "Saving…"
+            ) : saved ? (
+              <>
+                <Check aria-hidden />
+                Saved
+              </>
+            ) : (
+              <>
+                Save
+                <ShortcutHint onPrimary>
+                  {ctrlKey}
+                  {ctrlKey === "⌘" ? "" : "+"}⏎
+                </ShortcutHint>
+              </>
+            )}
+          </Button>
+        </div>
       </div>
     </div>
   );

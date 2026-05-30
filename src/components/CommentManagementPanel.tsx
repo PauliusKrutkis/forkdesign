@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import { MoreHorizontal } from "lucide-react";
+import { useMemo, useState } from "react";
+import { Trash2 } from "lucide-react";
 import type { CommentData } from "./types";
 import { Button } from "./ui/button";
 import { Badge } from "./ui/badge";
@@ -78,7 +78,7 @@ export function CommentManagementPanel({
 
       {offPage.length > 0 ? (
         <section className="border-t">
-          <h3 className="m-0 px-4 py-2 text-xs italic text-muted-foreground">
+          <h3 className="sticky top-0 z-10 m-0 border-b bg-background/80 px-4 py-2 text-xs italic text-muted-foreground backdrop-blur">
             Off-page or orphaned
           </h3>
           <div className="opacity-90">
@@ -127,7 +127,7 @@ function FileGroup({
       <Button
         type="button"
         variant="ghost"
-        className="h-auto w-full justify-between rounded-none px-4 py-2 text-xs text-muted-foreground hover:bg-muted"
+        className="sticky top-0 z-10 h-auto w-full justify-between rounded-none border-b bg-background/80 px-4 py-2 text-xs text-muted-foreground backdrop-blur hover:bg-muted"
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
       >
@@ -173,23 +173,9 @@ function CommentRow({
   onGoToPage: (comment: CommentWithFile) => void;
   onDelete: CommentManagementPanelProps["onDelete"];
 }) {
-  const [menuOpen, setMenuOpen] = useState(false);
+  const [confirming, setConfirming] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const menuRef = useRef<HTMLDivElement | null>(null);
-
-  useEffect(() => {
-    if (!menuOpen) return;
-    const onClick = (e: MouseEvent) => {
-      if (!menuRef.current) return;
-      if (e.target instanceof Node && menuRef.current.contains(e.target)) {
-        return;
-      }
-      setMenuOpen(false);
-    };
-    document.addEventListener("mousedown", onClick);
-    return () => document.removeEventListener("mousedown", onClick);
-  }, [menuOpen]);
 
   const handleRowActivate = () => {
     if (jumpable) {
@@ -202,28 +188,23 @@ function CommentRow({
   };
 
   const handleDelete = async () => {
-    setMenuOpen(false);
-    if (
-      typeof window !== "undefined" &&
-      !window.confirm("Delete this comment?")
-    ) {
-      return;
-    }
     setBusy(true);
     setError(null);
     try {
       await onDelete(comment.id);
+      // Row unmounts on success; no need to reset state.
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
-    } finally {
       setBusy(false);
+      setConfirming(false);
     }
   };
 
   const interactive = jumpable || navigable;
   const rowClass = cn(
     "group relative flex w-full items-start gap-3 border-t px-4 py-3 text-left transition-colors",
-    interactive && "cursor-pointer hover:bg-muted/50",
+    interactive &&
+      "cursor-pointer hover:bg-muted/50 focus-visible:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
     !interactive && "cursor-default",
     busy && "opacity-50",
   );
@@ -264,48 +245,80 @@ function CommentRow({
           <p className="m-0 mt-1 text-xs text-destructive">{error}</p>
         ) : null}
       </div>
-      <div ref={menuRef} className="relative shrink-0">
+      <div
+        className="flex shrink-0 items-center self-start"
+        onClick={(e) => e.stopPropagation()}
+      >
         <Button
           type="button"
           variant="ghost"
           size="icon"
-          className="h-7 w-7"
-          aria-label="Comment actions"
+          className="h-7 w-7 text-muted-foreground opacity-0 transition-opacity hover:text-destructive focus-visible:opacity-100 group-hover:opacity-100"
+          aria-label="Delete comment"
           onClick={(e) => {
             e.stopPropagation();
-            setMenuOpen((v) => !v);
+            setConfirming(true);
           }}
         >
-          <MoreHorizontal className="h-4 w-4" />
+          <Trash2 className="h-4 w-4" />
         </Button>
-        {menuOpen ? (
-          <div
-            role="menu"
-            className="absolute right-0 top-8 z-10 min-w-[120px] rounded-md border bg-popover py-1 shadow-md"
-          >
-            <Button
-              type="button"
-              variant="ghost"
-              role="menuitem"
-              className="h-auto w-full justify-start rounded-none px-3 py-1.5 text-sm text-destructive hover:bg-destructive/10 hover:text-destructive"
-              onClick={(e) => {
-                e.stopPropagation();
-                void handleDelete();
-              }}
-            >
-              Delete
-            </Button>
-          </div>
-        ) : null}
       </div>
+
+      {confirming ? (
+        <div
+          className="absolute inset-y-0 right-0 z-10 flex items-center gap-1.5 rounded-r-[inherit] bg-gradient-to-l from-background from-55% to-transparent pl-14 pr-3"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <span className="mr-0.5 text-xs font-medium text-foreground">
+            Delete?
+          </span>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="h-7 px-2 text-xs"
+            disabled={busy}
+            onClick={(e) => {
+              e.stopPropagation();
+              setConfirming(false);
+            }}
+          >
+            Cancel
+          </Button>
+          <Button
+            type="button"
+            variant="destructive"
+            size="sm"
+            className="h-7 px-2 text-xs"
+            disabled={busy}
+            onClick={(e) => {
+              e.stopPropagation();
+              void handleDelete();
+            }}
+          >
+            {busy ? "Deleting…" : "Delete"}
+          </Button>
+        </div>
+      ) : null}
     </>
   );
 
   if (interactive) {
     return (
-      <button type="button" className={rowClass} onClick={handleRowActivate}>
+      <div
+        role="button"
+        tabIndex={0}
+        className={rowClass}
+        onClick={handleRowActivate}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            handleRowActivate();
+          }
+        }}
+      >
         {inner}
-      </button>
+      </div>
     );
   }
 

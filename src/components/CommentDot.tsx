@@ -1,9 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
-import { MessageSquare } from "lucide-react";
+import { Check, Pencil } from "lucide-react";
 import type { RegisteredComment } from "./types";
 import { useAnchorRects } from "./useAnchorElement";
 import { dotRect } from "./placement";
-import { Badge } from "./ui/badge";
 import { cn } from "../lib/utils";
 
 export type DotInstanceTarget = { anchor: string; instance: number };
@@ -17,8 +16,13 @@ type CommentDotProps = {
 };
 
 const RECENT_WINDOW_MS = 24 * 60 * 60 * 1000;
-const PIN_W = 22;
-const PIN_H = 26;
+/**
+ * Pin footprint. A near-circular bubble with one sharp corner (bottom-left)
+ * that points back at the anchored element's top-right corner — the
+ * recognizable "comment marker" silhouette. Square so the rounded sides stay
+ * perfectly circular; the pointing corner is shaped via border-radius.
+ */
+const PIN_SIZE = 20;
 
 function readViewport() {
   if (typeof window === "undefined") return { width: 1024, height: 768 };
@@ -38,7 +42,10 @@ function pinState(
 }
 
 /**
- * Map-pin comment marker anchored to DOM elements.
+ * Comment marker anchored to DOM elements. Renders as a soft-elevated bubble
+ * with a pointed corner aimed at the anchor; carries a pencil glyph (or a
+ * check, when the thread is resolved) and an overflow count badge when
+ * comments stack on one element.
  */
 export function CommentDot({
   anchor,
@@ -75,6 +82,9 @@ export function CommentDot({
 
   const state = pinState(comments, unresolvedRecent);
   const count = comments.length;
+  // Three rounded corners + one sharp (bottom-left) → a marker that points
+  // down-left at the element's top-right corner where the pin is anchored.
+  const pinShape = { borderRadius: "50% 50% 50% 3px" };
 
   return (
     <>
@@ -99,58 +109,51 @@ export function CommentDot({
             onFocus={() => onHover({ anchor, instance })}
             onBlur={() => onHover(null)}
             className={cn(
-              "pointer-events-auto fixed z-[9100] m-0 flex items-center justify-center p-0 outline-none transition-transform duration-150 hover:scale-110 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
+              "pointer-events-auto fixed z-[9100] m-0 p-0 outline-none transition-transform duration-150 ease-out hover:scale-110 focus-visible:scale-110",
               isOpen && "scale-110",
             )}
             style={{
-              left: left - PIN_W / 2 + 6,
-              top: top - PIN_H + 4,
-              width: PIN_W,
-              height: PIN_H,
+              left: left - 3,
+              top: top - PIN_SIZE + 5,
+              width: PIN_SIZE,
+              height: PIN_SIZE,
             }}
           >
+            {/* Pulse ring for recent threads — sits behind the bubble so the
+                expanding shadow never disturbs the bubble's own elevation. */}
+            {state === "recent" && !isOpen ? (
+              <span
+                aria-hidden
+                className="animate-pin-pulse absolute inset-0"
+                style={pinShape}
+              />
+            ) : null}
             <span
               aria-hidden
+              style={pinShape}
               className={cn(
-                "relative flex h-full w-full items-center justify-center drop-shadow-md",
-                state === "recent" && !isOpen && "animate-pin-pulse",
-                isOpen && "ring-2 ring-ring ring-offset-2 ring-offset-background rounded-sm",
+                "relative flex h-full w-full items-center justify-center text-[10px] font-semibold leading-none tracking-tight tabular-nums shadow-[0_1px_2px_rgba(0,0,0,0.16),0_2px_6px_-1px_rgba(0,0,0,0.22)] ring-1 transition-[box-shadow,outline] duration-150",
+                (state === "default" || state === "recent") &&
+                  "bg-foreground text-background ring-black/10",
+                state === "resolved" &&
+                  "bg-background text-muted-foreground ring-border",
+                isOpen &&
+                  "outline outline-2 outline-offset-2 outline-foreground",
               )}
             >
-              <svg
-                viewBox="0 0 24 28"
-                width={PIN_W}
-                height={PIN_H}
-                className="overflow-visible"
-                aria-hidden
-              >
-                <path
-                  d="M12 1C7.03 1 3 5.03 3 10c0 5.25 9 16 9 16s9-10.75 9-16c0-4.97-4.03-9-9-9z"
-                  className={cn(
-                    state === "resolved" && "fill-muted stroke-border stroke-[1.5]",
-                    state === "default" && "fill-primary stroke-primary stroke-[0.5]",
-                    state === "recent" && "fill-amber-500 stroke-amber-600 stroke-[0.5]",
-                  )}
-                />
-              </svg>
-              <MessageSquare
-                className={cn(
-                  "absolute left-1/2 top-[5px] h-2.5 w-2.5 -translate-x-1/2",
-                  state === "resolved"
-                    ? "text-muted-foreground"
-                    : "text-primary-foreground",
-                  state === "recent" && "text-white",
-                )}
-                strokeWidth={2.5}
-              />
+              {state === "resolved" ? (
+                <Check className="h-3 w-3" strokeWidth={2.75} />
+              ) : (
+                <Pencil className="h-2.5 w-2.5" strokeWidth={2.5} />
+              )}
             </span>
             {count > 1 ? (
-              <Badge
-                variant="secondary"
-                className="pointer-events-none absolute -right-2 -top-1.5 h-4 min-w-4 justify-center px-1 text-[9px] font-semibold"
+              <span
+                aria-hidden
+                className="pointer-events-none absolute -right-1 -top-1 flex h-3.5 min-w-3.5 items-center justify-center rounded-full border border-background bg-foreground px-1 text-[8px] font-semibold leading-none text-background shadow-sm"
               >
                 {count}
-              </Badge>
+              </span>
             ) : null}
           </button>
         );

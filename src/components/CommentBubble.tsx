@@ -371,36 +371,30 @@ export function CommentBubble({
         </Button>
       </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-3 pt-3">
-        <p
-          className={cn(
-            "m-0 whitespace-pre-wrap text-sm leading-relaxed text-foreground",
-            mode === "compact" && "line-clamp-3",
-          )}
-        >
-          {lead.text}
-        </p>
-        <div className="mt-3 flex items-center justify-between gap-3">
-          <div className="flex min-w-0 flex-col gap-0.5">
-            <span className="truncate text-xs text-muted-foreground">
-              {lead.author}
-            </span>
-            <span className="font-mono text-[10px] tabular-nums text-muted-foreground">
-              {formatDate(lead.date)}
-            </span>
-          </div>
-          {/* Adaptive thumbnail — detailed only. Compact hides the screenshot
-              entirely; the user can access it after expanding. */}
+      <div className="min-h-0 flex-1 overflow-y-auto px-3.5 pb-3 pt-3">
+        {/* Comment + screenshot as a media object: in detailed mode the text
+            wraps beside the thumbnail; compact hides the thumbnail entirely. */}
+        <div className="flex items-start gap-3">
+          <p
+            className={cn(
+              "m-0 min-w-0 flex-1 whitespace-pre-wrap text-sm leading-relaxed text-foreground",
+              mode === "compact" && "line-clamp-3",
+            )}
+          >
+            {lead.text}
+          </p>
           {mode === "detailed" && lead.screenshot ? (
             <AdaptiveThumb
               src={lead.screenshot}
               onClick={() => setLightboxOpen(true)}
             />
           ) : null}
-          {/* Mode toggle chevron. Sits on the right of the metadata row in
-              both modes so the affordance is in a consistent spot. In
-              detailed mode it lives next to the thumbnail (if any) — both
-              are on the right, stacked horizontally. */}
+        </div>
+
+        {/* Attribution (left) · expand toggle (right) — one aligned line. The
+            toggle lives here in both modes so the affordance never moves. */}
+        <div className="mt-2.5 flex items-center justify-between gap-2">
+          <Attribution author={lead.author} date={lead.date} />
           <ModeToggleButton
             mode={mode}
             onToggle={() =>
@@ -410,40 +404,34 @@ export function CommentBubble({
         </div>
 
         {mode === "detailed" && comments.length > 1 ? (
-          <ul className="m-0 mt-3 list-none space-y-2 border-t p-0 pt-2">
+          <ul className="m-0 mt-3 list-none space-y-2.5 border-t p-0 pt-3">
             {comments.slice(1).map((extra) => (
               <li key={extra.id}>
                 <p className="m-0 text-sm leading-snug text-muted-foreground">
                   {extra.text}
                 </p>
-                <div className="mt-1 flex items-center justify-between gap-2">
-                  <span className="truncate text-xs text-muted-foreground">
-                    {extra.author}
-                  </span>
-                  <span className="font-mono text-[10px] tabular-nums text-muted-foreground">
-                    {formatDate(extra.date)}
-                  </span>
-                </div>
+                <Attribution
+                  author={extra.author}
+                  date={extra.date}
+                  className="mt-1"
+                />
               </li>
             ))}
           </ul>
         ) : null}
 
         {mode === "detailed" && lead.replies && lead.replies.length > 0 ? (
-          <ul className="m-0 mt-3 list-none space-y-2 border-t p-0 pt-2">
+          <ul className="m-0 mt-3 list-none space-y-2.5 border-t p-0 pt-3">
             {lead.replies.map((reply, i) => (
               <li key={`${reply.author}-${reply.date}-${i}`}>
                 <p className="m-0 text-sm leading-snug text-muted-foreground">
                   {reply.text}
                 </p>
-                <div className="mt-1 flex items-center justify-between gap-2">
-                  <span className="truncate text-xs text-muted-foreground">
-                    {reply.author}
-                  </span>
-                  <span className="font-mono text-[10px] tabular-nums text-muted-foreground">
-                    {formatDate(reply.date)}
-                  </span>
-                </div>
+                <Attribution
+                  author={reply.author}
+                  date={reply.date}
+                  className="mt-1"
+                />
               </li>
             ))}
           </ul>
@@ -603,6 +591,38 @@ function Pointer({ side, offset }: { side: FloaterSide; offset: number }) {
 function readViewport() {
   if (typeof window === "undefined") return { width: 1024, height: 768 };
   return { width: window.innerWidth, height: window.innerHeight };
+}
+
+/**
+ * One-line attribution: `author · date`. Used for the lead comment and every
+ * extra/reply so the metadata reads identically everywhere. The author
+ * truncates; the dot and date never shrink so the timestamp stays legible.
+ */
+function Attribution({
+  author,
+  date,
+  className,
+}: {
+  author: string;
+  date: string;
+  className?: string;
+}) {
+  return (
+    <div
+      className={cn(
+        "flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground",
+        className,
+      )}
+    >
+      <span className="truncate">{author}</span>
+      <span aria-hidden className="text-muted-foreground/40">
+        ·
+      </span>
+      <span className="shrink-0 font-mono text-[10px] tabular-nums">
+        {formatDate(date)}
+      </span>
+    </div>
+  );
 }
 
 /**
