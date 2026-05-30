@@ -112,6 +112,16 @@ Comment markers in source look like:
 {/* @comment id="550e8400-e29b-41d4-a716-446655440000" anchor="550e8400-e29b-41d4-a716-446655440000" text="Too heavy" author="you@example.com" date="2026-05-26T12:00:00.000Z" */}
 ```
 
+### Dev API (`comments()` middleware)
+
+| Method | Path | Body | Purpose |
+|--------|------|------|---------|
+| `GET` | `/api/comments` | — | List all comment markers |
+| `GET` | `/api/comments?file=src/…/Page.tsx` | — | Comments in one file |
+| `POST` | `/api/comments` | `{ file, line, column, text, author, … }` | Create marker |
+| `PATCH` | `/api/comments/:id` | `{ text }` or `{ reply: { text, author } }` | Edit body or append reply |
+| `DELETE` | `/api/comments/:id` | — | Remove marker |
+
 ## Plugin options
 
 ```ts

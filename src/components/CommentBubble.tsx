@@ -3,10 +3,18 @@ import { toPng } from "html-to-image";
 import { effectiveBackgroundColor } from "./screenshot";
 import type { RegisteredComment } from "./types";
 import { CommentVersionSwitcher } from "./CommentVersionSwitcher";
-import { GripVertical, X } from "lucide-react";
+import {
+  CheckCircle2,
+  GripVertical,
+  Loader2,
+  MessageSquareReply,
+  Sparkles,
+  Trash2,
+  X,
+} from "lucide-react";
 import { Button } from "./ui/button";
-import { Separator } from "./ui/separator";
-import { ShortcutHint, ctrlKey } from "./ShortcutHint";
+import { Textarea } from "./ui/textarea";
+import { ctrlKey, ShortcutHint } from "./ShortcutHint";
 import { cn } from "../lib/utils";
 import { dotRect, placeFloater, type FloaterSide } from "./placement";
 
@@ -15,7 +23,9 @@ type CommentBubbleProps = {
   rect: DOMRect;
   onClose: () => void;
   onResolve?: (id: string) => void;
-  onReply?: (id: string) => void;
+  onDelete?: (id: string) => Promise<void>;
+  onEdit?: (id: string, text: string) => Promise<void>;
+  onSubmitReply?: (id: string, text: string) => Promise<void>;
 };
 
 /** NDJSON event shapes streamed from `POST /api/iterations/new`. */
@@ -62,7 +72,9 @@ export function CommentBubble({
   rect,
   onClose,
   onResolve,
-  onReply,
+  onDelete,
+  onEdit,
+  onSubmitReply,
 }: CommentBubbleProps) {
   const lead = comments[0];
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -95,6 +107,19 @@ export function CommentBubble({
   const [iterateStartedAt, setIterateStartedAt] = useState<number | null>(null);
   /** Re-renders the elapsed counter once per second while iterating. */
   const [iterateNow, setIterateNow] = useState<number>(() => Date.now());
+  const [editing, setEditing] = useState(false);
+  const [editDraft, setEditDraft] = useState("");
+  const [editBusy, setEditBusy] = useState(false);
+  const [editError, setEditError] = useState<string | null>(null);
+  const [replyOpen, setReplyOpen] = useState(false);
+  const [replyDraft, setReplyDraft] = useState("");
+  const [replyBusy, setReplyBusy] = useState(false);
+  const [replyError, setReplyError] = useState<string | null>(null);
+  const [deleteConfirming, setDeleteConfirming] = useState(false);
+  const [deleteBusy, setDeleteBusy] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const editTextareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const replyTextareaRef = useRef<HTMLTextAreaElement | null>(null);
 
   // 1Hz tick while iterating so the elapsed counter updates without
   // requiring an external state push for every second.
@@ -103,6 +128,100 @@ export function CommentBubble({
     const t = window.setInterval(() => setIterateNow(Date.now()), 1000);
     return () => window.clearInterval(t);
   }, [iterating]);
+
+  useEffect(() => {
+    if (editing) {
+      editTextareaRef.current?.focus();
+    }
+  }, [editing]);
+
+  useEffect(() => {
+    if (replyOpen) {
+      replyTextareaRef.current?.focus();
+    }
+  }, [replyOpen]);
+
+  const startEditing = () => {
+    if (!lead || !onEdit) return;
+    setMode("detailed");
+    setEditing(true);
+    setEditDraft(lead.text);
+    setEditError(null);
+    setReplyOpen(false);
+  };
+
+  const cancelEditing = () => {
+    setEditing(false);
+    setEditDraft("");
+    setEditError(null);
+  };
+
+  const saveEdit = async () => {
+    if (!lead || !onEdit || editBusy) return;
+    const trimmed = editDraft.trim();
+    if (!trimmed) {
+      setEditError("Comment cannot be empty");
+      return;
+    }
+    setEditBusy(true);
+    setEditError(null);
+    try {
+      await onEdit(lead.id, trimmed);
+      setEditing(false);
+      setEditDraft("");
+    } catch (err) {
+      setEditError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setEditBusy(false);
+    }
+  };
+
+  const openReplyComposer = () => {
+    setMode("detailed");
+    setReplyOpen(true);
+    setReplyDraft("");
+    setReplyError(null);
+    setEditing(false);
+  };
+
+  const cancelReply = () => {
+    setReplyOpen(false);
+    setReplyDraft("");
+    setReplyError(null);
+  };
+
+  const saveReply = async () => {
+    if (!lead || !onSubmitReply || replyBusy) return;
+    const trimmed = replyDraft.trim();
+    if (!trimmed) {
+      setReplyError("Reply cannot be empty");
+      return;
+    }
+    setReplyBusy(true);
+    setReplyError(null);
+    try {
+      await onSubmitReply(lead.id, trimmed);
+      setReplyOpen(false);
+      setReplyDraft("");
+    } catch (err) {
+      setReplyError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setReplyBusy(false);
+    }
+  };
+
+  const confirmDelete = async () => {
+    if (!lead || !onDelete || deleteBusy) return;
+    setDeleteBusy(true);
+    setDeleteError(null);
+    try {
+      await onDelete(lead.id);
+    } catch (err) {
+      setDeleteError(err instanceof Error ? err.message : String(err));
+      setDeleteBusy(false);
+      setDeleteConfirming(false);
+    }
+  };
 
   // Fires the Claude Agent SDK server-side via POST /api/iterations/new.
   // The agent reads the file, locates the anchored element, applies the
@@ -375,15 +494,52 @@ export function CommentBubble({
         {/* Comment + screenshot as a media object: in detailed mode the text
             wraps beside the thumbnail; compact hides the thumbnail entirely. */}
         <div className="flex items-start gap-3">
-          <p
-            className={cn(
-              "m-0 min-w-0 flex-1 whitespace-pre-wrap text-sm leading-relaxed text-foreground",
-              mode === "compact" && "line-clamp-3",
-            )}
-          >
-            {lead.text}
-          </p>
-          {mode === "detailed" && lead.screenshot ? (
+          {editing ? (
+            <div className="min-w-0 flex-1 space-y-2">
+              <Textarea
+                ref={editTextareaRef}
+                value={editDraft}
+                onChange={(e) => setEditDraft(e.target.value)}
+                disabled={editBusy}
+                className="min-h-[72px] resize-none text-sm leading-relaxed"
+                aria-label="Edit comment"
+              />
+              <div className="flex items-center justify-end gap-1.5">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 px-2 text-xs"
+                  disabled={editBusy}
+                  onClick={cancelEditing}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  className="h-7 px-2 text-xs"
+                  disabled={editBusy}
+                  onClick={() => void saveEdit()}
+                >
+                  {editBusy ? "Saving…" : "Save"}
+                </Button>
+              </div>
+              {editError ? (
+                <p className="m-0 text-xs text-destructive">{editError}</p>
+              ) : null}
+            </div>
+          ) : (
+            <p
+              className={cn(
+                "m-0 min-w-0 flex-1 whitespace-pre-wrap text-sm leading-relaxed text-foreground",
+                mode === "compact" && "line-clamp-3",
+              )}
+            >
+              {lead.text}
+            </p>
+          )}
+          {mode === "detailed" && lead.screenshot && !editing ? (
             <AdaptiveThumb
               src={lead.screenshot}
               onClick={() => setLightboxOpen(true)}
@@ -391,16 +547,28 @@ export function CommentBubble({
           ) : null}
         </div>
 
-        {/* Attribution (left) · expand toggle (right) — one aligned line. The
-            toggle lives here in both modes so the affordance never moves. */}
+        {/* Attribution (left) · edit + expand toggle (right) */}
         <div className="mt-2.5 flex items-center justify-between gap-2">
           <Attribution author={lead.author} date={lead.date} />
-          <ModeToggleButton
-            mode={mode}
-            onToggle={() =>
-              setMode((prev) => (prev === "compact" ? "detailed" : "compact"))
-            }
-          />
+          <div className="flex shrink-0 items-center gap-0.5">
+            {onEdit && !editing ? (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="h-auto px-1.5 py-1 text-xs"
+                onClick={startEditing}
+              >
+                Edit
+              </Button>
+            ) : null}
+            <ModeToggleButton
+              mode={mode}
+              onToggle={() =>
+                setMode((prev) => (prev === "compact" ? "detailed" : "compact"))
+              }
+            />
+          </div>
         </div>
 
         {mode === "detailed" && comments.length > 1 ? (
@@ -436,6 +604,44 @@ export function CommentBubble({
             ))}
           </ul>
         ) : null}
+
+        {mode === "detailed" && replyOpen ? (
+          <div className="mt-3 space-y-2 border-t pt-3">
+            <Textarea
+              ref={replyTextareaRef}
+              value={replyDraft}
+              onChange={(e) => setReplyDraft(e.target.value)}
+              disabled={replyBusy}
+              placeholder="Write a reply…"
+              className="min-h-[64px] resize-none text-sm leading-relaxed"
+              aria-label="Reply"
+            />
+            <div className="flex items-center justify-end gap-1.5">
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="h-7 px-2 text-xs"
+                disabled={replyBusy}
+                onClick={cancelReply}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                className="h-7 px-2 text-xs"
+                disabled={replyBusy}
+                onClick={() => void saveReply()}
+              >
+                {replyBusy ? "Saving…" : "Save reply"}
+              </Button>
+            </div>
+            {replyError ? (
+              <p className="m-0 text-xs text-destructive">{replyError}</p>
+            ) : null}
+          </div>
+        ) : null}
       </div>
 
       {mode === "detailed" && iterating ? (
@@ -466,28 +672,92 @@ export function CommentBubble({
       ) : null}
 
       {mode === "detailed" ? (
-        <div className="flex shrink-0 items-stretch border-t">
-          <ActionButton onClick={() => onReply?.(lead.id)}>Reply</ActionButton>
-          <Separator orientation="vertical" className="h-auto" />
-          <ActionButton onClick={() => onResolve?.(lead.id)}>
-            {lead.resolved ? "Resolved" : "Resolve"}
-            {lead.resolved ? null : (
-              <ShortcutHint>
-                {ctrlKey}
-                {ctrlKey === "⌘" ? "" : "+"}R
-              </ShortcutHint>
+        <div className="relative flex shrink-0 divide-x divide-border border-t">
+          <ActionIconButton
+            label="Reply"
+            title="Reply"
+            onClick={openReplyComposer}
+          >
+            <MessageSquareReply className="h-4 w-4" aria-hidden />
+          </ActionIconButton>
+          <ActionIconButton
+            label={lead.resolved ? "Resolved" : "Resolve"}
+            title={
+              lead.resolved
+                ? "Resolved"
+                : `Resolve (${ctrlKey}${ctrlKey === "⌘" ? "" : "+"}R)`
+            }
+            active={lead.resolved}
+            onClick={() => onResolve?.(lead.id)}
+          >
+            <CheckCircle2 className="h-4 w-4" aria-hidden />
+          </ActionIconButton>
+          <ActionIconButton
+            label="Fix"
+            title={`Fix (${ctrlKey}${ctrlKey === "⌘" ? "" : "+"}I)`}
+            disabled={iterating}
+            onClick={handleIterate}
+          >
+            {iterating ? (
+              <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+            ) : (
+              <Sparkles className="h-4 w-4" aria-hidden />
             )}
-          </ActionButton>
-          <Separator orientation="vertical" className="h-auto" />
-          <ActionButton onClick={handleIterate} disabled={iterating}>
-            {iterating ? "Running AI..." : "Fix with AI"}
-            {iterating ? null : (
-              <ShortcutHint>
-                {ctrlKey}
-                {ctrlKey === "⌘" ? "" : "+"}I
-              </ShortcutHint>
-            )}
-          </ActionButton>
+          </ActionIconButton>
+          {onDelete ? (
+            <ActionIconButton
+              label="Delete"
+              title="Delete comment"
+              destructive
+              disabled={deleteBusy}
+              onClick={() => {
+                setDeleteConfirming(true);
+                setDeleteError(null);
+              }}
+            >
+              <Trash2 className="h-4 w-4" aria-hidden />
+            </ActionIconButton>
+          ) : null}
+
+          {deleteConfirming ? (
+            <div
+              className="absolute inset-0 z-10 flex items-center justify-end gap-1.5 bg-gradient-to-l from-background from-55% to-transparent pl-8 pr-2"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <span className="mr-0.5 text-xs font-medium text-foreground">
+                Delete?
+              </span>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="h-7 px-2 text-xs"
+                disabled={deleteBusy}
+                onClick={() => setDeleteConfirming(false)}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                variant="destructive"
+                size="sm"
+                className="h-7 px-2 text-xs"
+                disabled={deleteBusy}
+                onClick={() => void confirmDelete()}
+              >
+                {deleteBusy ? "Deleting…" : "Delete"}
+              </Button>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+
+      {deleteError ? (
+        <div
+          role="alert"
+          className="shrink-0 border-t bg-destructive/10 px-4 py-1.5 text-xs text-destructive"
+        >
+          {deleteError}
         </div>
       ) : null}
 
@@ -735,22 +1005,37 @@ function computeThumbDims(
   return { width: 36, height: 36 };
 }
 
-function ActionButton({
-  children,
+function ActionIconButton({
+  label,
+  title,
   onClick,
   disabled,
+  active,
+  destructive,
+  children,
 }: {
-  children: React.ReactNode;
+  label: string;
+  title?: string;
   onClick?: () => void;
   disabled?: boolean;
+  active?: boolean;
+  destructive?: boolean;
+  children: React.ReactNode;
 }) {
   return (
     <Button
       type="button"
       variant="ghost"
+      size="icon"
+      aria-label={label}
+      title={title ?? label}
       onClick={onClick}
       disabled={disabled}
-      className="h-auto flex-1 rounded-none py-2.5 text-sm"
+      className={cn(
+        "h-9 min-w-0 flex-1 rounded-none text-muted-foreground hover:bg-muted/60 hover:text-foreground",
+        active && "text-primary hover:text-primary",
+        destructive && "hover:bg-destructive/10 hover:text-destructive",
+      )}
     >
       {children}
     </Button>

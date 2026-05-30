@@ -369,9 +369,42 @@ export function CommentOverlay({
     [],
   );
 
-  const handleReply = useCallback((id: string) => {
-    console.info("[CommentOverlay] reply (stub)", id);
+  const handleEdit = useCallback(async (id: string, text: string) => {
+    const res = await fetch(`/api/comments/${encodeURIComponent(id)}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ text }),
+    });
+    if (!res.ok) {
+      const body = (await res.json().catch(() => ({}))) as { error?: string };
+      throw new Error(body.error ?? `request failed (${res.status})`);
+    }
   }, []);
+
+  const handleSubmitReply = useCallback(
+    async (id: string, text: string) => {
+      const author =
+        settings.author.trim() ||
+        (typeof window !== "undefined" &&
+          (window as unknown as { __COMMENT_AUTHOR__?: unknown })
+            .__COMMENT_AUTHOR__ &&
+          String(
+            (window as unknown as { __COMMENT_AUTHOR__?: unknown })
+              .__COMMENT_AUTHOR__,
+          )) ||
+        "dev@local";
+      const res = await fetch(`/api/comments/${encodeURIComponent(id)}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ reply: { text, author: String(author) } }),
+      });
+      if (!res.ok) {
+        const body = (await res.json().catch(() => ({}))) as { error?: string };
+        throw new Error(body.error ?? `request failed (${res.status})`);
+      }
+    },
+    [settings.author],
+  );
 
   const handleResolve = useCallback((id: string) => {
     // Resolve toggling lives on disk in a future task; for now this is a
@@ -510,8 +543,10 @@ export function CommentOverlay({
           target={openTarget}
           comments={grouped.get(openTarget.anchor) ?? []}
           onClose={() => setOpenTarget(null)}
-          onReply={handleReply}
           onResolve={handleResolve}
+          onDelete={handleDelete}
+          onEdit={handleEdit}
+          onSubmitReply={handleSubmitReply}
         />
       ) : null}
 
@@ -671,14 +706,18 @@ function OpenBubble({
   target,
   comments,
   onClose,
-  onReply,
   onResolve,
+  onDelete,
+  onEdit,
+  onSubmitReply,
 }: {
   target: DotInstanceTarget;
   comments: CommentData[];
   onClose: () => void;
-  onReply: (id: string) => void;
   onResolve: (id: string) => void;
+  onDelete: (id: string) => Promise<void>;
+  onEdit: (id: string, text: string) => Promise<void>;
+  onSubmitReply: (id: string, text: string) => Promise<void>;
 }) {
   const rects = useAnchorRects(target.anchor);
   const rect = rects[target.instance] ?? null;
@@ -691,8 +730,10 @@ function OpenBubble({
       comments={comments}
       rect={rect}
       onClose={onClose}
-      onReply={onReply}
       onResolve={onResolve}
+      onDelete={onDelete}
+      onEdit={onEdit}
+      onSubmitReply={onSubmitReply}
     />
   );
 }

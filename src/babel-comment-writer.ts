@@ -363,7 +363,102 @@ export async function updateCommentActive(
       400,
     );
   }
-  const source = await readFile(input.absolutePath, "utf8");
+  await mutateCommentDirectiveById(
+    input.absolutePath,
+    input.commentId,
+    (raw) => setActiveOnDirective(raw, input.active),
+    "updateCommentActive",
+  );
+}
+
+export type UpdateCommentTextInput = {
+  /** Absolute path to the .tsx file containing the marker. */
+  absolutePath: string;
+  /** uuid that matches the `id` attribute on the `@comment` directive. */
+  commentId: string;
+  /** New body text for the comment. */
+  text: string;
+};
+
+/**
+ * Find the `{/* @comment id="<commentId>" ... *\/}` block and replace its
+ * `text=...` attribute. Uses `JSON.stringify` for the value so the encoding
+ * matches `buildCommentMarker`.
+ */
+export async function updateCommentText(
+  input: UpdateCommentTextInput,
+): Promise<void> {
+  const text = input.text.trim();
+  if (text.length === 0) {
+    throw new WriteError("text must be non-empty", 400);
+  }
+  await mutateCommentDirectiveById(
+    input.absolutePath,
+    input.commentId,
+    (raw) => setTextOnDirective(raw, text),
+    "updateCommentText",
+  );
+}
+
+export type AppendCommentReplyInput = {
+  /** Absolute path to the .tsx file containing the marker. */
+  absolutePath: string;
+  /** uuid that matches the `id` attribute on the `@comment` directive. */
+  commentId: string;
+  reply: {
+    author: string;
+    text: string;
+  };
+};
+
+export type AppendCommentReplyResult = {
+  author: string;
+  date: string;
+  text: string;
+};
+
+/**
+ * Append a flat reply to the `@comment` marker's `replies=[...]` array.
+ * Creates the attribute when missing. The server stamps `date` as ISO 8601.
+ */
+export async function appendCommentReply(
+  input: AppendCommentReplyInput,
+): Promise<AppendCommentReplyResult> {
+  const author = input.reply.author.trim();
+  const text = input.reply.text.trim();
+  if (author.length === 0) {
+    throw new WriteError("reply author must be non-empty", 400);
+  }
+  if (text.length === 0) {
+    throw new WriteError("reply text must be non-empty", 400);
+  }
+  const reply: AppendCommentReplyResult = {
+    author,
+    date: new Date().toISOString(),
+    text,
+  };
+  await mutateCommentDirectiveById(
+    input.absolutePath,
+    input.commentId,
+    (raw) => appendReplyOnDirective(raw, reply),
+    "appendCommentReply",
+  );
+  return reply;
+}
+
+type StoredCommentReply = {
+  author: string;
+  date: string;
+  text: string;
+};
+
+async function mutateCommentDirectiveById(
+  absolutePath: string,
+  commentId: string,
+  mutate: (directiveValue: string) => string,
+  operationName: string,
+): Promise<void> {
+  const source = await readFile(absolutePath, "utf8");
   const ast = recast.parse(source, { parser: babelTsParser });
 
   let mutated = false;
@@ -384,9 +479,9 @@ export async function updateCommentActive(
         const trimmed = block.value.trim();
         if (!trimmed.startsWith("@comment")) continue;
         const idMatch = block.value.match(/\bid="([^"]+)"/);
-        if (!idMatch || idMatch[1] !== input.commentId) continue;
+        if (!idMatch || idMatch[1] !== commentId) continue;
 
-        block.value = setActiveOnDirective(block.value, input.active);
+        block.value = mutate(block.value);
         mutated = true;
         return false;
       }
@@ -397,13 +492,12 @@ export async function updateCommentActive(
 
   if (!mutated) {
     throw new WriteError(
-      `no @comment with id="${input.commentId}" found in ${input.absolutePath}`,
+      `no @comment with id="${commentId}" found in ${absolutePath}`,
       404,
     );
   }
 
   const output = recast.print(ast).code;
-  // Belt-and-braces: re-parse to make sure we didn't corrupt anything.
   try {
     parseBabel(output, {
       sourceType: "module",
@@ -413,12 +507,12 @@ export async function updateCommentActive(
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     throw new WriteError(
-      `updateCommentActive: generated output failed to re-parse: ${message}`,
+      `${operationName}: generated output failed to re-parse: ${message}`,
       500,
     );
   }
 
-  await atomicWrite(input.absolutePath, output);
+  await atomicWrite(absolutePath, output);
 }
 
 function pushComments(
@@ -454,6 +548,123 @@ function setActiveOnDirective(raw: string, active: number): string {
   // Add a single space between the last attr and our addition.
   const sep = content.length > 0 && !/\s$/.test(content) ? " " : "";
   return `${content}${sep}active=${active}${trail}`;
+}
+
+/**
+ * Replace the `text=...` attribute on a directive. The value is always
+ * emitted as `text=${JSON.stringify(text)}` to match `buildCommentMarker`.
+ */
+function setTextOnDirective(raw: string, text: string): string {
+  const replacement = `text=${JSON.stringify(text)}`;
+  const existing = /\btext=(?:"(?:\\.|[^"\\])*")/;
+  if (!existing.test(raw)) {
+    throw new WriteError(
+      "setTextOnDirective: directive is missing required text attribute",
+      500,
+    );
+  }
+  return raw.replace(existing, replacement);
+}
+
+function appendReplyOnDirective(
+  raw: string,
+  reply: StoredCommentReply,
+): string {
+  const existing = readRepliesFromDirective(raw);
+  existing.push(reply);
+  return setRepliesOnDirective(raw, existing);
+}
+
+function setRepliesOnDirective(
+  raw: string,
+  replies: StoredCommentReply[],
+): string {
+  const serialized = `replies=${JSON.stringify(replies)}`;
+  const idx = raw.search(/\breplies=/);
+  if (idx >= 0) {
+    let pos = idx + "replies=".length;
+    while (pos < raw.length && raw[pos] === " ") pos++;
+    const bracket = readBalancedSlice(raw, pos, "[", "]");
+    if (bracket) {
+      return raw.slice(0, idx) + serialized + raw.slice(bracket.next);
+    }
+  }
+  const m = raw.match(/^([\s\S]*?)(\s*)$/);
+  const content = m ? m[1] : raw;
+  const trail = m ? m[2] : "";
+  const sep = content.length > 0 && !/\s$/.test(content) ? " " : "";
+  return `${content}${sep}${serialized}${trail}`;
+}
+
+function readRepliesFromDirective(raw: string): StoredCommentReply[] {
+  const idx = raw.search(/\breplies=/);
+  if (idx < 0) return [];
+  let pos = idx + "replies=".length;
+  while (pos < raw.length && raw[pos] === " ") pos++;
+  const bracket = readBalancedSlice(raw, pos, "[", "]");
+  if (!bracket) return [];
+  try {
+    const parsed = JSON.parse(bracket.slice) as unknown;
+    if (!Array.isArray(parsed)) return [];
+    const out: StoredCommentReply[] = [];
+    for (const el of parsed) {
+      if (!el || typeof el !== "object") continue;
+      const obj = el as Record<string, unknown>;
+      if (
+        typeof obj.author === "string" &&
+        typeof obj.date === "string" &&
+        typeof obj.text === "string"
+      ) {
+        out.push({
+          author: obj.author,
+          date: obj.date,
+          text: obj.text,
+        });
+      }
+    }
+    return out;
+  } catch {
+    return [];
+  }
+}
+
+function readBalancedSlice(
+  source: string,
+  start: number,
+  open: string,
+  close: string,
+): { slice: string; next: number } | null {
+  if (source[start] !== open) return null;
+  let depth = 0;
+  let j = start;
+  while (j < source.length) {
+    const c = source[j]!;
+    if (c === '"' || c === "'") {
+      const q = c;
+      j++;
+      while (j < source.length) {
+        if (source[j] === "\\") {
+          j += 2;
+          continue;
+        }
+        if (source[j] === q) {
+          j++;
+          break;
+        }
+        j++;
+      }
+      continue;
+    }
+    if (c === open) depth++;
+    else if (c === close) {
+      depth--;
+      if (depth === 0) {
+        return { slice: source.slice(start, j + 1), next: j + 1 };
+      }
+    }
+    j++;
+  }
+  return null;
 }
 
 // ---------------------------------------------------------------------------

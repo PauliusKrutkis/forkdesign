@@ -32,10 +32,12 @@ import {
   readCommentsFromSource,
 } from "./babel-comment-reader.ts";
 import {
+  appendCommentReply,
   deleteCommentMarker,
   extractDirectiveInner,
   injectExistingMarkerIntoSource,
   updateCommentActive,
+  updateCommentText,
   writeCommentToFile,
   WriteError,
 } from "./babel-comment-writer.ts";
@@ -100,6 +102,16 @@ export function comments(options: CommentsPluginOptions = {}): Plugin {
         }
         if (req.method === "DELETE") {
           handleDelete(req, res, projectRoot, excludeSrcPrefixes).catch((err: unknown) => {
+            sendError(
+              res,
+              500,
+              err instanceof Error ? err.message : String(err),
+            );
+          });
+          return;
+        }
+        if (req.method === "PATCH") {
+          handlePatch(req, res, projectRoot, excludeSrcPrefixes).catch((err: unknown) => {
             sendError(
               res,
               500,
@@ -473,6 +485,96 @@ async function handlePost(
       ...(savedScreenshotUrl ? { screenshot: savedScreenshotUrl } : {}),
     }),
   );
+}
+
+// ---------------------------------------------------------------------------
+// PATCH /api/comments/:id — edit comment text or append a flat reply
+// ---------------------------------------------------------------------------
+
+async function handlePatch(
+  req: IncomingMessage,
+  res: ServerResponse,
+  projectRoot: string,
+  excludeSrcPrefixes: string[],
+): Promise<void> {
+  const url = new URL(req.url ?? "", "http://localhost");
+  const id = url.pathname.replace(/^\/+/, "");
+  if (id.length === 0) {
+    sendError(res, 400, "PATCH /api/comments/:id requires a non-empty id");
+    return;
+  }
+
+  const body = await readJsonBody(req);
+  if (!body.ok) {
+    sendError(res, 400, body.reason);
+    return;
+  }
+  const parsed = parsePatchBody(body.value);
+  if (!parsed.ok) {
+    sendError(res, 400, parsed.reason);
+    return;
+  }
+
+  const found = await findCommentById(projectRoot, id, excludeSrcPrefixes);
+  if (!found) {
+    sendError(res, 404, `comment id not found: ${id}`);
+    return;
+  }
+
+  const resolved = resolveSafePagePath(
+    projectRoot,
+    found.relativePath,
+    excludeSrcPrefixes,
+  );
+  if (!resolved.ok) {
+    sendError(res, 400, resolved.reason);
+    return;
+  }
+
+  try {
+    if (parsed.value.kind === "text") {
+      await updateCommentText({
+        absolutePath: resolved.absolutePath,
+        commentId: id,
+        text: parsed.value.text,
+      });
+      res.statusCode = 200;
+      res.setHeader("content-type", "application/json; charset=utf-8");
+      res.setHeader("cache-control", "no-store");
+      res.end(
+        JSON.stringify({
+          ok: true,
+          id,
+          file: resolved.relativePath,
+          text: parsed.value.text,
+        }),
+      );
+      return;
+    }
+
+    const reply = await appendCommentReply({
+      absolutePath: resolved.absolutePath,
+      commentId: id,
+      reply: parsed.value.reply,
+    });
+    res.statusCode = 200;
+    res.setHeader("content-type", "application/json; charset=utf-8");
+    res.setHeader("cache-control", "no-store");
+    res.end(
+      JSON.stringify({
+        ok: true,
+        id,
+        file: resolved.relativePath,
+        reply,
+      }),
+    );
+  } catch (err) {
+    if (err instanceof WriteError) {
+      sendError(res, err.status, err.message);
+      return;
+    }
+    sendError(res, 500, err instanceof Error ? err.message : String(err));
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -1401,6 +1503,71 @@ type PostBody = {
 type ParseBodyResult =
   | { ok: true; value: PostBody }
   | { ok: false; reason: string };
+
+type PatchBody =
+  | { kind: "text"; text: string }
+  | { kind: "reply"; reply: { author: string; text: string } };
+
+type ParsePatchBodyResult =
+  | { ok: true; value: PatchBody }
+  | { ok: false; reason: string };
+
+function parsePatchBody(value: unknown): ParsePatchBodyResult {
+  if (!value || typeof value !== "object") {
+    return { ok: false, reason: "body must be a JSON object" };
+  }
+  const obj = value as Record<string, unknown>;
+  const hasText = "text" in obj;
+  const hasReply = "reply" in obj;
+
+  if (hasText && hasReply) {
+    return {
+      ok: false,
+      reason: "body must include either `text` or `reply`, not both",
+    };
+  }
+  if (!hasText && !hasReply) {
+    return {
+      ok: false,
+      reason: "body must include either `text` or `reply`",
+    };
+  }
+
+  if (hasText) {
+    const text = obj.text;
+    if (typeof text !== "string" || text.trim().length === 0) {
+      return { ok: false, reason: "field `text` must be a non-empty string" };
+    }
+    return { ok: true, value: { kind: "text", text } };
+  }
+
+  const reply = obj.reply;
+  if (!reply || typeof reply !== "object") {
+    return { ok: false, reason: "field `reply` must be an object" };
+  }
+  const replyObj = reply as Record<string, unknown>;
+  const author = replyObj.author;
+  const replyText = replyObj.text;
+  if (typeof author !== "string" || author.trim().length === 0) {
+    return {
+      ok: false,
+      reason: "field `reply.author` must be a non-empty string",
+    };
+  }
+  if (typeof replyText !== "string" || replyText.trim().length === 0) {
+    return {
+      ok: false,
+      reason: "field `reply.text` must be a non-empty string",
+    };
+  }
+  return {
+    ok: true,
+    value: {
+      kind: "reply",
+      reply: { author: author.trim(), text: replyText.trim() },
+    },
+  };
+}
 
 function parsePostBody(value: unknown): ParseBodyResult {
   if (!value || typeof value !== "object") {

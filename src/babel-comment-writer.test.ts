@@ -3,10 +3,12 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import {
+  appendCommentReply,
   deleteCommentMarker,
   extractDirectiveInner,
   injectExistingMarkerIntoSource,
   updateCommentActive,
+  updateCommentText,
   writeCommentToFile,
   WriteError,
 } from "./babel-comment-writer";
@@ -300,6 +302,110 @@ describe("updateCommentActive", () => {
     const { comments, warnings } = readCommentsFromSource(out);
     expect(warnings).toEqual([]);
     expect(comments[0]!.active).toBe(7);
+  });
+});
+
+describe("updateCommentText", () => {
+  it("updates the text attribute on an existing marker", async () => {
+    const result = await writeCommentToFile({
+      absolutePath: file,
+      line: 4,
+      column: 7,
+      text: "original",
+      author: "dev@local",
+    });
+    await updateCommentText({
+      absolutePath: file,
+      commentId: result.id,
+      text: "updated body",
+    });
+    const out = readFileSync(file, "utf8");
+    expect(out).toContain('text="updated body"');
+    expect(out).not.toContain("original");
+    const { comments, warnings } = readCommentsFromSource(out);
+    expect(warnings).toEqual([]);
+    expect(comments[0]!.text).toBe("updated body");
+  });
+
+  it("preserves JSON escaping for quotes and newlines", async () => {
+    const result = await writeCommentToFile({
+      absolutePath: file,
+      line: 4,
+      column: 7,
+      text: "plain",
+      author: "dev@local",
+    });
+    await updateCommentText({
+      absolutePath: file,
+      commentId: result.id,
+      text: 'say "hi"\nand bye',
+    });
+    const { comments } = readCommentsFromSource(readFileSync(file, "utf8"));
+    expect(comments[0]!.text).toBe('say "hi"\nand bye');
+  });
+
+  it("throws when the comment id is not found", async () => {
+    await expect(
+      updateCommentText({
+        absolutePath: file,
+        commentId: "missing-id",
+        text: "nope",
+      }),
+    ).rejects.toThrow(/missing-id/);
+  });
+});
+
+describe("appendCommentReply", () => {
+  it("adds replies=[...] when the marker has none", async () => {
+    const result = await writeCommentToFile({
+      absolutePath: file,
+      line: 4,
+      column: 7,
+      text: "needs a reply",
+      author: "dev@local",
+    });
+    const reply = await appendCommentReply({
+      absolutePath: file,
+      commentId: result.id,
+      reply: { author: "reviewer@local", text: "ack" },
+    });
+    expect(reply.author).toBe("reviewer@local");
+    expect(reply.text).toBe("ack");
+    expect(reply.date.length).toBeGreaterThan(0);
+    const { comments } = readCommentsFromSource(readFileSync(file, "utf8"));
+    expect(comments[0]!.replies).toEqual([reply]);
+  });
+
+  it("appends to an existing replies array", async () => {
+    const result = await writeCommentToFile({
+      absolutePath: file,
+      line: 4,
+      column: 7,
+      text: "thread",
+      author: "dev@local",
+    });
+    const first = await appendCommentReply({
+      absolutePath: file,
+      commentId: result.id,
+      reply: { author: "a@local", text: "first" },
+    });
+    const second = await appendCommentReply({
+      absolutePath: file,
+      commentId: result.id,
+      reply: { author: "b@local", text: "second" },
+    });
+    const { comments } = readCommentsFromSource(readFileSync(file, "utf8"));
+    expect(comments[0]!.replies).toEqual([first, second]);
+  });
+
+  it("throws when the comment id is not found", async () => {
+    await expect(
+      appendCommentReply({
+        absolutePath: file,
+        commentId: "missing-id",
+        reply: { author: "a@local", text: "nope" },
+      }),
+    ).rejects.toThrow(/missing-id/);
   });
 });
 
