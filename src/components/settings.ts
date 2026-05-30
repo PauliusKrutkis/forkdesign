@@ -26,6 +26,8 @@ export type OverlaySettings = {
   author: string;
   /** Future-wired model preference; persisted now, sent to server in #28+. */
   model: OverlayModel;
+  /** When true, delete hotkey/button removes the comment without confirming. */
+  skipDeleteConfirmation: boolean;
 };
 
 export const DEFAULT_SETTINGS: OverlaySettings = {
@@ -34,6 +36,7 @@ export const DEFAULT_SETTINGS: OverlaySettings = {
   position: "bottom-right",
   author: "",
   model: "default",
+  skipDeleteConfirmation: false,
 };
 
 const STORAGE_KEY = "redline.overlay.settings";
@@ -94,6 +97,10 @@ export function loadSettings(): OverlaySettings {
     typeof obj.showFloatingControls === "boolean"
       ? obj.showFloatingControls
       : DEFAULT_SETTINGS.showFloatingControls;
+  const skipDeleteConfirmation =
+    typeof obj.skipDeleteConfirmation === "boolean"
+      ? obj.skipDeleteConfirmation
+      : DEFAULT_SETTINGS.skipDeleteConfirmation;
 
   return {
     enabled,
@@ -101,6 +108,7 @@ export function loadSettings(): OverlaySettings {
     position,
     author,
     model,
+    skipDeleteConfirmation,
   };
 }
 

@@ -1,6 +1,12 @@
 import { cn } from "../lib/utils";
+import { Kbd } from "./ui/kbd";
 
-/** Muted trailing shortcut inside a Button. */
+/**
+ * Trailing shortcut chip inside a Button. Reserved for the one primary action
+ * per surface (Save, the More/Less toggle); every other button surfaces its
+ * shortcut through `HotkeyTip` instead. Renders the shared `Kbd` so the chip
+ * matches the tooltip and cheat-sheet styling exactly.
+ */
 export function ShortcutHint({
   children,
   className,
@@ -12,21 +18,21 @@ export function ShortcutHint({
   onPrimary?: boolean;
 }) {
   return (
-    <span
-      className={cn(
-        "ml-1.5 border-l pl-1.5 font-mono text-[10px] font-normal leading-none",
-        onPrimary
-          ? "border-primary-foreground/25 opacity-60"
-          : "border-border text-muted-foreground",
-        className,
-      )}
-    >
+    <Kbd tone={onPrimary ? "onPrimary" : "default"} className={cn("ml-1.5", className)}>
       {children}
-    </span>
+    </Kbd>
   );
 }
 
 export const ctrlKey: string = detectCtrlKey();
+
+/**
+ * Format a Ctrl/Cmd combo for display: `⌘R` on mac, `Ctrl+R` elsewhere. The
+ * single place combo strings are built so inline chips and tooltips agree.
+ */
+export function withCtrl(key: string): string {
+  return ctrlKey === "⌘" ? `⌘${key}` : `Ctrl+${key}`;
+}
 
 function detectCtrlKey(): string {
   if (typeof navigator === "undefined") return "Ctrl";

@@ -215,6 +215,7 @@ export function OverlayDock({
     <div
       ref={rootRef}
       data-comment-overlay="true"
+      data-redline-dock="true"
       className={cn(
         "pointer-events-none fixed z-[9400] flex flex-col gap-2",
         POSITION_CLASSES[position],

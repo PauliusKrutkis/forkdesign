@@ -1,12 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import { toPng } from "html-to-image";
 import { SquareDashedMousePointer, Check } from "lucide-react";
-import { PROMPT_SHORTCUTS } from "./promptTemplates";
 import { Button } from "./ui/button";
-import { Badge } from "./ui/badge";
 import { Textarea } from "./ui/textarea";
-import { ShortcutHint, ctrlKey } from "./ShortcutHint";
-import { cn } from "../lib/utils";
+import { Kbd } from "./ui/kbd";
+import { withCtrl } from "./ShortcutHint";
+import { HotkeyTip } from "./HotkeyTip";
 import { effectiveBackgroundColor } from "./screenshot";
 
 export type ComposerSubmission = {
@@ -266,7 +265,6 @@ function ComposerPanel({
   onSaved: () => void;
 }) {
   const [status, setStatus] = useState<ComposerPanelStatus>({ kind: "idle" });
-  const [templatesOpen, setTemplatesOpen] = useState(false);
 
   // Anchor the composer panel to the user's click point, not to the target
   // element's bounding box — for page-wide elements whose `bottom` is below
@@ -356,7 +354,7 @@ function ComposerPanel({
           ref={textareaRef}
           value={text}
           onChange={(e) => onTextChange(e.target.value)}
-          placeholder="Leave a note for the next agent…"
+          placeholder="Describe the change you want…"
           rows={3}
           disabled={submitting || saved}
           className="min-h-[66px] resize-none border-0 bg-transparent p-0 text-sm shadow-none focus-visible:ring-0"
@@ -376,52 +374,29 @@ function ComposerPanel({
             {status.message}
           </p>
         ) : null}
-        {templatesOpen ? (
-          <div className="mt-2.5 flex flex-wrap gap-1.5">
-            {PROMPT_SHORTCUTS.map((prompt) => (
-              <Badge
-                key={prompt}
-                variant="secondary"
-                className={cn(
-                  "cursor-pointer font-normal hover:bg-secondary/80",
-                  (submitting || saved) && "pointer-events-none opacity-60",
-                )}
-                onClick={() => {
-                  if (submitting || saved) return;
-                  onTextChange(prompt);
-                  textareaRef.current?.focus();
-                }}
-              >
-                {prompt}
-              </Badge>
-            ))}
-          </div>
-        ) : null}
       </div>
 
-      {/* Footer — templates toggle (left) · actions (right). */}
+      {/* Footer — resting keyboard hint (left) · actions (right). With the
+          templates feature gone the footer's left slot is no longer a button;
+          it's a quiet line of guidance, so the panel reads as a focused
+          writing surface rather than a tool with chrome to discover. */}
       <div className="flex shrink-0 items-center justify-between gap-2 border-t px-3 py-2">
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          disabled={submitting || saved}
-          aria-expanded={templatesOpen}
-          onClick={() => setTemplatesOpen((v) => !v)}
-          className="h-7 px-2 text-xs text-muted-foreground"
-        >
-          {templatesOpen ? "Hide templates" : "Templates"}
-        </Button>
+        <span className="hidden items-center gap-1.5 text-[11px] text-muted-foreground sm:flex">
+          <Kbd>{withCtrl("⏎")}</Kbd>
+          <span>to save</span>
+        </span>
         <div className="flex items-center gap-2">
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            onClick={onCancel}
-            disabled={submitting}
-          >
-            Cancel
-          </Button>
+          <HotkeyTip label="Cancel" keys="Esc">
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={onCancel}
+              disabled={submitting}
+            >
+              Cancel
+            </Button>
+          </HotkeyTip>
           <Button
             type="button"
             size="sm"
@@ -438,13 +413,7 @@ function ComposerPanel({
                 Saved
               </>
             ) : (
-              <>
-                Save
-                <ShortcutHint onPrimary>
-                  {ctrlKey}
-                  {ctrlKey === "⌘" ? "" : "+"}⏎
-                </ShortcutHint>
-              </>
+              "Save"
             )}
           </Button>
         </div>

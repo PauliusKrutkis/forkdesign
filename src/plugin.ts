@@ -34,9 +34,11 @@ import {
 import {
   appendCommentReply,
   deleteCommentMarker,
+  deleteCommentReply,
   extractDirectiveInner,
   injectExistingMarkerIntoSource,
   updateCommentActive,
+  updateCommentReply,
   updateCommentText,
   writeCommentToFile,
   WriteError,
@@ -552,10 +554,52 @@ async function handlePatch(
       return;
     }
 
-    const reply = await appendCommentReply({
+    if (parsed.value.kind === "reply") {
+      const reply = await appendCommentReply({
+        absolutePath: resolved.absolutePath,
+        commentId: id,
+        reply: parsed.value.reply,
+      });
+      res.statusCode = 200;
+      res.setHeader("content-type", "application/json; charset=utf-8");
+      res.setHeader("cache-control", "no-store");
+      res.end(
+        JSON.stringify({
+          ok: true,
+          id,
+          file: resolved.relativePath,
+          reply,
+        }),
+      );
+      return;
+    }
+
+    if (parsed.value.kind === "editReply") {
+      await updateCommentReply({
+        absolutePath: resolved.absolutePath,
+        commentId: id,
+        replyIndex: parsed.value.replyIndex,
+        text: parsed.value.text,
+      });
+      res.statusCode = 200;
+      res.setHeader("content-type", "application/json; charset=utf-8");
+      res.setHeader("cache-control", "no-store");
+      res.end(
+        JSON.stringify({
+          ok: true,
+          id,
+          file: resolved.relativePath,
+          replyIndex: parsed.value.replyIndex,
+          text: parsed.value.text,
+        }),
+      );
+      return;
+    }
+
+    await deleteCommentReply({
       absolutePath: resolved.absolutePath,
       commentId: id,
-      reply: parsed.value.reply,
+      replyIndex: parsed.value.replyIndex,
     });
     res.statusCode = 200;
     res.setHeader("content-type", "application/json; charset=utf-8");
@@ -565,7 +609,7 @@ async function handlePatch(
         ok: true,
         id,
         file: resolved.relativePath,
-        reply,
+        replyIndex: parsed.value.replyIndex,
       }),
     );
   } catch (err) {
@@ -1506,7 +1550,9 @@ type ParseBodyResult =
 
 type PatchBody =
   | { kind: "text"; text: string }
-  | { kind: "reply"; reply: { author: string; text: string } };
+  | { kind: "reply"; reply: { author: string; text: string } }
+  | { kind: "editReply"; replyIndex: number; text: string }
+  | { kind: "deleteReply"; replyIndex: number };
 
 type ParsePatchBodyResult =
   | { ok: true; value: PatchBody }
@@ -1519,17 +1565,17 @@ function parsePatchBody(value: unknown): ParsePatchBodyResult {
   const obj = value as Record<string, unknown>;
   const hasText = "text" in obj;
   const hasReply = "reply" in obj;
+  const hasEditReply = "editReply" in obj;
+  const hasDeleteReply = "deleteReply" in obj;
+  const fieldCount = [hasText, hasReply, hasEditReply, hasDeleteReply].filter(
+    Boolean,
+  ).length;
 
-  if (hasText && hasReply) {
+  if (fieldCount !== 1) {
     return {
       ok: false,
-      reason: "body must include either `text` or `reply`, not both",
-    };
-  }
-  if (!hasText && !hasReply) {
-    return {
-      ok: false,
-      reason: "body must include either `text` or `reply`",
+      reason:
+        "body must include exactly one of `text`, `reply`, `editReply`, or `deleteReply`",
     };
   }
 
@@ -1538,7 +1584,48 @@ function parsePatchBody(value: unknown): ParsePatchBodyResult {
     if (typeof text !== "string" || text.trim().length === 0) {
       return { ok: false, reason: "field `text` must be a non-empty string" };
     }
-    return { ok: true, value: { kind: "text", text } };
+    return { ok: true, value: { kind: "text", text: text.trim() } };
+  }
+
+  if (hasEditReply) {
+    const editReply = obj.editReply;
+    if (!editReply || typeof editReply !== "object") {
+      return { ok: false, reason: "field `editReply` must be an object" };
+    }
+    const editReplyObj = editReply as Record<string, unknown>;
+    const index = editReplyObj.index;
+    const text = editReplyObj.text;
+    if (typeof index !== "number" || !Number.isInteger(index) || index < 0) {
+      return {
+        ok: false,
+        reason: "field `editReply.index` must be a non-negative integer",
+      };
+    }
+    if (typeof text !== "string" || text.trim().length === 0) {
+      return {
+        ok: false,
+        reason: "field `editReply.text` must be a non-empty string",
+      };
+    }
+    return {
+      ok: true,
+      value: { kind: "editReply", replyIndex: index, text: text.trim() },
+    };
+  }
+
+  if (hasDeleteReply) {
+    const deleteReply = obj.deleteReply;
+    if (!deleteReply || typeof deleteReply !== "object") {
+      return { ok: false, reason: "field `deleteReply` must be an object" };
+    }
+    const index = (deleteReply as Record<string, unknown>).index;
+    if (typeof index !== "number" || !Number.isInteger(index) || index < 0) {
+      return {
+        ok: false,
+        reason: "field `deleteReply.index` must be a non-negative integer",
+      };
+    }
+    return { ok: true, value: { kind: "deleteReply", replyIndex: index } };
   }
 
   const reply = obj.reply;

@@ -1,9 +1,6 @@
-import type {
-  OverlayModel,
-  OverlayPosition,
-  OverlaySettings,
-} from "./settings";
-import { Button } from "./ui/button";
+import type { OverlayModel, OverlaySettings } from "./settings";
+import { DockPositionPicker } from "./DockPositionPicker";
+import { Kbd } from "./ui/kbd";
 import { Input } from "./ui/input";
 import { Label } from "./ui/label";
 import { Switch } from "./ui/switch";
@@ -38,11 +35,20 @@ export function CommentSettingsPanel({ settings, onChange }: Props) {
               : "Fully hidden. Open settings with , to turn back on."
           }
         />
+        <div className="mt-3">
+          <SwitchRow
+            id="skip-delete-confirmation"
+            checked={settings.skipDeleteConfirmation}
+            onChange={(v) => onChange({ skipDeleteConfirmation: v })}
+            label="Skip delete confirmation"
+            hint="Delete hotkey removes comments immediately."
+          />
+        </div>
       </Section>
 
       {settings.showFloatingControls ? (
-        <Section label="Position">
-          <PositionGrid
+        <Section label="Dock position">
+          <DockPositionPicker
             value={settings.position}
             onChange={(v) => onChange({ position: v })}
           />
@@ -78,23 +84,11 @@ export function CommentSettingsPanel({ settings, onChange }: Props) {
 
 function HotkeyCheatSheet() {
   return (
-    <p className="m-0 mt-3 text-xs leading-relaxed text-muted-foreground">
-      <kbd className="rounded border bg-muted px-1 py-0.5 font-mono text-[10px]">
-        C
-      </kbd>{" "}
-      add comment ·{" "}
-      <kbd className="rounded border bg-muted px-1 py-0.5 font-mono text-[10px]">
-        L
-      </kbd>{" "}
-      list ·{" "}
-      <kbd className="rounded border bg-muted px-1 py-0.5 font-mono text-[10px]">
-        ,
-      </kbd>{" "}
-      settings ·{" "}
-      <kbd className="rounded border bg-muted px-1 py-0.5 font-mono text-[10px]">
-        Esc
-      </kbd>{" "}
-      close
+    <p className="m-0 mt-3 inline-flex flex-wrap items-center gap-x-1.5 gap-y-1 text-xs leading-relaxed text-muted-foreground">
+      <Kbd>C</Kbd> add comment <span aria-hidden>·</span>
+      <Kbd>L</Kbd> list <span aria-hidden>·</span>
+      <Kbd>,</Kbd> settings <span aria-hidden>·</span>
+      <Kbd>Esc</Kbd> close
     </p>
   );
 }
@@ -144,34 +138,3 @@ function SwitchRow({
   );
 }
 
-function PositionGrid({
-  value,
-  onChange,
-}: {
-  value: OverlayPosition;
-  onChange: (v: OverlayPosition) => void;
-}) {
-  const cell = (p: OverlayPosition, label: string) => {
-    const active = value === p;
-    return (
-      <Button
-        key={p}
-        type="button"
-        variant={active ? "default" : "outline"}
-        className="h-11 text-xs"
-        aria-pressed={active}
-        onClick={() => onChange(p)}
-      >
-        {label}
-      </Button>
-    );
-  };
-  return (
-    <div className="grid grid-cols-2 gap-2">
-      {cell("top-left", "Top left")}
-      {cell("top-right", "Top right")}
-      {cell("bottom-left", "Bottom left")}
-      {cell("bottom-right", "Bottom right")}
-    </div>
-  );
-}

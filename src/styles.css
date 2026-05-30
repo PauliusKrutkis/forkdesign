@@ -77,10 +77,27 @@
   animation: dock-row-in 0.22s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
+/* Hotkey tooltip — a quick settle-in so it doesn't pop harshly on hover. */
+@keyframes tooltip-in {
+  from {
+    opacity: 0;
+    transform: translateY(2px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.animate-tooltip-in {
+  animation: tooltip-in 0.12s ease-out;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .animate-pin-pulse,
   .animate-dock-in,
-  .animate-dock-row-in {
+  .animate-dock-row-in,
+  .animate-tooltip-in {
     animation: none;
   }
 }
@@ -122,4 +139,41 @@
   clip: rect(0, 0, 0, 0);
   white-space: nowrap;
   border-width: 0;
+}
+
+/*
+ * Overlay z-index stack (Tailwind mirrors these in components):
+ *   9000 root · 9100 dots · 9150 preview · 9200 bubble · 9240 dialog
+ *   9300 composer · 9400 dock · 9600 tooltip · 9700 lightbox
+ *
+ * Lightbox styles live here (not Tailwind-only) so z-index survives portaling
+ * and host Tailwind content gaps. Rendered as a sibling of the dock inside
+ * `[data-redline-overlay-root]`, above the dock layer.
+ */
+.redline-lightbox-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 9700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem;
+  background-color: rgb(0 0 0 / 0.8);
+  pointer-events: auto;
+}
+
+.redline-lightbox-image {
+  max-height: 80vh;
+  max-width: 80vw;
+  border-radius: calc(var(--radius) - 2px);
+  border: 1px solid var(--border);
+  object-fit: contain;
+  box-shadow:
+    0 25px 50px -12px rgb(0 0 0 / 0.25),
+    0 0 0 1px rgb(0 0 0 / 0.05);
+}
+
+body[data-redline-lightbox="open"] [data-redline-dock] {
+  visibility: hidden;
+  pointer-events: none;
 }

@@ -11,6 +11,7 @@ import { CommentManagementPanel } from "./CommentManagementPanel";
 import { CommentSettingsPanel } from "./CommentSettingsPanel";
 import { CommentShell, type ShellTab } from "./CommentShell";
 import { OverlayDock } from "./OverlayDock";
+import { TooltipProvider } from "./ui/tooltip";
 import { useAnchorRects } from "./useAnchorElement";
 import type { DotInstanceTarget } from "./CommentDot";
 import { findSourceLoc } from "./sourceLoc";
@@ -206,14 +207,13 @@ export function CommentOverlay({
     }
   }, [settings.author]);
 
-  // When the system is muted we also close any UI that might still be open
-  // — otherwise the user could toggle off mid-edit and leave a ghost
-  // composer floating with no way to dismiss it (Esc still works, but this
-  // is friendlier).
+  // When the system is muted, tear down comment UI that would float with no
+  // way to reach it — but keep the settings shell open if the user just
+  // toggled comments off from there (otherwise the panel vanishes mid-edit).
   useEffect(() => {
     if (settings.enabled) return;
     setComposerActive(false);
-    setShell(null);
+    setShell((prev) => (prev === "settings" ? prev : null));
     setOpenTarget(null);
     setHoveredTarget(null);
     setPendingOpen(null);
@@ -402,6 +402,36 @@ export function CommentOverlay({
     [settings.author],
   );
 
+  const handleEditReply = useCallback(
+    async (id: string, replyIndex: number, text: string) => {
+      const res = await fetch(`/api/comments/${encodeURIComponent(id)}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ editReply: { index: replyIndex, text } }),
+      });
+      if (!res.ok) {
+        const body = (await res.json().catch(() => ({}))) as { error?: string };
+        throw new Error(body.error ?? `request failed (${res.status})`);
+      }
+    },
+    [],
+  );
+
+  const handleDeleteReply = useCallback(
+    async (id: string, replyIndex: number) => {
+      const res = await fetch(`/api/comments/${encodeURIComponent(id)}`, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ deleteReply: { index: replyIndex } }),
+      });
+      if (!res.ok) {
+        const body = (await res.json().catch(() => ({}))) as { error?: string };
+        throw new Error(body.error ?? `request failed (${res.status})`);
+      }
+    },
+    [],
+  );
+
   const handleResolve = useCallback((id: string) => {
     // Resolve toggling lives on disk in a future task; for now this is a
     // no-op stub so the bubble UI stays clickable.
@@ -495,8 +525,10 @@ export function CommentOverlay({
   }, [comments]);
 
   return (
+    <TooltipProvider delayDuration={250} skipDelayDuration={120}>
     <div
       data-comment-overlay="true"
+      data-redline-overlay-root="true"
       className="pointer-events-none fixed inset-0 z-[9000]"
       aria-live="polite"
     >
@@ -538,11 +570,14 @@ export function CommentOverlay({
         <OpenBubble
           target={openTarget}
           comments={grouped.get(openTarget.anchor) ?? []}
+          skipDeleteConfirmation={settings.skipDeleteConfirmation}
           onClose={() => setOpenTarget(null)}
           onResolve={handleResolve}
           onDelete={handleDelete}
           onEdit={handleEdit}
           onSubmitReply={handleSubmitReply}
+          onEditReply={handleEditReply}
+          onDeleteReply={handleDeleteReply}
         />
       ) : null}
 
@@ -605,6 +640,7 @@ export function CommentOverlay({
         </CommentShell>
       ) : null}
     </div>
+    </TooltipProvider>
   );
 }
 
@@ -705,19 +741,25 @@ export function isInTextInput(el: Element | null): boolean {
 function OpenBubble({
   target,
   comments,
+  skipDeleteConfirmation,
   onClose,
   onResolve,
   onDelete,
   onEdit,
   onSubmitReply,
+  onEditReply,
+  onDeleteReply,
 }: {
   target: DotInstanceTarget;
   comments: CommentData[];
+  skipDeleteConfirmation: boolean;
   onClose: () => void;
   onResolve: (id: string) => void;
   onDelete: (id: string) => Promise<void>;
   onEdit: (id: string, text: string) => Promise<void>;
   onSubmitReply: (id: string, text: string) => Promise<void>;
+  onEditReply: (id: string, replyIndex: number, text: string) => Promise<void>;
+  onDeleteReply: (id: string, replyIndex: number) => Promise<void>;
 }) {
   const rects = useAnchorRects(target.anchor);
   const rect = rects[target.instance] ?? null;
@@ -729,11 +771,14 @@ function OpenBubble({
     <CommentBubble
       comments={comments}
       rect={rect}
+      skipDeleteConfirmation={skipDeleteConfirmation}
       onClose={onClose}
       onResolve={onResolve}
       onDelete={onDelete}
       onEdit={onEdit}
       onSubmitReply={onSubmitReply}
+      onEditReply={onEditReply}
+      onDeleteReply={onDeleteReply}
     />
   );
 }

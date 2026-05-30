@@ -446,6 +446,58 @@ export async function appendCommentReply(
   return reply;
 }
 
+export type UpdateCommentReplyInput = {
+  absolutePath: string;
+  commentId: string;
+  /** 0-based index into the marker's `replies=[...]` array. */
+  replyIndex: number;
+  text: string;
+};
+
+/**
+ * Replace the `text` field on an existing flat reply. Author and date are
+ * preserved.
+ */
+export async function updateCommentReply(
+  input: UpdateCommentReplyInput,
+): Promise<void> {
+  const text = input.text.trim();
+  if (text.length === 0) {
+    throw new WriteError("text must be non-empty", 400);
+  }
+  if (!Number.isInteger(input.replyIndex) || input.replyIndex < 0) {
+    throw new WriteError("replyIndex must be a non-negative integer", 400);
+  }
+  await mutateCommentDirectiveById(
+    input.absolutePath,
+    input.commentId,
+    (raw) => updateReplyOnDirective(raw, input.replyIndex, text),
+    "updateCommentReply",
+  );
+}
+
+export type DeleteCommentReplyInput = {
+  absolutePath: string;
+  commentId: string;
+  /** 0-based index into the marker's `replies=[...]` array. */
+  replyIndex: number;
+};
+
+/** Remove one flat reply from the marker's `replies=[...]` array. */
+export async function deleteCommentReply(
+  input: DeleteCommentReplyInput,
+): Promise<void> {
+  if (!Number.isInteger(input.replyIndex) || input.replyIndex < 0) {
+    throw new WriteError("replyIndex must be a non-negative integer", 400);
+  }
+  await mutateCommentDirectiveById(
+    input.absolutePath,
+    input.commentId,
+    (raw) => deleteReplyOnDirective(raw, input.replyIndex),
+    "deleteCommentReply",
+  );
+}
+
 type StoredCommentReply = {
   author: string;
   date: string;
@@ -572,6 +624,28 @@ function appendReplyOnDirective(
 ): string {
   const existing = readRepliesFromDirective(raw);
   existing.push(reply);
+  return setRepliesOnDirective(raw, existing);
+}
+
+function updateReplyOnDirective(
+  raw: string,
+  replyIndex: number,
+  text: string,
+): string {
+  const existing = readRepliesFromDirective(raw);
+  if (replyIndex >= existing.length) {
+    throw new WriteError(`reply index ${replyIndex} out of range`, 400);
+  }
+  existing[replyIndex] = { ...existing[replyIndex]!, text };
+  return setRepliesOnDirective(raw, existing);
+}
+
+function deleteReplyOnDirective(raw: string, replyIndex: number): string {
+  const existing = readRepliesFromDirective(raw);
+  if (replyIndex >= existing.length) {
+    throw new WriteError(`reply index ${replyIndex} out of range`, 400);
+  }
+  existing.splice(replyIndex, 1);
   return setRepliesOnDirective(raw, existing);
 }
 

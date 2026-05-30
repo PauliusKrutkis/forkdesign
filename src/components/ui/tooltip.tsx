@@ -10,13 +10,15 @@ const TooltipTrigger = TooltipPrimitive.Trigger;
 const TooltipContent = React.forwardRef<
   React.ComponentRef<typeof TooltipPrimitive.Content>,
   React.ComponentPropsWithoutRef<typeof TooltipPrimitive.Content>
->(({ className, sideOffset = 4, ...props }, ref) => (
+>(({ className, sideOffset = 6, ...props }, ref) => (
   <TooltipPrimitive.Portal>
+    {/* z above the whole overlay stack (dock 9400 · lightbox 9700) so a
+        tooltip never renders behind its trigger. */}
     <TooltipPrimitive.Content
       ref={ref}
       sideOffset={sideOffset}
       className={cn(
-        "z-[9150] overflow-hidden rounded-md border bg-popover px-3 py-1.5 text-sm text-popover-foreground shadow-md",
+        "z-[9600] overflow-hidden rounded-md border bg-popover px-2.5 py-1.5 text-popover-foreground shadow-md animate-tooltip-in",
         className,
       )}
       {...props}

@@ -4,6 +4,8 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import {
   appendCommentReply,
+  deleteCommentReply,
+  updateCommentReply,
   deleteCommentMarker,
   extractDirectiveInner,
   injectExistingMarkerIntoSource,
@@ -406,6 +408,97 @@ describe("appendCommentReply", () => {
         reply: { author: "a@local", text: "nope" },
       }),
     ).rejects.toThrow(/missing-id/);
+  });
+});
+
+describe("updateCommentReply", () => {
+  it("updates reply text while preserving author and date", async () => {
+    const result = await writeCommentToFile({
+      absolutePath: file,
+      line: 4,
+      column: 7,
+      text: "thread",
+      author: "dev@local",
+    });
+    const reply = await appendCommentReply({
+      absolutePath: file,
+      commentId: result.id,
+      reply: { author: "reviewer@local", text: "original" },
+    });
+    await updateCommentReply({
+      absolutePath: file,
+      commentId: result.id,
+      replyIndex: 0,
+      text: "updated",
+    });
+    const { comments } = readCommentsFromSource(readFileSync(file, "utf8"));
+    expect(comments[0]!.replies).toEqual([
+      { author: reply.author, date: reply.date, text: "updated" },
+    ]);
+  });
+
+  it("throws when the reply index is out of range", async () => {
+    const result = await writeCommentToFile({
+      absolutePath: file,
+      line: 4,
+      column: 7,
+      text: "thread",
+      author: "dev@local",
+    });
+    await expect(
+      updateCommentReply({
+        absolutePath: file,
+        commentId: result.id,
+        replyIndex: 0,
+        text: "nope",
+      }),
+    ).rejects.toThrow(/out of range/);
+  });
+});
+
+describe("deleteCommentReply", () => {
+  it("removes a reply by index", async () => {
+    const result = await writeCommentToFile({
+      absolutePath: file,
+      line: 4,
+      column: 7,
+      text: "thread",
+      author: "dev@local",
+    });
+    await appendCommentReply({
+      absolutePath: file,
+      commentId: result.id,
+      reply: { author: "a@local", text: "first" },
+    });
+    const second = await appendCommentReply({
+      absolutePath: file,
+      commentId: result.id,
+      reply: { author: "b@local", text: "second" },
+    });
+    await deleteCommentReply({
+      absolutePath: file,
+      commentId: result.id,
+      replyIndex: 0,
+    });
+    const { comments } = readCommentsFromSource(readFileSync(file, "utf8"));
+    expect(comments[0]!.replies).toEqual([second]);
+  });
+
+  it("throws when the reply index is out of range", async () => {
+    const result = await writeCommentToFile({
+      absolutePath: file,
+      line: 4,
+      column: 7,
+      text: "thread",
+      author: "dev@local",
+    });
+    await expect(
+      deleteCommentReply({
+        absolutePath: file,
+        commentId: result.id,
+        replyIndex: 0,
+      }),
+    ).rejects.toThrow(/out of range/);
   });
 });
 

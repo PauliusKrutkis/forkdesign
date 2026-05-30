@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { toPng } from "html-to-image";
 import { effectiveBackgroundColor } from "./screenshot";
-import type { RegisteredComment } from "./types";
+import type { CommentReply, RegisteredComment } from "./types";
 import { CommentVersionSwitcher } from "./CommentVersionSwitcher";
 import {
   CheckCircle2,
@@ -14,18 +15,26 @@ import {
 } from "lucide-react";
 import { Button } from "./ui/button";
 import { Textarea } from "./ui/textarea";
-import { ctrlKey, ShortcutHint } from "./ShortcutHint";
+import { ShortcutHint, withCtrl } from "./ShortcutHint";
+import { HotkeyTip } from "./HotkeyTip";
 import { cn } from "../lib/utils";
 import { dotRect, placeFloater, type FloaterSide } from "./placement";
 
 type CommentBubbleProps = {
   comments: RegisteredComment[];
   rect: DOMRect;
+  skipDeleteConfirmation?: boolean;
   onClose: () => void;
   onResolve?: (id: string) => void;
   onDelete?: (id: string) => Promise<void>;
   onEdit?: (id: string, text: string) => Promise<void>;
   onSubmitReply?: (id: string, text: string) => Promise<void>;
+  onEditReply?: (
+    id: string,
+    replyIndex: number,
+    text: string,
+  ) => Promise<void>;
+  onDeleteReply?: (id: string, replyIndex: number) => Promise<void>;
 };
 
 /** NDJSON event shapes streamed from `POST /api/iterations/new`. */
@@ -70,11 +79,14 @@ type BubbleMode = "compact" | "detailed";
 export function CommentBubble({
   comments,
   rect,
+  skipDeleteConfirmation = false,
   onClose,
   onResolve,
   onDelete,
   onEdit,
   onSubmitReply,
+  onEditReply,
+  onDeleteReply,
 }: CommentBubbleProps) {
   const lead = comments[0];
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -221,6 +233,21 @@ export function CommentBubble({
       setDeleteBusy(false);
       setDeleteConfirming(false);
     }
+  };
+
+  const requestDelete = () => {
+    if (!lead || !onDelete || deleteBusy) return;
+    setDeleteError(null);
+    if (skipDeleteConfirmation) {
+      void confirmDelete();
+      return;
+    }
+    setMode("detailed");
+    setDeleteConfirming(true);
+  };
+
+  const cancelDeleteConfirm = () => {
+    setDeleteConfirming(false);
   };
 
   // Fires the Claude Agent SDK server-side via POST /api/iterations/new.
@@ -371,17 +398,54 @@ export function CommentBubble({
           e.preventDefault();
           return;
         }
+        if (deleteConfirming) {
+          cancelDeleteConfirm();
+          e.preventDefault();
+          return;
+        }
         onClose();
         e.preventDefault();
         return;
       }
       if (inInput) return;
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "i") {
+      const mod = e.metaKey || e.ctrlKey;
+      const plain = !e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey;
+      const key = e.key.toLowerCase();
+      if (deleteConfirming) {
+        if (plain && key === "enter") {
+          e.preventDefault();
+          void confirmDelete();
+          return;
+        }
+        if (mod && e.key === "Backspace") {
+          e.preventDefault();
+          void confirmDelete();
+          return;
+        }
+      }
+      if (mod && key === "i") {
         e.preventDefault();
         if (!iterating) void handleIterate();
-      } else if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "r") {
+      } else if (mod && key === "r") {
         e.preventDefault();
         onResolve?.(lead.id);
+      } else if (mod && e.key === "Backspace") {
+        // Destructive, so it takes a modifier — opens the inline confirm
+        // (or deletes outright when confirmation is skipped).
+        if (onDelete) {
+          e.preventDefault();
+          requestDelete();
+        }
+      } else if (plain && key === "e") {
+        if (onEdit) {
+          e.preventDefault();
+          startEditing();
+        }
+      } else if (plain && key === "r") {
+        if (onSubmitReply) {
+          e.preventDefault();
+          openReplyComposer();
+        }
       } else if (e.key === "Tab") {
         // Tab toggles compact/detailed when no modifiers are pressed.
         // Without this guard a stray Tab while the bubble is focused would
@@ -393,7 +457,24 @@ export function CommentBubble({
     };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, [lead, lightboxOpen, iterating, onClose, onResolve, handleIterate]);
+  }, [
+    lead,
+    lightboxOpen,
+    iterating,
+    onClose,
+    onResolve,
+    onDelete,
+    onEdit,
+    onSubmitReply,
+    deleteConfirming,
+    skipDeleteConfirmation,
+    handleIterate,
+    startEditing,
+    openReplyComposer,
+    requestDelete,
+    confirmDelete,
+    cancelDeleteConfirm,
+  ]);
 
   const maxBubbleHeight = viewport.height - 2 * VIEWPORT_PADDING;
   const bubbleWidth =
@@ -478,16 +559,18 @@ export function CommentBubble({
           <CommentVersionSwitcher commentId={lead.id} />
         </div>
 
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon"
-          className="mr-1 h-7 w-7 shrink-0"
-          aria-label="Close"
-          onClick={onClose}
-        >
-          <X className="h-4 w-4" />
-        </Button>
+        <HotkeyTip label="Close" keys="Esc" side="bottom">
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="mr-1 h-7 w-7 shrink-0"
+            aria-label="Close"
+            onClick={onClose}
+          >
+            <X className="h-4 w-4" />
+          </Button>
+        </HotkeyTip>
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto px-3.5 pb-3 pt-3">
@@ -503,6 +586,12 @@ export function CommentBubble({
                 disabled={editBusy}
                 className="min-h-[72px] resize-none text-sm leading-relaxed"
                 aria-label="Edit comment"
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+                    e.preventDefault();
+                    void saveEdit();
+                  }
+                }}
               />
               <div className="flex items-center justify-end gap-1.5">
                 <Button
@@ -522,7 +611,14 @@ export function CommentBubble({
                   disabled={editBusy}
                   onClick={() => void saveEdit()}
                 >
-                  {editBusy ? "Saving…" : "Save"}
+                  {editBusy ? (
+                    "Saving…"
+                  ) : (
+                    <>
+                      Save
+                      <ShortcutHint onPrimary>{withCtrl("⏎")}</ShortcutHint>
+                    </>
+                  )}
                 </Button>
               </div>
               {editError ? (
@@ -552,15 +648,17 @@ export function CommentBubble({
           <Attribution author={lead.author} date={lead.date} />
           <div className="flex shrink-0 items-center gap-0.5">
             {onEdit && !editing ? (
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                className="h-auto px-1.5 py-1 text-xs"
-                onClick={startEditing}
-              >
-                Edit
-              </Button>
+              <HotkeyTip label="Edit" keys="E">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-auto px-1.5 py-1 text-xs"
+                  onClick={startEditing}
+                >
+                  Edit
+                </Button>
+              </HotkeyTip>
             ) : null}
             <ModeToggleButton
               mode={mode}
@@ -591,16 +689,20 @@ export function CommentBubble({
         {mode === "detailed" && lead.replies && lead.replies.length > 0 ? (
           <ul className="m-0 mt-3 list-none space-y-2.5 border-t p-0 pt-3">
             {lead.replies.map((reply, i) => (
-              <li key={`${reply.author}-${reply.date}-${i}`}>
-                <p className="m-0 text-sm leading-snug text-muted-foreground">
-                  {reply.text}
-                </p>
-                <Attribution
-                  author={reply.author}
-                  date={reply.date}
-                  className="mt-1"
-                />
-              </li>
+              <ReplyItem
+                key={`${reply.author}-${reply.date}-${i}`}
+                reply={reply}
+                replyIndex={i}
+                commentId={lead.id}
+                skipDeleteConfirmation={skipDeleteConfirmation}
+                onEdit={onEditReply}
+                onDelete={onDeleteReply}
+                onInteraction={() => {
+                  setEditing(false);
+                  setReplyOpen(false);
+                  setDeleteConfirming(false);
+                }}
+              />
             ))}
           </ul>
         ) : null}
@@ -615,6 +717,12 @@ export function CommentBubble({
               placeholder="Write a reply…"
               className="min-h-[64px] resize-none text-sm leading-relaxed"
               aria-label="Reply"
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+                  e.preventDefault();
+                  void saveReply();
+                }
+              }}
             />
             <div className="flex items-center justify-end gap-1.5">
               <Button
@@ -634,7 +742,14 @@ export function CommentBubble({
                 disabled={replyBusy}
                 onClick={() => void saveReply()}
               >
-                {replyBusy ? "Saving…" : "Save reply"}
+                {replyBusy ? (
+                  "Saving…"
+                ) : (
+                  <>
+                    Save reply
+                    <ShortcutHint onPrimary>{withCtrl("⏎")}</ShortcutHint>
+                  </>
+                )}
               </Button>
             </div>
             {replyError ? (
@@ -673,20 +788,12 @@ export function CommentBubble({
 
       {mode === "detailed" ? (
         <div className="relative flex shrink-0 divide-x divide-border border-t">
-          <ActionIconButton
-            label="Reply"
-            title="Reply"
-            onClick={openReplyComposer}
-          >
+          <ActionIconButton label="Reply" keys="R" onClick={openReplyComposer}>
             <MessageSquareReply className="h-4 w-4" aria-hidden />
           </ActionIconButton>
           <ActionIconButton
             label={lead.resolved ? "Resolved" : "Resolve"}
-            title={
-              lead.resolved
-                ? "Resolved"
-                : `Resolve (${ctrlKey}${ctrlKey === "⌘" ? "" : "+"}R)`
-            }
+            keys={lead.resolved ? undefined : withCtrl("R")}
             active={lead.resolved}
             onClick={() => onResolve?.(lead.id)}
           >
@@ -694,7 +801,7 @@ export function CommentBubble({
           </ActionIconButton>
           <ActionIconButton
             label="Fix"
-            title={`Fix (${ctrlKey}${ctrlKey === "⌘" ? "" : "+"}I)`}
+            keys={withCtrl("I")}
             disabled={iterating}
             onClick={handleIterate}
           >
@@ -707,13 +814,10 @@ export function CommentBubble({
           {onDelete ? (
             <ActionIconButton
               label="Delete"
-              title="Delete comment"
+              keys={withCtrl("⌫")}
               destructive
               disabled={deleteBusy}
-              onClick={() => {
-                setDeleteConfirming(true);
-                setDeleteError(null);
-              }}
+              onClick={requestDelete}
             >
               <Trash2 className="h-4 w-4" aria-hidden />
             </ActionIconButton>
@@ -727,26 +831,30 @@ export function CommentBubble({
               <span className="mr-0.5 text-xs font-medium text-foreground">
                 Delete?
               </span>
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                className="h-7 px-2 text-xs"
-                disabled={deleteBusy}
-                onClick={() => setDeleteConfirming(false)}
-              >
-                Cancel
-              </Button>
-              <Button
-                type="button"
-                variant="destructive"
-                size="sm"
-                className="h-7 px-2 text-xs"
-                disabled={deleteBusy}
-                onClick={() => void confirmDelete()}
-              >
-                {deleteBusy ? "Deleting…" : "Delete"}
-              </Button>
+              <HotkeyTip label="Cancel" keys="Esc">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 px-2 text-xs"
+                  disabled={deleteBusy}
+                  onClick={cancelDeleteConfirm}
+                >
+                  Cancel
+                </Button>
+              </HotkeyTip>
+              <HotkeyTip label="Delete" keys="⏎">
+                <Button
+                  type="button"
+                  variant="destructive"
+                  size="sm"
+                  className="h-7 px-2 text-xs"
+                  disabled={deleteBusy}
+                  onClick={() => void confirmDelete()}
+                >
+                  {deleteBusy ? "Deleting…" : "Delete"}
+                </Button>
+              </HotkeyTip>
             </div>
           ) : null}
         </div>
@@ -772,12 +880,29 @@ export function CommentBubble({
 }
 
 /**
- * Click-to-enlarge view for the comment's screenshot. Fixed full-viewport
- * backdrop above the bubble (z-9500 > bubble z-9200). Closes on click of the
- * backdrop or Escape. Image is `object-contain`-capped at 80vw/80vh so it
- * respects its natural aspect ratio.
+ * Click-to-enlarge view for the comment's screenshot. Portaled to the overlay
+ * root (not `document.body`) so it shares the host overlay's stacking context
+ * and can sit above the dock (9400). Styles come from `redline-lightbox-*`
+ * in styles.css so z-index doesn't depend on host Tailwind scanning. Closes
+ * on backdrop click or Escape.
  */
 function Lightbox({ src, onClose }: { src: string; onClose: () => void }) {
+  const [portalRoot, setPortalRoot] = useState<HTMLElement | null>(null);
+
+  useEffect(() => {
+    setPortalRoot(
+      document.querySelector<HTMLElement>("[data-redline-overlay-root]") ??
+        document.body,
+    );
+  }, []);
+
+  useEffect(() => {
+    document.body.dataset.redlineLightbox = "open";
+    return () => {
+      delete document.body.dataset.redlineLightbox;
+    };
+  }, []);
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose();
@@ -786,18 +911,20 @@ function Lightbox({ src, onClose }: { src: string; onClose: () => void }) {
     return () => document.removeEventListener("keydown", onKey);
   }, [onClose]);
 
-  return (
+  if (typeof document === "undefined" || !portalRoot) return null;
+
+  return createPortal(
     <div
       data-comment-overlay="true"
       role="dialog"
       aria-label="Comment screenshot"
-      className="fixed inset-0 z-[9500] flex items-center justify-center bg-black/80 p-8"
+      className="redline-lightbox-backdrop"
       onClick={onClose}
     >
       <img
         src={src}
         alt=""
-        className="max-h-[80vh] max-w-[80vw] rounded-md border object-contain shadow-2xl"
+        className="redline-lightbox-image"
         onClick={(e) => e.stopPropagation()}
       />
       <Button
@@ -810,7 +937,8 @@ function Lightbox({ src, onClose }: { src: string; onClose: () => void }) {
       >
         <X className="h-4 w-4" />
       </Button>
-    </div>
+    </div>,
+    portalRoot,
   );
 }
 
@@ -892,6 +1020,232 @@ function Attribution({
         {formatDate(date)}
       </span>
     </div>
+  );
+}
+
+function ReplyItem({
+  reply,
+  replyIndex,
+  commentId,
+  skipDeleteConfirmation,
+  onEdit,
+  onDelete,
+  onInteraction,
+}: {
+  reply: CommentReply;
+  replyIndex: number;
+  commentId: string;
+  skipDeleteConfirmation: boolean;
+  onEdit?: (id: string, replyIndex: number, text: string) => Promise<void>;
+  onDelete?: (id: string, replyIndex: number) => Promise<void>;
+  onInteraction?: () => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [editDraft, setEditDraft] = useState("");
+  const [editBusy, setEditBusy] = useState(false);
+  const [editError, setEditError] = useState<string | null>(null);
+  const [deleteConfirming, setDeleteConfirming] = useState(false);
+  const [deleteBusy, setDeleteBusy] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const editTextareaRef = useRef<HTMLTextAreaElement | null>(null);
+
+  useEffect(() => {
+    if (editing) {
+      editTextareaRef.current?.focus();
+    }
+  }, [editing]);
+
+  const startEditing = () => {
+    if (!onEdit) return;
+    onInteraction?.();
+    setEditing(true);
+    setEditDraft(reply.text);
+    setEditError(null);
+    setDeleteConfirming(false);
+    setDeleteError(null);
+  };
+
+  const cancelEditing = () => {
+    setEditing(false);
+    setEditDraft("");
+    setEditError(null);
+  };
+
+  const saveEdit = async () => {
+    if (!onEdit || editBusy) return;
+    const trimmed = editDraft.trim();
+    if (!trimmed) {
+      setEditError("Reply cannot be empty");
+      return;
+    }
+    setEditBusy(true);
+    setEditError(null);
+    try {
+      await onEdit(commentId, replyIndex, trimmed);
+      setEditing(false);
+      setEditDraft("");
+    } catch (err) {
+      setEditError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setEditBusy(false);
+    }
+  };
+
+  const confirmDelete = async () => {
+    if (!onDelete || deleteBusy) return;
+    setDeleteBusy(true);
+    setDeleteError(null);
+    try {
+      await onDelete(commentId, replyIndex);
+    } catch (err) {
+      setDeleteError(err instanceof Error ? err.message : String(err));
+      setDeleteBusy(false);
+      setDeleteConfirming(false);
+    }
+  };
+
+  const requestDelete = () => {
+    if (!onDelete || deleteBusy) return;
+    onInteraction?.();
+    setDeleteError(null);
+    setEditing(false);
+    if (skipDeleteConfirmation) {
+      void confirmDelete();
+      return;
+    }
+    setDeleteConfirming(true);
+  };
+
+  const cancelDeleteConfirm = () => {
+    setDeleteConfirming(false);
+  };
+
+  return (
+    <li>
+      {editing ? (
+        <div className="space-y-2">
+          <Textarea
+            ref={editTextareaRef}
+            value={editDraft}
+            onChange={(e) => setEditDraft(e.target.value)}
+            disabled={editBusy}
+            className="min-h-[64px] resize-none text-sm leading-relaxed"
+            aria-label="Edit reply"
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+                e.preventDefault();
+                void saveEdit();
+              }
+            }}
+          />
+          <div className="flex items-center justify-end gap-1.5">
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="h-7 px-2 text-xs"
+              disabled={editBusy}
+              onClick={cancelEditing}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              className="h-7 px-2 text-xs"
+              disabled={editBusy}
+              onClick={() => void saveEdit()}
+            >
+              {editBusy ? (
+                "Saving…"
+              ) : (
+                <>
+                  Save
+                  <ShortcutHint onPrimary>{withCtrl("⏎")}</ShortcutHint>
+                </>
+              )}
+            </Button>
+          </div>
+          {editError ? (
+            <p className="m-0 text-xs text-destructive">{editError}</p>
+          ) : null}
+        </div>
+      ) : (
+        <p className="m-0 text-sm leading-snug text-muted-foreground">
+          {reply.text}
+        </p>
+      )}
+
+      <div className="relative mt-1 flex items-center justify-between gap-2">
+        {!editing ? (
+          <Attribution author={reply.author} date={reply.date} />
+        ) : (
+          <span />
+        )}
+        {!editing && (onEdit || onDelete) ? (
+          <div className="flex shrink-0 items-center gap-0.5">
+            {onEdit && !deleteConfirming ? (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="h-auto px-1.5 py-1 text-xs"
+                onClick={startEditing}
+              >
+                Edit
+              </Button>
+            ) : null}
+            {onDelete && !deleteConfirming ? (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="h-auto px-1.5 py-1 text-xs hover:bg-destructive/10 hover:text-destructive"
+                disabled={deleteBusy}
+                onClick={requestDelete}
+              >
+                Delete
+              </Button>
+            ) : null}
+          </div>
+        ) : null}
+
+        {deleteConfirming ? (
+          <div
+            className="absolute inset-y-0 right-0 flex items-center justify-end gap-1.5 bg-gradient-to-l from-background from-55% to-transparent pl-8"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <span className="mr-0.5 text-xs font-medium text-foreground">
+              Delete?
+            </span>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="h-7 px-2 text-xs"
+              disabled={deleteBusy}
+              onClick={cancelDeleteConfirm}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              size="sm"
+              className="h-7 px-2 text-xs"
+              disabled={deleteBusy}
+              onClick={() => void confirmDelete()}
+            >
+              {deleteBusy ? "Deleting…" : "Delete"}
+            </Button>
+          </div>
+        ) : null}
+      </div>
+
+      {deleteError ? (
+        <p className="m-0 mt-1 text-xs text-destructive">{deleteError}</p>
+      ) : null}
+    </li>
   );
 }
 
@@ -1007,7 +1361,7 @@ function computeThumbDims(
 
 function ActionIconButton({
   label,
-  title,
+  keys,
   onClick,
   disabled,
   active,
@@ -1015,7 +1369,8 @@ function ActionIconButton({
   children,
 }: {
   label: string;
-  title?: string;
+  /** Hotkey shown in the tooltip; omit for a label-only tip. */
+  keys?: string;
   onClick?: () => void;
   disabled?: boolean;
   active?: boolean;
@@ -1023,22 +1378,23 @@ function ActionIconButton({
   children: React.ReactNode;
 }) {
   return (
-    <Button
-      type="button"
-      variant="ghost"
-      size="icon"
-      aria-label={label}
-      title={title ?? label}
-      onClick={onClick}
-      disabled={disabled}
-      className={cn(
-        "h-9 min-w-0 flex-1 rounded-none text-muted-foreground hover:bg-muted/60 hover:text-foreground",
-        active && "text-primary hover:text-primary",
-        destructive && "hover:bg-destructive/10 hover:text-destructive",
-      )}
-    >
-      {children}
-    </Button>
+    <HotkeyTip label={label} keys={keys}>
+      <Button
+        type="button"
+        variant="ghost"
+        size="icon"
+        aria-label={label}
+        onClick={onClick}
+        disabled={disabled}
+        className={cn(
+          "h-9 min-w-0 flex-1 rounded-none text-muted-foreground hover:bg-muted/60 hover:text-foreground",
+          active && "text-primary hover:text-primary",
+          destructive && "hover:bg-destructive/10 hover:text-destructive",
+        )}
+      >
+        {children}
+      </Button>
+    </HotkeyTip>
   );
 }
 
