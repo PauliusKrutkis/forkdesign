@@ -383,11 +383,13 @@ export function CommentBubble({
 
       // Best-effort post-edit screenshot capture. The agent just rewrote the
       // source file, so HMR is about to fire and the DOM will re-render with
-      // the new design. We hook the first `vite:afterUpdate` event, wait one
-      // animation frame for React to settle, then re-capture the anchored
-      // element and POST it to the screenshot endpoint to replace the
-      // placeholder v0 copy. Failures here are silent — the placeholder PNG
-      // on disk is good enough to fall back to.
+      // the new design. We hook `vite:afterUpdate`, wait for updates to
+      // settle, re-capture the anchored element, and POST it to the screenshot
+      // endpoint to replace the placeholder copy. Failures here are silent —
+      // the placeholder PNG on disk is good enough to fall back to.
+      //
+      // PNG URLs include an mtime cache-buster so a reload after upload fetches
+      // the fresh capture instead of a cached placeholder thumbnail.
       void reloadIterations();
       if (done.v !== undefined && done.ok === true && done.changed === true) {
         captureAndUploadV({
@@ -1495,10 +1497,10 @@ function ActionIconButton({
 /**
  * Best-effort post-edit screenshot capture. After the iteration endpoint
  * succeeds, HMR will fire (Vite picks up the rewritten source file) and the
- * DOM re-renders with the new design. We register a ONE-SHOT listener on
- * `vite:afterUpdate`, wait one rAF for React to commit, locate the anchored
- * element, rasterise it with `html-to-image`, and POST it to the screenshot
- * endpoint to replace the placeholder copy.
+ * DOM re-renders with the new design. We debounce `vite:afterUpdate` so batched
+ * file writes settle, wait for React to commit, locate the anchored element,
+ * rasterise it with `html-to-image`, and POST it to the screenshot endpoint
+ * to replace the placeholder copy.
  *
  * 5-second timeout: if HMR doesn't fire (file change didn't trigger it, build
  * mode, etc.) we give up. Anchor missing after edit, capture exception, or
@@ -1519,6 +1521,9 @@ function captureAndUploadV(args: {
 
   let done = false;
   let timeoutId: number | undefined;
+  let debounceId: number | undefined;
+  let fallbackId: number | undefined;
+
   const cleanup = () => {
     if (done) {
       return;
@@ -1527,17 +1532,37 @@ function captureAndUploadV(args: {
     if (timeoutId !== undefined) {
       window.clearTimeout(timeoutId);
     }
+    if (debounceId !== undefined) {
+      window.clearTimeout(debounceId);
+    }
+    if (fallbackId !== undefined) {
+      window.clearTimeout(fallbackId);
+    }
     hot.off("vite:afterUpdate", handler);
+  };
+
+  const scheduleCapture = () => {
+    if (done) {
+      return;
+    }
+    if (debounceId !== undefined) {
+      window.clearTimeout(debounceId);
+    }
+    // Wait for batched HMR + React commit before measuring the anchor.
+    debounceId = window.setTimeout(() => {
+      window.requestAnimationFrame(() => {
+        window.requestAnimationFrame(() => {
+          void run();
+        });
+      });
+    }, 150);
   };
 
   const handler = () => {
     if (done) {
       return;
     }
-    // One rAF for React to commit the new tree before we measure.
-    window.requestAnimationFrame(() => {
-      void run();
-    });
+    scheduleCapture();
   };
 
   const run = async (): Promise<void> => {
@@ -1609,6 +1634,13 @@ function captureAndUploadV(args: {
   };
 
   hot.on("vite:afterUpdate", handler);
+  // HMR may have already completed before we registered; try once after settle.
+  fallbackId = window.setTimeout(() => {
+    if (done) {
+      return;
+    }
+    scheduleCapture();
+  }, 400);
   timeoutId = window.setTimeout(() => {
     if (done) {
       return;

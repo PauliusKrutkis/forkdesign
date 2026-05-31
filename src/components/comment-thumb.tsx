@@ -19,6 +19,7 @@ export function AdaptiveThumb({
     <img
       alt=""
       className="h-full w-full object-contain"
+      key={src}
       onLoad={(e) => {
         const img = e.currentTarget;
         if (img.naturalWidth > 0 && img.naturalHeight > 0) {
@@ -60,7 +61,7 @@ export function AdaptiveThumb({
 export function MicroThumb({ src }: { src: string }) {
   return (
     <span className="block h-8 w-8 shrink-0 overflow-hidden rounded border bg-muted">
-      <img alt="" className="h-full w-full object-contain" src={src} />
+      <img alt="" className="h-full w-full object-contain" key={src} src={src} />
     </span>
   );
 }

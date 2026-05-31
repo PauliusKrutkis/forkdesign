@@ -314,3 +314,28 @@ export function tsxMtimeMs(iterDir: string, v: number): number | null {
     return null;
   }
 }
+
+export function pngMtimeMs(roots: string[], v: number): number | null {
+  const pngPath = findVersionPngPath(roots, v);
+  if (!pngPath) {
+    return null;
+  }
+  try {
+    return statSync(pngPath).mtimeMs;
+  } catch {
+    return null;
+  }
+}
+
+/** Cache-busted URL for an iteration screenshot (mtime busts stale img cache). */
+export function iterationPngUrl(
+  id: string,
+  v: number,
+  mtimeMs: number | null
+): string {
+  const base = `/designs/iterations/${id}/v${v}.png`;
+  if (mtimeMs === null || mtimeMs <= 0) {
+    return base;
+  }
+  return `${base}?t=${Math.floor(mtimeMs)}`;
+}

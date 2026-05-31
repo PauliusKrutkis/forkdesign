@@ -8,10 +8,12 @@ import {
   deleteVersionArtifactsAllRoots,
   enrichVersionMeta,
   findVersionSnapshotPath,
+  iterationPngUrl,
   listCompleteIterationVersionsAllRoots,
   mergeVersionEntry,
   parseManifestJson,
   patchIterationsManifest,
+  pngMtimeMs,
   readIterationsManifest,
   removeVersionFromManifest,
 } from "./iterations-manifest.ts";
@@ -91,6 +93,20 @@ describe("enrichVersionMeta", () => {
   it("defaultSummaryForVersion", () => {
     expect(defaultSummaryForVersion(0)).toBe("Baseline");
     expect(defaultSummaryForVersion(2)).toBe("AI fix");
+  });
+});
+
+describe("iterationPngUrl", () => {
+  it("appends mtime cache buster when present", () => {
+    expect(iterationPngUrl("abc", 2, 1_700_000_000_123.7)).toBe(
+      "/designs/iterations/abc/v2.png?t=1700000000123"
+    );
+  });
+
+  it("returns bare path when mtime is missing", () => {
+    expect(iterationPngUrl("abc", 1, null)).toBe(
+      "/designs/iterations/abc/v1.png"
+    );
   });
 });
 

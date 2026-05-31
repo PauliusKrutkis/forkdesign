@@ -69,8 +69,10 @@ import {
   enrichVersionMeta,
   findVersionPngPath,
   findVersionSnapshotPath,
+  iterationPngUrl,
   listCompleteIterationVersionsAllRoots,
   patchIterationsManifest,
+  pngMtimeMs,
   readIterationsManifest,
   resolveIterationDirRoots,
   tsxMtimeMs,
@@ -945,7 +947,7 @@ async function handleIterationsList(
       return {
         v: n,
         tsx: `/designs/iterations/${id}/v${n}.tsx`,
-        png: `/designs/iterations/${id}/v${n}.png`,
+        png: iterationPngUrl(id, n, pngMtimeMs(iterationRoots, n)),
         summary: meta.summary,
         createdAt: meta.createdAt,
       };
@@ -1575,7 +1577,7 @@ async function handleIterationsNew(
     changed: true,
     v: nextV,
     tsx: `/designs/iterations/${id}/v${nextV}.tsx`,
-    png: `/designs/iterations/${id}/v${nextV}.png`,
+    png: iterationPngUrl(id, nextV, pngMtimeMs(iterationRoots, nextV)),
     modelUsed,
     durationMs,
     turnsUsed: agentResult.turnsUsed,
@@ -1639,6 +1641,8 @@ async function handleIterationsScreenshot(
     return;
   }
 
+  const mtimeMs = pngMtimeMs([iterDir], v);
+
   res.statusCode = 200;
   res.setHeader("content-type", "application/json; charset=utf-8");
   res.setHeader("cache-control", "no-store");
@@ -1647,7 +1651,7 @@ async function handleIterationsScreenshot(
       ok: true,
       id,
       v,
-      png: `/designs/iterations/${id}/v${v}.png`,
+      png: iterationPngUrl(id, v, mtimeMs),
     })
   );
 }
