@@ -444,6 +444,7 @@ export function CommentBubble({
         if (lightboxSrc) {
           setLightboxSrc(null);
           e.preventDefault();
+          e.stopImmediatePropagation();
           return;
         }
         if (deleteConfirming) {
@@ -1006,11 +1007,13 @@ function Lightbox({ src, onClose }: { src: string; onClose: () => void }) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
+        e.preventDefault();
+        e.stopImmediatePropagation();
         onClose();
       }
     };
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
+    document.addEventListener("keydown", onKey, true);
+    return () => document.removeEventListener("keydown", onKey, true);
   }, [onClose]);
 
   if (typeof document === "undefined" || !portalRoot) {

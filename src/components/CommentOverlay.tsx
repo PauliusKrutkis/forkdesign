@@ -289,6 +289,10 @@ export function CommentOverlay({
     }
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
+        // Screenshot lightbox handles its own Escape; don't close the bubble.
+        if (document.body.dataset.redlineLightbox === "open") {
+          return;
+        }
         setOpenTarget(null);
       }
     };
