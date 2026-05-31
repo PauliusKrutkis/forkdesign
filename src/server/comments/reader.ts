@@ -448,14 +448,14 @@ function readBalanced(
 }
 
 function stringOf(v: AttrValue | undefined): string | null {
-  if (!v || v.kind !== "string") {
+  if (v?.kind !== "string") {
     return null;
   }
   return v.value;
 }
 
 function numberOf(v: AttrValue | undefined): number | null {
-  if (!v || v.kind !== "number") {
+  if (v?.kind !== "number") {
     return null;
   }
   return v.value;
