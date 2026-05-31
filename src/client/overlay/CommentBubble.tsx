@@ -16,6 +16,7 @@ import { Badge } from "../ui/badge.tsx";
 import { Button } from "../ui/button.tsx";
 import { cn } from "../ui/cn.ts";
 import { Textarea } from "../ui/textarea.tsx";
+import { AdaptiveThumb } from "./CommentThumb.tsx";
 import {
   CommentVersionHistory,
   formatVersionDisplay,
@@ -23,7 +24,6 @@ import {
   shouldShowVersionHistory,
 } from "./CommentVersionHistory";
 import { CommentVersionPicker } from "./CommentVersionPicker";
-import { AdaptiveThumb } from "./CommentThumb.tsx";
 import { HotkeyTip } from "./HotkeyTip";
 import { useIterations } from "./hooks/useIterations.ts";
 import { dotRect, type FloaterSide, placeFloater } from "./lib/placement.ts";
