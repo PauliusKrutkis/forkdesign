@@ -32,6 +32,7 @@ import {
   readFile,
   rename,
   rm,
+  unlink,
   writeFile,
 } from "node:fs/promises";
 import type { IncomingMessage, ServerResponse } from "node:http";
@@ -48,6 +49,7 @@ import {
   deleteCommentReply,
   extractDirectiveInner,
   injectExistingMarkerIntoSource,
+  replaceCommentMarkerInSource,
   updateCommentActive,
   updateCommentReply,
   updateCommentText,
@@ -64,6 +66,7 @@ import {
 } from "./fix/index.ts";
 import { getFixRuntimeConfig } from "./fix/config.ts";
 import {
+  deleteVersionFromManifest,
   enrichVersionMeta,
   patchIterationsManifest,
   readIterationsManifest,
@@ -239,6 +242,21 @@ export function comments(options: CommentsPluginOptions = {}): Plugin {
         }
         if (req.method === "POST" && sub === "/screenshot") {
           handleIterationsScreenshot(
+            req,
+            res,
+            projectRoot,
+            excludeSrcPrefixes
+          ).catch((err: unknown) => {
+            sendError(
+              res,
+              500,
+              err instanceof Error ? err.message : String(err)
+            );
+          });
+          return;
+        }
+        if (req.method === "POST" && sub === "/delete") {
+          handleIterationsDelete(
             req,
             res,
             projectRoot,
@@ -808,7 +826,9 @@ async function handleDelete(
 // CAVEAT: `POST /api/iterations/activate` overwrites the WHOLE target file
 // with a saved snapshot. If the file currently contains other `@comment`
 // markers (or any other edits) made since the snapshot was taken, those
-// edits are clobbered. The architectural mitigation is a soft lock at the
+// edits are clobbered. The activating marker's live directive (replies,
+// edited text, resolved, etc.) is always stamped onto the snapshot first.
+// The architectural mitigation is a soft lock at the
 // UI layer ("one iteration in progress at a time") — NOT enforced here. We
 // log a warning to the terminal when the file contains other markers so the
 // human can see what's about to be lost.
@@ -823,6 +843,7 @@ interface FoundComment {
     screenshot?: string;
     view?: string;
     active?: number;
+    replies?: import("./components/types.ts").CommentReply[];
   };
   relativePath: string;
   /** ids of OTHER @comment markers in the same file (for the activate warning). */
@@ -864,6 +885,7 @@ async function findCommentById(
         screenshot: match.screenshot,
         view: match.view ?? undefined,
         active: match.active,
+        replies: match.replies,
       },
       siblingIds: result.comments
         .filter((c) => c.id !== commentId)
@@ -974,6 +996,170 @@ async function handleIterationsList(
   );
 }
 
+type IterationApplyResult =
+  | { ok: true }
+  | { ok: false; status: number; message: string };
+
+/** Version indices where both v{N}.tsx and v{N}.png exist in `iterDir`. */
+async function listCompleteIterationVersions(
+  iterDir: string
+): Promise<number[]> {
+  let entries: string[];
+  try {
+    entries = await readdir(iterDir);
+  } catch {
+    return [];
+  }
+  const present: Map<number, { tsx: boolean; png: boolean }> = new Map();
+  for (const name of entries) {
+    const m = name.match(/^v(\d+)\.(tsx|png)$/);
+    if (!m?.[1]) {
+      continue;
+    }
+    const n = Number.parseInt(m[1], 10);
+    if (!Number.isFinite(n)) {
+      continue;
+    }
+    const slot = present.get(n) ?? { tsx: false, png: false };
+    if (m[2] === "tsx") {
+      slot.tsx = true;
+    } else {
+      slot.png = true;
+    }
+    present.set(n, slot);
+  }
+  return [...present.entries()]
+    .filter(([, slot]) => slot.tsx && slot.png)
+    .map(([n]) => n)
+    .sort((a, b) => a - b);
+}
+
+async function applyIterationVersionToSource(
+  found: FoundComment,
+  iterDir: string,
+  id: string,
+  v: number
+): Promise<IterationApplyResult> {
+  const snapshotPath = path.join(iterDir, `v${v}.tsx`);
+  if (!(existsSync(snapshotPath) && statSync(snapshotPath).isFile())) {
+    return {
+      ok: false,
+      status: 400,
+      message: `version snapshot not found: v${v}.tsx`,
+    };
+  }
+
+  if (found.siblingIds.length > 0) {
+    console.warn(
+      `[vite-plugin-comments] activating v${v} for comment ${id} will overwrite ${found.siblingIds.length} other comment(s) in ${found.relativePath}`
+    );
+  }
+
+  let currentSource: string;
+  try {
+    currentSource = await readFile(found.absolutePath, "utf8");
+  } catch (err) {
+    return {
+      ok: false,
+      status: 500,
+      message: err instanceof Error ? err.message : String(err),
+    };
+  }
+  const directiveInner = extractDirectiveInner(currentSource, id);
+  if (directiveInner === null) {
+    return {
+      ok: false,
+      status: 500,
+      message: `could not extract directive for comment ${id} from current source`,
+    };
+  }
+
+  let snapshotSource: string;
+  try {
+    snapshotSource = await readFile(snapshotPath, "utf8");
+  } catch (err) {
+    return {
+      ok: false,
+      status: 500,
+      message: err instanceof Error ? err.message : String(err),
+    };
+  }
+
+  let snapshotHasMarker = false;
+  try {
+    const parsedSnapshot = readCommentsFromSource(snapshotSource);
+    snapshotHasMarker = parsedSnapshot.comments.some((c) => c.id === id);
+  } catch {
+    snapshotHasMarker = false;
+  }
+
+  try {
+    if (snapshotHasMarker) {
+      snapshotSource = replaceCommentMarkerInSource(
+        snapshotSource,
+        id,
+        directiveInner
+      );
+    } else if (
+      snapshotSource.includes(`data-comment-anchor="${found.comment.anchor}"`)
+    ) {
+      snapshotSource = injectExistingMarkerIntoSource(
+        snapshotSource,
+        found.comment.anchor,
+        directiveInner
+      );
+      console.warn(
+        `[vite-plugin-comments] injected marker into v${v} snapshot of comment ${id} before activating (snapshot pre-dated the marker)`
+      );
+    } else {
+      return {
+        ok: false,
+        status: 400,
+        message:
+          "snapshot is too old to safely activate; it pre-dates the anchor attribute.",
+      };
+    }
+  } catch (err) {
+    if (err instanceof WriteError) {
+      return { ok: false, status: err.status, message: err.message };
+    }
+    return {
+      ok: false,
+      status: 500,
+      message: err instanceof Error ? err.message : String(err),
+    };
+  }
+
+  try {
+    await atomicWriteText(found.absolutePath, snapshotSource);
+  } catch (err) {
+    return {
+      ok: false,
+      status: 500,
+      message: err instanceof Error ? err.message : String(err),
+    };
+  }
+
+  try {
+    await updateCommentActive({
+      absolutePath: found.absolutePath,
+      commentId: id,
+      active: v,
+    });
+  } catch (err) {
+    if (err instanceof WriteError) {
+      return { ok: false, status: err.status, message: err.message };
+    }
+    return {
+      ok: false,
+      status: 500,
+      message: err instanceof Error ? err.message : String(err),
+    };
+  }
+
+  return { ok: true };
+}
+
 /**
  * POST /api/iterations/activate { id, v }
  *
@@ -1007,122 +1193,15 @@ async function handleIterationsActivate(
     return;
   }
 
-  const snapshotPath = path.join(
-    projectRoot,
-    "designs",
-    "iterations",
-    id,
-    `v${v}.tsx`
-  );
-  if (!(existsSync(snapshotPath) && statSync(snapshotPath).isFile())) {
-    sendError(res, 400, `version snapshot not found: v${v}.tsx`);
+  const iterDir = resolveIterationsDir(projectRoot, id);
+  if (!iterDir) {
+    sendError(res, 404, `iterations dir not found: ${id}`);
     return;
   }
 
-  // Warn loudly when there are other markers in this file — they will be
-  // overwritten by the snapshot's contents.
-  if (found.siblingIds.length > 0) {
-    console.warn(
-      `[vite-plugin-comments] activating v${v} for comment ${id} will overwrite ${found.siblingIds.length} other comment(s) in ${found.relativePath}`
-    );
-  }
-
-  let snapshotSource: string;
-  try {
-    snapshotSource = await readFile(snapshotPath, "utf8");
-  } catch (err) {
-    sendError(res, 500, err instanceof Error ? err.message : String(err));
-    return;
-  }
-
-  // Defensive: legacy v0.tsx snapshots (captured before bug #24 was fixed)
-  // don't contain the @comment marker. If we just wrote them as-is, we'd
-  // wipe the marker entirely. Detect this by parsing the snapshot and
-  // checking for the activating comment id.
-  let snapshotHasMarker = false;
-  try {
-    const parsed = readCommentsFromSource(snapshotSource);
-    snapshotHasMarker = parsed.comments.some((c) => c.id === id);
-  } catch {
-    // If the snapshot is unparsable we'll let the downstream write attempt
-    // surface the error in a clearer way.
-    snapshotHasMarker = false;
-  }
-
-  if (!snapshotHasMarker) {
-    // We need to re-inject the marker into the snapshot. Two prerequisites:
-    //   1. The snapshot must still carry `data-comment-anchor="<anchor>"`
-    //      on some element (otherwise we have no insertion point).
-    //   2. The CURRENT source file must contain the marker for `id`, so we
-    //      can pull the verbatim directive text from it.
-    if (
-      !snapshotSource.includes(`data-comment-anchor="${found.comment.anchor}"`)
-    ) {
-      sendError(
-        res,
-        400,
-        "snapshot is too old to safely activate; it pre-dates the anchor attribute."
-      );
-      return;
-    }
-    let currentSource: string;
-    try {
-      currentSource = await readFile(found.absolutePath, "utf8");
-    } catch (err) {
-      sendError(res, 500, err instanceof Error ? err.message : String(err));
-      return;
-    }
-    const directiveInner = extractDirectiveInner(currentSource, id);
-    if (directiveInner === null) {
-      sendError(
-        res,
-        500,
-        `could not extract directive for comment ${id} from current source`
-      );
-      return;
-    }
-    try {
-      snapshotSource = injectExistingMarkerIntoSource(
-        snapshotSource,
-        found.comment.anchor,
-        directiveInner
-      );
-    } catch (err) {
-      if (err instanceof WriteError) {
-        sendError(res, err.status, err.message);
-        return;
-      }
-      sendError(res, 500, err instanceof Error ? err.message : String(err));
-      return;
-    }
-    console.warn(
-      `[vite-plugin-comments] injected marker into v${v} snapshot of comment ${id} before activating (snapshot pre-dated the marker)`
-    );
-  }
-
-  // Step 1: replace the source file with the snapshot. Atomic.
-  try {
-    await atomicWriteText(found.absolutePath, snapshotSource);
-  } catch (err) {
-    sendError(res, 500, err instanceof Error ? err.message : String(err));
-    return;
-  }
-
-  // Step 2: stamp `active=v` on the marker. The snapshot may or may not
-  // already carry the right value (depends on when it was captured), so we
-  // re-write unconditionally.
-  try {
-    await updateCommentActive({
-      absolutePath: found.absolutePath,
-      commentId: id,
-      active: v,
-    });
-  } catch (err) {
-    if (err instanceof WriteError) {
-      sendError(res, err.status, err.message);
-      return;
-    }
-    sendError(res, 500, err instanceof Error ? err.message : String(err));
+  const applied = await applyIterationVersionToSource(found, iterDir, id, v);
+  if (!applied.ok) {
+    sendError(res, applied.status, applied.message);
     return;
   }
 
@@ -1135,6 +1214,110 @@ async function handleIterationsActivate(
       id,
       file: found.relativePath,
       active: v,
+    })
+  );
+}
+
+/**
+ * POST /api/iterations/delete { id, v }
+ *
+ * Removes v{N}.tsx, v{N}.png, and the manifest entry. Baseline (v0) cannot be
+ * deleted. If the deleted version was active, switches the page to the newest
+ * remaining version.
+ */
+async function handleIterationsDelete(
+  req: IncomingMessage,
+  res: ServerResponse,
+  projectRoot: string,
+  excludeSrcPrefixes: string[]
+): Promise<void> {
+  const body = await readJsonBody(req);
+  if (!body.ok) {
+    sendError(res, 400, body.reason);
+    return;
+  }
+  const parsed = parseDeleteVersionBody(body.value);
+  if (!parsed.ok) {
+    sendError(res, 400, parsed.reason);
+    return;
+  }
+  const { id, v } = parsed.value;
+
+  const found = await findCommentById(projectRoot, id, excludeSrcPrefixes);
+  if (!found) {
+    sendError(res, 404, `comment id not found: ${id}`);
+    return;
+  }
+
+  const iterDir = resolveIterationsDir(projectRoot, id);
+  if (!iterDir) {
+    sendError(res, 404, `iterations dir not found: ${id}`);
+    return;
+  }
+
+  const versions = await listCompleteIterationVersions(iterDir);
+  if (!versions.includes(v)) {
+    sendError(res, 400, `version v${v} not found`);
+    return;
+  }
+
+  const currentActive = found.comment.active ?? 0;
+  const wasActive = currentActive === v;
+  const remaining = versions.filter((n) => n !== v);
+  if (remaining.length === 0) {
+    sendError(res, 400, "cannot delete the only remaining version");
+    return;
+  }
+
+  const targetActive = wasActive ? (remaining.at(-1) ?? 0) : currentActive;
+
+  for (const ext of ["tsx", "png"] as const) {
+    const filePath = path.join(iterDir, `v${v}.${ext}`);
+    try {
+      await unlink(filePath);
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException).code;
+      if (code !== "ENOENT") {
+        sendError(
+          res,
+          500,
+          err instanceof Error ? err.message : String(err)
+        );
+        return;
+      }
+    }
+  }
+
+  try {
+    await deleteVersionFromManifest(iterDir, v);
+  } catch (err) {
+    sendError(res, 500, err instanceof Error ? err.message : String(err));
+    return;
+  }
+
+  if (wasActive) {
+    const applied = await applyIterationVersionToSource(
+      found,
+      iterDir,
+      id,
+      targetActive
+    );
+    if (!applied.ok) {
+      sendError(res, applied.status, applied.message);
+      return;
+    }
+  }
+
+  res.statusCode = 200;
+  res.setHeader("content-type", "application/json; charset=utf-8");
+  res.setHeader("cache-control", "no-store");
+  res.end(
+    JSON.stringify({
+      ok: true,
+      id,
+      file: found.relativePath,
+      deleted: v,
+      active: targetActive,
     })
   );
 }
@@ -1273,6 +1456,8 @@ async function handleIterationsNew(
     text: found.comment.text,
     screenshot: found.comment.screenshot,
     view: found.comment.view,
+    activeVersion: found.comment.active ?? 0,
+    replies: found.comment.replies,
     model,
     signal: abortController.signal,
     onEvent: (e) => {
@@ -1578,6 +1763,28 @@ function parseActivateBody(
   return { ok: true, value: { id, v } };
 }
 
+function parseDeleteVersionBody(
+  value: unknown
+): { ok: true; value: ActivateBody } | { ok: false; reason: string } {
+  if (!value || typeof value !== "object") {
+    return { ok: false, reason: "body must be a JSON object" };
+  }
+  const obj = value as Record<string, unknown>;
+  const id = obj.id;
+  const v = obj.v;
+  if (typeof id !== "string" || id.length === 0) {
+    return { ok: false, reason: "field `id` must be a non-empty string" };
+  }
+  if (typeof v !== "number" || !Number.isInteger(v) || v < 1) {
+    return {
+      ok: false,
+      reason:
+        "field `v` must be an integer >= 1 (baseline v0 cannot be deleted)",
+    };
+  }
+  return { ok: true, value: { id, v } };
+}
+
 // ---------------------------------------------------------------------------
 // Screenshot decoding + atomic writes for iteration artifacts
 // ---------------------------------------------------------------------------
@@ -1720,7 +1927,7 @@ type ParseBodyResult =
 
 type PatchBody =
   | { kind: "text"; text: string }
-  | { kind: "reply"; reply: { author: string; text: string } }
+  | { kind: "reply"; reply: { author: string; text: string; v?: number } }
   | { kind: "editReply"; replyIndex: number; text: string }
   | { kind: "deleteReply"; replyIndex: number };
 
@@ -1817,11 +2024,25 @@ function parsePatchBody(value: unknown): ParsePatchBodyResult {
       reason: "field `reply.text` must be a non-empty string",
     };
   }
+  const replyV = replyObj.v;
+  if (
+    replyV !== undefined &&
+    (typeof replyV !== "number" || !Number.isInteger(replyV) || replyV < 0)
+  ) {
+    return {
+      ok: false,
+      reason: "field `reply.v` must be a non-negative integer",
+    };
+  }
   return {
     ok: true,
     value: {
       kind: "reply",
-      reply: { author: author.trim(), text: replyText.trim() },
+      reply: {
+        author: author.trim(),
+        text: replyText.trim(),
+        ...(replyV !== undefined ? { v: replyV } : {}),
+      },
     },
   };
 }

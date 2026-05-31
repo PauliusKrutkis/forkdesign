@@ -68,6 +68,14 @@ export function mergeVersionEntry(
   };
 }
 
+export function removeVersionFromManifest(
+  manifest: IterationsManifest,
+  v: number
+): IterationsManifest {
+  const { [String(v)]: _removed, ...rest } = manifest.versions;
+  return { versions: rest };
+}
+
 export function versionEntryFromManifest(
   manifest: IterationsManifest | null,
   v: number
@@ -149,6 +157,20 @@ export async function patchIterationsManifest(
     ...EMPTY_MANIFEST,
   };
   await writeIterationsManifest(iterDir, mergeVersionEntry(existing, v, entry));
+}
+
+export async function deleteVersionFromManifest(
+  iterDir: string,
+  v: number
+): Promise<void> {
+  const existing = await readIterationsManifest(iterDir);
+  if (!existing) {
+    return;
+  }
+  await writeIterationsManifest(
+    iterDir,
+    removeVersionFromManifest(existing, v)
+  );
 }
 
 export function tsxMtimeMs(iterDir: string, v: number): number | null {

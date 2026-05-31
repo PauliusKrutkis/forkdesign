@@ -28,6 +28,7 @@ export function useIterations(
   const [data, setData] = useState<IterationsData | null>(null);
   const [loading, setLoading] = useState(true);
   const [switching, setSwitching] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   const reload = useCallback(async () => {
     try {
@@ -73,7 +74,7 @@ export function useIterations(
 
   const activate = useCallback(
     async (v: number) => {
-      if (switching || data?.active === v) {
+      if (switching || deleting || data?.active === v) {
         return;
       }
       setSwitching(true);
@@ -92,7 +93,38 @@ export function useIterations(
         setSwitching(false);
       }
     },
-    [commentId, switching, data?.active]
+    [commentId, switching, deleting, data?.active]
+  );
+
+  const removeVersion = useCallback(
+    async (v: number) => {
+      if (switching || deleting) {
+        return;
+      }
+      setDeleting(true);
+      try {
+        const res = await fetch("/api/iterations/delete", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ id: commentId, v }),
+        });
+        if (!res.ok) {
+          const body = (await res.json().catch(() => ({}))) as {
+            error?: string;
+          };
+          throw new Error(body.error ?? `request failed (${res.status})`);
+        }
+        const body = (await res.json()) as { active?: number };
+        await reload();
+        const nextActive = body.active;
+        if (typeof nextActive === "number") {
+          setData((prev) => (prev ? { ...prev, active: nextActive } : prev));
+        }
+      } finally {
+        setDeleting(false);
+      }
+    },
+    [commentId, switching, deleting, reload]
   );
 
   useEffect(() => {
@@ -100,6 +132,12 @@ export function useIterations(
       setSwitching(false);
     }
   }, [data, switching]);
+
+  useEffect(() => {
+    if (deleting && data) {
+      setDeleting(false);
+    }
+  }, [data, deleting]);
 
   useEffect(() => {
     if (!(enableKeyboard && data && data.versions.length > 1)) {
@@ -123,13 +161,14 @@ export function useIterations(
       if (pos < 0) {
         return;
       }
-      if (e.key === "ArrowLeft" && pos > 0 && !switching) {
+      if (e.key === "ArrowLeft" && pos > 0 && !switching && !deleting) {
         e.preventDefault();
         void activate(versionIndices[pos - 1] ?? data.active);
       } else if (
         e.key === "ArrowRight" &&
         pos < versionIndices.length - 1 &&
-        !switching
+        !switching &&
+        !deleting
       ) {
         e.preventDefault();
         void activate(versionIndices[pos + 1] ?? data.active);
@@ -137,13 +176,15 @@ export function useIterations(
     };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, [enableKeyboard, data, switching, activate]);
+  }, [enableKeyboard, data, switching, deleting, activate]);
 
   return {
     data,
     loading,
     switching,
+    deleting,
     activate,
+    removeVersion,
     reload,
   };
 }

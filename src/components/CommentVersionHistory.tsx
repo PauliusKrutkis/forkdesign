@@ -1,4 +1,4 @@
-import { ChevronDown, ChevronUp } from "lucide-react";
+import { Trash2 } from "lucide-react";
 import { useMemo, useState } from "react";
 import { cn } from "../lib/utils";
 import { AdaptiveThumb } from "./comment-thumb";
@@ -8,19 +8,54 @@ import { Badge } from "./ui/badge";
 import { Button } from "./ui/button";
 import type { IterationsData, IterationVersion } from "./useIterations";
 
-type TimelineItem =
-  | { kind: "reply"; date: string; reply: CommentReply; replyIndex: number }
-  | { kind: "version"; date: string; version: IterationVersion };
-
 interface CommentVersionHistoryProps {
   active: number;
   disabled?: boolean;
   onActivate: (v: number) => void;
+  onDeleteVersion?: (v: number) => Promise<void>;
   onThumbClick?: (src: string) => void;
   renderReply: (reply: CommentReply, replyIndex: number) => React.ReactNode;
   replies?: CommentReply[];
   switching?: boolean;
   versions: IterationVersion[];
+}
+
+/** User-facing version label (1-based), e.g. `v2`. */
+export function formatVersionDisplay(v: number): string {
+  return `v${v + 1}`;
+}
+
+type TimelineItem =
+  | {
+      kind: "reply";
+      reply: CommentReply;
+      replyIndex: number;
+      sortKey: number;
+    }
+  | { kind: "version"; version: IterationVersion; sortKey: number };
+
+function parseSortKey(iso: string | undefined): number {
+  if (!iso) {
+    return 0;
+  }
+  const ts = Date.parse(iso);
+  return Number.isNaN(ts) ? 0 : ts;
+}
+
+function compareTimelineItems(a: TimelineItem, b: TimelineItem): number {
+  if (b.sortKey !== a.sortKey) {
+    return b.sortKey - a.sortKey;
+  }
+  if (a.kind === "reply" && b.kind === "reply") {
+    return b.replyIndex - a.replyIndex;
+  }
+  if (a.kind === "version" && b.kind === "version") {
+    return b.version.v - a.version.v;
+  }
+  if (a.kind === "reply" && b.kind === "version") {
+    return -1;
+  }
+  return 1;
 }
 
 export function CommentVersionHistory({
@@ -29,36 +64,42 @@ export function CommentVersionHistory({
   replies = [],
   renderReply,
   onActivate,
+  onDeleteVersion,
   onThumbClick,
   switching = false,
   disabled = false,
 }: CommentVersionHistoryProps) {
-  const items = useMemo(() => {
-    const list: TimelineItem[] = [];
+  const timeline = useMemo(() => {
+    const items: TimelineItem[] = [];
+
+    for (const version of versions) {
+      items.push({
+        kind: "version",
+        version,
+        sortKey: parseSortKey(version.createdAt),
+      });
+    }
+
     for (let i = 0; i < replies.length; i++) {
       const reply = replies[i];
       if (!reply) {
         continue;
       }
-      list.push({
+      items.push({
         kind: "reply",
-        date: reply.date,
         reply,
         replyIndex: i,
+        sortKey: parseSortKey(reply.date),
       });
     }
-    for (const version of versions) {
-      list.push({
-        kind: "version",
-        date: version.createdAt ?? new Date(0).toISOString(),
-        version,
-      });
-    }
-    list.sort((a, b) => Date.parse(b.date) - Date.parse(a.date));
-    return list;
+
+    items.sort(compareTimelineItems);
+    return items;
   }, [replies, versions]);
 
-  if (items.length === 0) {
+  const hasContent = timeline.length > 0 || replies.some(Boolean);
+
+  if (!hasContent) {
     return null;
   }
 
@@ -73,21 +114,24 @@ export function CommentVersionHistory({
         ) : null}
       </div>
       <ul className="m-0 list-none space-y-2.5 p-0">
-        {items.map((item) =>
+        {timeline.map((item) =>
           item.kind === "reply" ? (
             <li key={`reply-${item.replyIndex}`}>
               {renderReply(item.reply, item.replyIndex)}
             </li>
           ) : (
-            <VersionHistoryRow
-              active={active}
-              disabled={disabled}
-              key={`version-${item.version.v}`}
-              onActivate={onActivate}
-              onThumbClick={onThumbClick}
-              switching={switching}
-              version={item.version}
-            />
+            <li key={`version-${item.version.v}`}>
+              <VersionHistoryRow
+                active={active}
+                canDelete={item.version.v > 0 && Boolean(onDeleteVersion)}
+                disabled={disabled}
+                onActivate={onActivate}
+                onDeleteVersion={onDeleteVersion}
+                onThumbClick={onThumbClick}
+                switching={switching}
+                version={item.version}
+              />
+            </li>
           )
         )}
       </ul>
@@ -99,30 +143,60 @@ function VersionHistoryRow({
   version,
   active,
   onActivate,
+  onDeleteVersion,
   onThumbClick,
   switching,
   disabled,
+  canDelete,
 }: {
   version: IterationVersion;
   active: number;
   onActivate: (v: number) => void;
+  onDeleteVersion?: (v: number) => Promise<void>;
   onThumbClick?: (src: string) => void;
   switching: boolean;
   disabled: boolean;
+  canDelete: boolean;
 }) {
-  const [expanded, setExpanded] = useState(false);
+  const [deleteConfirming, setDeleteConfirming] = useState(false);
+  const [deleteBusy, setDeleteBusy] = useState(false);
   const isActive = version.v === active;
-  const summary = version.summary ?? (version.v === 0 ? "Baseline" : "AI fix");
   const label = version.v === 0 ? "Baseline" : "Fix";
 
+  const requestDelete = () => {
+    if (!onDeleteVersion || deleteBusy || disabled) {
+      return;
+    }
+    setDeleteConfirming(true);
+  };
+
+  const cancelDelete = () => {
+    setDeleteConfirming(false);
+  };
+
+  const confirmDelete = async () => {
+    if (!onDeleteVersion || deleteBusy) {
+      return;
+    }
+    setDeleteBusy(true);
+    try {
+      await onDeleteVersion(version.v);
+      setDeleteConfirming(false);
+    } catch {
+      setDeleteConfirming(false);
+    } finally {
+      setDeleteBusy(false);
+    }
+  };
+
   return (
-    <li
+    <div
       className={cn(
         "border-l-2 pl-2.5",
         isActive ? "border-primary" : "border-border"
       )}
     >
-      <div className="flex items-start gap-2">
+      <div className="flex items-center gap-2">
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-1.5">
             <Badge
@@ -132,7 +206,7 @@ function VersionHistoryRow({
               {label}
             </Badge>
             <span className="font-mono text-muted-foreground text-xs tabular-nums">
-              v{version.v + 1}
+              {formatVersionDisplay(version.v)}
             </span>
             {isActive ? (
               <span className="font-medium text-[10px] text-primary">
@@ -143,40 +217,60 @@ function VersionHistoryRow({
               {formatTimelineDate(version.createdAt)}
             </span>
           </div>
-          <button
-            className="mt-1 flex w-full items-start gap-1 text-left"
-            onClick={() => setExpanded((prev) => !prev)}
-            type="button"
-          >
-            <p
-              className={cn(
-                "m-0 flex-1 text-muted-foreground text-sm leading-snug",
-                !expanded && "line-clamp-2"
-              )}
-            >
-              {summary}
-            </p>
-            {summary.length > 60 ? (
-              <span className="mt-0.5 shrink-0 text-muted-foreground">
-                {expanded ? (
-                  <ChevronUp aria-hidden className="h-3.5 w-3.5" />
-                ) : (
-                  <ChevronDown aria-hidden className="h-3.5 w-3.5" />
-                )}
+          {deleteConfirming ? (
+            <div className="mt-2 flex flex-wrap items-center gap-1.5">
+              <span className="text-foreground text-xs">
+                Delete {formatVersionDisplay(version.v)}?
               </span>
-            ) : null}
-          </button>
-          {isActive ? null : (
-            <Button
-              className="mt-2 h-7 px-2 text-xs"
-              disabled={disabled || switching}
-              onClick={() => onActivate(version.v)}
-              size="sm"
-              type="button"
-              variant="outline"
-            >
-              {switching ? "Switching…" : "Use this version"}
-            </Button>
+              <Button
+                className="h-7 px-2 text-xs"
+                disabled={deleteBusy}
+                onClick={cancelDelete}
+                size="sm"
+                type="button"
+                variant="ghost"
+              >
+                Cancel
+              </Button>
+              <Button
+                className="h-7 px-2 text-xs"
+                disabled={deleteBusy}
+                onClick={() => void confirmDelete()}
+                size="sm"
+                type="button"
+                variant="destructive"
+              >
+                {deleteBusy ? "Deleting…" : "Delete"}
+              </Button>
+            </div>
+          ) : (
+            <div className="mt-2 flex flex-wrap items-center gap-1.5">
+              {isActive ? null : (
+                <Button
+                  className="h-7 px-2 text-xs"
+                  disabled={disabled || switching}
+                  onClick={() => onActivate(version.v)}
+                  size="sm"
+                  type="button"
+                  variant="outline"
+                >
+                  {switching ? "Switching…" : "Use this version"}
+                </Button>
+              )}
+              {canDelete ? (
+                <Button
+                  className="h-7 gap-1 px-2 text-xs hover:bg-destructive/10 hover:text-destructive"
+                  disabled={disabled || switching || deleteBusy}
+                  onClick={requestDelete}
+                  size="sm"
+                  type="button"
+                  variant="ghost"
+                >
+                  <Trash2 aria-hidden className="h-3.5 w-3.5" />
+                  Delete
+                </Button>
+              ) : null}
+            </div>
           )}
         </div>
         <AdaptiveThumb
@@ -184,7 +278,7 @@ function VersionHistoryRow({
           src={version.png}
         />
       </div>
-    </li>
+    </div>
   );
 }
 

@@ -45,6 +45,46 @@ describe("buildIteratePrompt", () => {
     });
     expect(prompt).toContain('data-view="hero"');
   });
+
+  it("includes version-scoped replies for the active version", () => {
+    const prompt = buildIteratePrompt({
+      ...base,
+      activeVersion: 1,
+      replies: [
+        {
+          author: "alice@co",
+          date: "2026-05-01T12:00:00Z",
+          text: "Still too bold",
+          v: 1,
+        },
+        {
+          author: "bob@co",
+          date: "2026-05-01T13:00:00Z",
+          text: "Wrong version",
+          v: 0,
+        },
+      ],
+    });
+    expect(prompt).toContain("## Additional feedback (on v2)");
+    expect(prompt).toContain('"Still too bold" — alice@co');
+    expect(prompt).not.toContain("Wrong version");
+  });
+
+  it("includes unversioned replies as supplemental feedback", () => {
+    const prompt = buildIteratePrompt({
+      ...base,
+      activeVersion: 0,
+      replies: [
+        {
+          author: "alice@co",
+          date: "2026-05-01T12:00:00Z",
+          text: "General note",
+        },
+      ],
+    });
+    expect(prompt).toContain("## Unversioned feedback");
+    expect(prompt).toContain('"General note" — alice@co');
+  });
 });
 
 describe("shouldIncludeScreenshotInPrompt", () => {

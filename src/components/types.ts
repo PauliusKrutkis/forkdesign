@@ -3,6 +3,8 @@ export interface CommentReply {
   /** ISO 8601 date string */
   date: string;
   text: string;
+  /** 0-based iteration version this reply refers to (matches marker `active`). */
+  v?: number;
 }
 
 export interface CommentProps {

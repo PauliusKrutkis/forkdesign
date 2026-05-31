@@ -157,4 +157,15 @@ describe("readCommentsFromSource", () => {
       { author: "u", date: "2026-05-02", text: "ack" },
     ]);
   });
+
+  it("reads optional v on each reply", () => {
+    const src = wrap(
+      `      <button data-comment-anchor="a1">Save</button>
+      {/* @comment id="c1" anchor="a1" text="hi" author="x@y.z" date="2026-05-01T00:00:00Z" replies=[{"author":"u","date":"2026-05-02","text":"ack","v":1}] */}`
+    );
+    const { comments } = readCommentsFromSource(src);
+    expect(comments[0]?.replies).toEqual([
+      { author: "u", date: "2026-05-02", text: "ack", v: 1 },
+    ]);
+  });
 });

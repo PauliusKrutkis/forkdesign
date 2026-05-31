@@ -9,6 +9,7 @@ import {
   parseManifestJson,
   patchIterationsManifest,
   readIterationsManifest,
+  removeVersionFromManifest,
 } from "./iterations-manifest.ts";
 
 describe("parseManifestJson", () => {
@@ -27,6 +28,24 @@ describe("parseManifestJson", () => {
 
   it("returns empty versions for invalid json", () => {
     expect(parseManifestJson("not json").versions).toEqual({});
+  });
+});
+
+describe("removeVersionFromManifest", () => {
+  it("drops one version without removing others", () => {
+    const base = parseManifestJson(
+      JSON.stringify({
+        versions: {
+          "0": { summary: "Baseline", createdAt: "2026-01-01T00:00:00.000Z" },
+          "1": { summary: "Fix v1", createdAt: "2026-01-02T00:00:00.000Z" },
+          "2": { summary: "Fix v2", createdAt: "2026-01-03T00:00:00.000Z" },
+        },
+      })
+    );
+    const next = removeVersionFromManifest(base, 1);
+    expect(next.versions["0"]?.summary).toBe("Baseline");
+    expect(next.versions["1"]).toBeUndefined();
+    expect(next.versions["2"]?.summary).toBe("Fix v2");
   });
 });
 

@@ -13,6 +13,7 @@ import { createPortal } from "react-dom";
 import { cn } from "../lib/utils";
 import {
   CommentVersionHistory,
+  formatVersionDisplay,
   hasMultipleVersions,
   shouldShowVersionHistory,
 } from "./CommentVersionHistory";
@@ -24,6 +25,7 @@ import { ShortcutHint, withCtrl } from "./ShortcutHint";
 import { effectiveBackgroundColor } from "./screenshot";
 import type { OverlayModel } from "./settings";
 import type { CommentReply, RegisteredComment } from "./types";
+import { Badge } from "./ui/badge";
 import { Button } from "./ui/button";
 import { Textarea } from "./ui/textarea";
 import { useIterations } from "./useIterations";
@@ -37,7 +39,7 @@ interface CommentBubbleProps {
   onEdit?: (id: string, text: string) => Promise<void>;
   onEditReply?: (id: string, replyIndex: number, text: string) => Promise<void>;
   onResolve?: (id: string) => void;
-  onSubmitReply?: (id: string, text: string) => Promise<void>;
+  onSubmitReply?: (id: string, text: string, v?: number) => Promise<void>;
   rect: DOMRect;
   skipDeleteConfirmation?: boolean;
 }
@@ -101,7 +103,9 @@ export function CommentBubble({
   const {
     data: iterations,
     switching: versionSwitching,
+    deleting: versionDeleting,
     activate: activateVersion,
+    removeVersion: removeIterationVersion,
     reload: reloadIterations,
   } = useIterations(commentId, { enableKeyboard: Boolean(lead) });
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -235,7 +239,8 @@ export function CommentBubble({
     setReplyBusy(true);
     setReplyError(null);
     try {
-      await onSubmitReply(lead.id, trimmed);
+      const replyV = iterations?.active ?? lead.active;
+      await onSubmitReply(lead.id, trimmed, replyV);
       setReplyOpen(false);
       setReplyDraft("");
     } catch (err) {
@@ -426,7 +431,8 @@ export function CommentBubble({
 
   // Hotkeys local to the open bubble — registered only while this component
   // is mounted, so they don't fire when no bubble is open. Esc closes the
-  // lightbox first if it's open, else the bubble. Cmd/Ctrl+I fires "Fix
+  // lightbox first if it's open, then cancels inline flows (reply, edit,
+  // delete confirm) before closing the bubble. Cmd/Ctrl+I fires "Fix
   // with AI", Cmd/Ctrl+R fires "Resolve". Skipped when the user is in a
   // text input (e.g., a future inline reply textarea).
   useEffect(() => {
@@ -450,6 +456,18 @@ export function CommentBubble({
         if (deleteConfirming) {
           cancelDeleteConfirm();
           e.preventDefault();
+          return;
+        }
+        if (replyOpen) {
+          cancelReply();
+          e.preventDefault();
+          e.stopImmediatePropagation();
+          return;
+        }
+        if (editing) {
+          cancelEditing();
+          e.preventDefault();
+          e.stopImmediatePropagation();
           return;
         }
         onClose();
@@ -510,8 +528,8 @@ export function CommentBubble({
         setMode((prev) => (prev === "compact" ? "detailed" : "compact"));
       }
     };
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
+    document.addEventListener("keydown", onKey, true);
+    return () => document.removeEventListener("keydown", onKey, true);
   }, [
     lead,
     lightboxSrc,
@@ -522,12 +540,16 @@ export function CommentBubble({
     onEdit,
     onSubmitReply,
     deleteConfirming,
+    replyOpen,
+    editing,
     handleIterate,
     startEditing,
     openReplyComposer,
     requestDelete,
     confirmDelete,
     cancelDeleteConfirm,
+    cancelReply,
+    cancelEditing,
   ]);
 
   const maxBubbleHeight = viewport.height - 2 * VIEWPORT_PADDING;
@@ -698,9 +720,9 @@ export function CommentBubble({
           shouldShowVersionHistory(iterations) ? (
             <CommentVersionPicker
               data={iterations}
-              disabled={iterating}
+              disabled={iterating || versionDeleting}
               onActivate={(v) => void activateVersion(v)}
-              switching={versionSwitching}
+              switching={versionSwitching || versionDeleting}
             />
           ) : null}
           {mode === "detailed" &&
@@ -762,8 +784,9 @@ export function CommentBubble({
         shouldShowVersionHistory(iterations) ? (
           <CommentVersionHistory
             active={iterations.active}
-            disabled={iterating}
+            disabled={iterating || versionDeleting}
             onActivate={(v) => void activateVersion(v)}
+            onDeleteVersion={(v) => removeIterationVersion(v)}
             onThumbClick={(src) => setLightboxSrc(src)}
             renderReply={(reply, i) => (
               <ReplyItem
@@ -781,7 +804,7 @@ export function CommentBubble({
               />
             )}
             replies={lead.replies}
-            switching={versionSwitching}
+            switching={versionSwitching || versionDeleting}
             versions={iterations.versions}
           />
         ) : null}
@@ -792,27 +815,34 @@ export function CommentBubble({
         lead.replies &&
         lead.replies.length > 0 ? (
           <ul className="m-0 mt-3 list-none space-y-2.5 border-t p-0 pt-3">
-            {lead.replies.map((reply, i) => (
-              <ReplyItem
-                commentId={lead.id}
-                key={`${reply.author}-${reply.date}-${i}`}
-                onDelete={onDeleteReply}
-                onEdit={onEditReply}
-                onInteraction={() => {
-                  setEditing(false);
-                  setReplyOpen(false);
-                  setDeleteConfirming(false);
-                }}
-                reply={reply}
-                replyIndex={i}
-                skipDeleteConfirmation={skipDeleteConfirmation}
-              />
-            ))}
+            {[...lead.replies.entries()]
+              .reverse()
+              .map(([i, reply]) => (
+                <ReplyItem
+                  commentId={lead.id}
+                  key={`${reply.author}-${reply.date}-${i}`}
+                  onDelete={onDeleteReply}
+                  onEdit={onEditReply}
+                  onInteraction={() => {
+                    setEditing(false);
+                    setReplyOpen(false);
+                    setDeleteConfirming(false);
+                  }}
+                  reply={reply}
+                  replyIndex={i}
+                  skipDeleteConfirmation={skipDeleteConfirmation}
+                />
+              ))}
           </ul>
         ) : null}
 
         {mode === "detailed" && replyOpen ? (
           <div className="mt-3 space-y-2 border-t pt-3">
+            {iterations && shouldShowVersionHistory(iterations) ? (
+              <p className="m-0 text-muted-foreground text-xs">
+                Replying on {formatVersionDisplay(iterations.active)}
+              </p>
+            ) : null}
             <Textarea
               aria-label="Reply"
               className="min-h-[64px] resize-none text-sm leading-relaxed"
@@ -1132,6 +1162,27 @@ function Attribution({
   );
 }
 
+function ReplyVersionBadge({ v }: { v?: number }) {
+  if (v === undefined) {
+    return (
+      <Badge
+        className="h-5 shrink-0 px-1.5 font-normal text-[10px] text-muted-foreground"
+        variant="outline"
+      >
+        Unversioned
+      </Badge>
+    );
+  }
+  return (
+    <Badge
+      className="h-5 shrink-0 px-1.5 font-normal text-[10px]"
+      variant="outline"
+    >
+      Re: {formatVersionDisplay(v)}
+    </Badge>
+  );
+}
+
 function ReplyItem({
   reply,
   replyIndex,
@@ -1297,7 +1348,10 @@ function ReplyItem({
         {editing ? (
           <span />
         ) : (
-          <Attribution author={reply.author} date={reply.date} />
+          <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5">
+            <ReplyVersionBadge v={reply.v} />
+            <Attribution author={reply.author} date={reply.date} />
+          </div>
         )}
         {!editing && (onEdit || onDelete) ? (
           <div className="flex shrink-0 items-center gap-0.5">

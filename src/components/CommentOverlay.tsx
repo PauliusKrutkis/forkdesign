@@ -414,7 +414,7 @@ export function CommentOverlay({
   }, []);
 
   const handleSubmitReply = useCallback(
-    async (id: string, text: string) => {
+    async (id: string, text: string, v?: number) => {
       const author =
         settings.author.trim() ||
         (typeof window !== "undefined" &&
@@ -428,7 +428,13 @@ export function CommentOverlay({
       const res = await fetch(`/api/comments/${encodeURIComponent(id)}`, {
         method: "PATCH",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ reply: { text, author: String(author) } }),
+        body: JSON.stringify({
+          reply: {
+            text,
+            author: String(author),
+            ...(v !== undefined ? { v } : {}),
+          },
+        }),
       });
       if (!res.ok) {
         const body = (await res.json().catch(() => ({}))) as { error?: string };
@@ -825,7 +831,7 @@ function OpenBubble({
   onResolve: (id: string) => void;
   onDelete: (id: string) => Promise<void>;
   onEdit: (id: string, text: string) => Promise<void>;
-  onSubmitReply: (id: string, text: string) => Promise<void>;
+  onSubmitReply: (id: string, text: string, v?: number) => Promise<void>;
   onEditReply: (id: string, replyIndex: number, text: string) => Promise<void>;
   onDeleteReply: (id: string, replyIndex: number) => Promise<void>;
 }) {

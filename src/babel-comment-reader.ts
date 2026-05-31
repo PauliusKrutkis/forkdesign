@@ -508,7 +508,21 @@ function arrayOf(
       typeof obj.date === "string" &&
       typeof obj.text === "string"
     ) {
-      out.push({ author: obj.author, date: obj.date, text: obj.text });
+      const reply: CommentReply = {
+        author: obj.author,
+        date: obj.date,
+        text: obj.text,
+      };
+      if (
+        typeof obj.v === "number" &&
+        Number.isInteger(obj.v) &&
+        obj.v >= 0
+      ) {
+        reply.v = obj.v;
+      } else if (obj.v !== undefined) {
+        warnings.push(`${tag} replies: reply has invalid v, ignored`);
+      }
+      out.push(reply);
     } else {
       warnings.push(`${tag} replies: reply missing author/date/text, ignored`);
     }

@@ -1,4 +1,5 @@
 import type { FixModel } from "./models.ts";
+import type { PromptReply } from "./prompt.ts";
 
 /**
  * A scoped projection of agent activity for downstream progress UI.
@@ -11,11 +12,13 @@ export interface FixProgress {
 }
 
 export interface FixRunInput {
+  activeVersion?: number;
   anchor: string;
   file: string;
   model: FixModel;
   onEvent?: (event: FixProgress) => void;
   projectRoot: string;
+  replies?: PromptReply[];
   screenshot?: string;
   signal?: AbortSignal;
   text: string;

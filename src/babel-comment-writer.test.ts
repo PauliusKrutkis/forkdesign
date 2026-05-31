@@ -9,6 +9,7 @@ import {
   deleteCommentReply,
   extractDirectiveInner,
   injectExistingMarkerIntoSource,
+  replaceCommentMarkerInSource,
   updateCommentActive,
   updateCommentReply,
   updateCommentText,
@@ -377,8 +378,53 @@ describe("appendCommentReply", () => {
     expect(reply.author).toBe("reviewer@local");
     expect(reply.text).toBe("ack");
     expect(reply.date.length).toBeGreaterThan(0);
+    expect(reply.v).toBe(0);
     const { comments } = readCommentsFromSource(readFileSync(file, "utf8"));
     expect(comments[0]?.replies).toEqual([reply]);
+  });
+
+  it("stamps explicit v when provided", async () => {
+    const result = await writeCommentToFile({
+      absolutePath: file,
+      line: 4,
+      column: 7,
+      text: "versioned thread",
+      author: "dev@local",
+    });
+    await updateCommentActive({
+      absolutePath: file,
+      commentId: result.id,
+      active: 2,
+    });
+    const reply = await appendCommentReply({
+      absolutePath: file,
+      commentId: result.id,
+      reply: { author: "reviewer@local", text: "on v3", v: 2 },
+    });
+    expect(reply.v).toBe(2);
+    const { comments } = readCommentsFromSource(readFileSync(file, "utf8"));
+    expect(comments[0]?.replies?.[0]?.v).toBe(2);
+  });
+
+  it("defaults v to marker active when omitted", async () => {
+    const result = await writeCommentToFile({
+      absolutePath: file,
+      line: 4,
+      column: 7,
+      text: "versioned thread",
+      author: "dev@local",
+    });
+    await updateCommentActive({
+      absolutePath: file,
+      commentId: result.id,
+      active: 1,
+    });
+    const reply = await appendCommentReply({
+      absolutePath: file,
+      commentId: result.id,
+      reply: { author: "reviewer@local", text: "follow-up" },
+    });
+    expect(reply.v).toBe(1);
   });
 
   it("appends to an existing replies array", async () => {
@@ -436,7 +482,7 @@ describe("updateCommentReply", () => {
     });
     const { comments } = readCommentsFromSource(readFileSync(file, "utf8"));
     expect(comments[0]?.replies).toEqual([
-      { author: reply.author, date: reply.date, text: "updated" },
+      { author: reply.author, date: reply.date, text: "updated", v: 0 },
     ]);
   });
 
@@ -594,6 +640,81 @@ describe("injectExistingMarkerIntoSource", () => {
         directiveInner
       )
     ).toThrow(/data-comment-anchor/);
+  });
+});
+
+describe("replaceCommentMarkerInSource", () => {
+  it("replaces a stale snapshot marker with the live directive including replies", async () => {
+    const result = await writeCommentToFile({
+      absolutePath: file,
+      line: 4,
+      column: 7,
+      text: "fix the button",
+      author: "dev@local",
+    });
+    await appendCommentReply({
+      absolutePath: file,
+      commentId: result.id,
+      reply: { author: "reviewer@co", text: "Looks good" },
+    });
+    const liveSource = readFileSync(file, "utf8");
+    const liveInner = extractDirectiveInner(liveSource, result.id);
+    expect(liveInner).toContain("replies=");
+
+    const staleSnapshot = liveSource.replace(
+      liveInner!,
+      ` @comment id="${result.id}" anchor="${result.anchor}" text="fix the button" author="dev@local" date="${result.date}" `
+    );
+    const { comments: before } = readCommentsFromSource(staleSnapshot);
+    expect(before[0]?.replies ?? []).toHaveLength(0);
+
+    const out = replaceCommentMarkerInSource(
+      staleSnapshot,
+      result.id,
+      liveInner!
+    );
+    const { comments: after, warnings } = readCommentsFromSource(out);
+    expect(warnings).toEqual([]);
+    expect(after[0]?.replies).toEqual([
+      expect.objectContaining({
+        author: "reviewer@co",
+        text: "Looks good",
+        v: 0,
+      }),
+    ]);
+  });
+
+  it("preserves versioned replies when replacing a stale snapshot marker", async () => {
+    const result = await writeCommentToFile({
+      absolutePath: file,
+      line: 4,
+      column: 7,
+      text: "fix the button",
+      author: "dev@local",
+    });
+    await updateCommentActive({
+      absolutePath: file,
+      commentId: result.id,
+      active: 1,
+    });
+    await appendCommentReply({
+      absolutePath: file,
+      commentId: result.id,
+      reply: { author: "reviewer@co", text: "On v2", v: 1 },
+    });
+    const liveSource = readFileSync(file, "utf8");
+    const liveInner = extractDirectiveInner(liveSource, result.id);
+    const staleSnapshot = liveSource.replace(
+      liveInner!,
+      ` @comment id="${result.id}" anchor="${result.anchor}" text="fix the button" author="dev@local" date="${result.date}" active=1 `
+    );
+    const out = replaceCommentMarkerInSource(
+      staleSnapshot,
+      result.id,
+      liveInner!
+    );
+    const { comments: after } = readCommentsFromSource(out);
+    expect(after[0]?.replies?.[0]?.v).toBe(1);
   });
 });
 

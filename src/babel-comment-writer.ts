@@ -210,6 +210,77 @@ export function extractDirectiveInner(
   return result;
 }
 
+/**
+ * Replace the `{/* @comment id="<commentId>" ... *\/}` block in `source` with
+ * `directiveInner` (raw text between `/*` and `*\/`). Used when activating an
+ * iteration snapshot so overlay metadata (replies, text, resolved, etc.) from
+ * the live marker is not clobbered by an older snapshot copy of the directive.
+ */
+export function replaceCommentMarkerInSource(
+  source: string,
+  commentId: string,
+  directiveInner: string
+): string {
+  const ast = recast.parse(source, { parser: babelTsParser });
+  let replaced = false;
+  recast.visit(ast, {
+    visitJSXExpressionContainer(p) {
+      if (replaced) {
+        return false;
+      }
+      const node = p.node as t.JSXExpressionContainer;
+      if (node.expression.type !== "JSXEmptyExpression") {
+        this.traverse(p);
+        return;
+      }
+      const blocks: t.Comment[] = [];
+      pushComments(node.expression.innerComments, blocks);
+      pushComments(node.expression.leadingComments, blocks);
+      pushComments(node.expression.trailingComments, blocks);
+      for (const block of blocks) {
+        if (block.type !== "CommentBlock") {
+          continue;
+        }
+        const trimmed = block.value.trim();
+        if (!trimmed.startsWith("@comment")) {
+          continue;
+        }
+        const idMatch = block.value.match(/\bid="([^"]+)"/);
+        if (!idMatch || idMatch[1] !== commentId) {
+          continue;
+        }
+        block.value = directiveInner;
+        replaced = true;
+        return false;
+      }
+      this.traverse(p);
+      return;
+    },
+  });
+  if (!replaced) {
+    throw new WriteError(
+      `no @comment with id="${commentId}" found in source`,
+      404
+    );
+  }
+
+  const output = recast.print(ast).code;
+  try {
+    parseBabel(output, {
+      sourceType: "module",
+      plugins: ["jsx", "typescript"],
+      errorRecovery: false,
+    });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    throw new WriteError(
+      `replaceCommentMarkerInSource: generated output failed to re-parse: ${message}`,
+      500
+    );
+  }
+  return output;
+}
+
 // ---------------------------------------------------------------------------
 // Inject a pre-built marker into a source string (no disk I/O)
 // ---------------------------------------------------------------------------
@@ -421,6 +492,8 @@ export interface AppendCommentReplyInput {
   reply: {
     author: string;
     text: string;
+    /** 0-based iteration version; defaults to marker `active` when omitted. */
+    v?: number;
   };
 }
 
@@ -428,6 +501,7 @@ export interface AppendCommentReplyResult {
   author: string;
   date: string;
   text: string;
+  v: number;
 }
 
 /**
@@ -445,18 +519,29 @@ export async function appendCommentReply(
   if (text.length === 0) {
     throw new WriteError("reply text must be non-empty", 400);
   }
-  const reply: AppendCommentReplyResult = {
-    author,
-    date: new Date().toISOString(),
-    text,
-  };
+  if (
+    input.reply.v !== undefined &&
+    (!Number.isInteger(input.reply.v) || input.reply.v < 0)
+  ) {
+    throw new WriteError("reply v must be a non-negative integer", 400);
+  }
+  const date = new Date().toISOString();
+  let stampedV = input.reply.v ?? 0;
   await mutateCommentDirectiveById(
     input.absolutePath,
     input.commentId,
-    (raw) => appendReplyOnDirective(raw, reply),
+    (raw) => {
+      stampedV = input.reply.v ?? readActiveFromDirective(raw);
+      return appendReplyOnDirective(raw, {
+        author,
+        date,
+        text,
+        v: stampedV,
+      });
+    },
     "appendCommentReply"
   );
-  return reply;
+  return { author, date, text, v: stampedV };
 }
 
 export interface UpdateCommentReplyInput {
@@ -515,6 +600,7 @@ interface StoredCommentReply {
   author: string;
   date: string;
   text: string;
+  v?: number;
 }
 
 async function mutateCommentDirectiveById(
@@ -607,6 +693,18 @@ function pushComments(
  *   - Missing: append ` active=N` at the end of the directive token list,
  *     preserving any trailing whitespace that was on the original line.
  */
+function readActiveFromDirective(raw: string): number {
+  const match = raw.match(/\bactive=(-?[0-9]+)/);
+  if (!match?.[1]) {
+    return 0;
+  }
+  const n = Number.parseInt(match[1], 10);
+  if (!Number.isInteger(n) || n < 0) {
+    return 0;
+  }
+  return n;
+}
+
 function setActiveOnDirective(raw: string, active: number): string {
   // Replace existing `active=<digits>` (handle optional minus, though we
   // forbid negative on input). Word-boundary so we don't match e.g.
@@ -725,11 +823,19 @@ function readRepliesFromDirective(raw: string): StoredCommentReply[] {
         typeof obj.date === "string" &&
         typeof obj.text === "string"
       ) {
-        out.push({
+        const reply: StoredCommentReply = {
           author: obj.author,
           date: obj.date,
           text: obj.text,
-        });
+        };
+        if (
+          typeof obj.v === "number" &&
+          Number.isInteger(obj.v) &&
+          obj.v >= 0
+        ) {
+          reply.v = obj.v;
+        }
+        out.push(reply);
       }
     }
     return out;

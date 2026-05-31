@@ -1,9 +1,18 @@
 import path from "node:path";
 
+export interface PromptReply {
+  author: string;
+  date: string;
+  text: string;
+  v?: number;
+}
+
 export interface PromptInput {
+  activeVersion?: number;
   anchor: string;
   file: string;
   projectRoot: string;
+  replies?: PromptReply[];
   screenshot?: string;
   text: string;
   view?: string;
@@ -64,6 +73,32 @@ export function buildIteratePrompt(input: PromptInput): string {
       "",
       "## View context",
       `The element is inside the \`data-view="${input.view}"\` region.`
+    );
+  }
+
+  const activeVersion = input.activeVersion ?? 0;
+  const versionReplies =
+    input.replies?.filter((r) => r.v === activeVersion) ?? [];
+  const unversionedReplies =
+    input.replies?.filter((r) => r.v === undefined) ?? [];
+
+  if (versionReplies.length > 0) {
+    parts.push(
+      "",
+      `## Additional feedback (on v${activeVersion + 1})`,
+      ...versionReplies.map(
+        (r) => `- "${r.text}" — ${r.author}, ${r.date}`
+      )
+    );
+  }
+
+  if (unversionedReplies.length > 0) {
+    parts.push(
+      "",
+      "## Unversioned feedback",
+      ...unversionedReplies.map(
+        (r) => `- "${r.text}" — ${r.author}, ${r.date}`
+      )
     );
   }
 
