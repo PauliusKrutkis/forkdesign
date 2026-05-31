@@ -18,7 +18,7 @@
     "tailwind-merge": "^3.6.0"
   },
   "devDependencies": {
-    "@biomejs/biome": "2.4.15",
+    "@biomejs/biome": "2.4.16",
     "@types/babel__traverse": "^7.28.0",
     "@types/node": "^24.12.3",
     "@types/react": "^19.2.14",
