@@ -32,7 +32,6 @@ import {
   readFile,
   rename,
   rm,
-  unlink,
   writeFile,
 } from "node:fs/promises";
 import type { IncomingMessage, ServerResponse } from "node:http";
@@ -66,11 +65,14 @@ import {
 } from "./fix/index.ts";
 import { getFixRuntimeConfig } from "./fix/config.ts";
 import {
-  deleteVersionFromManifest,
+  deleteVersionArtifactsAllRoots,
   enrichVersionMeta,
+  findVersionPngPath,
+  findVersionSnapshotPath,
+  listCompleteIterationVersionsAllRoots,
   patchIterationsManifest,
   readIterationsManifest,
-  resolveIterationsDir,
+  resolveIterationDirRoots,
   tsxMtimeMs,
   versionEntryFromManifest,
 } from "./iterations-manifest.ts";
@@ -182,8 +184,7 @@ export function comments(options: CommentsPluginOptions = {}): Plugin {
         }
         // Distinguish the three routes by URL path. The middleware mount
         // strips the `/api/iterations` prefix, so we look at the remainder.
-        const url = new URL(req.url ?? "", "http://localhost");
-        const sub = url.pathname; // e.g. "", "/", "/activate", "/new"
+        const sub = iterationsSubpath(req.url ?? "");
 
         if (req.method === "GET" && (sub === "" || sub === "/")) {
           handleIterationsList(req, res, projectRoot, excludeSrcPrefixes).catch(
@@ -922,51 +923,20 @@ async function handleIterationsList(
     return;
   }
 
-  const iterDir = resolveIterationsDir(projectRoot, id);
-  if (!iterDir) {
+  const iterationRoots = resolveIterationDirRoots(projectRoot, id);
+  if (iterationRoots.length === 0) {
     sendError(res, 404, `iterations dir not found: ${id}`);
     return;
   }
 
-  let entries: string[];
-  try {
-    entries = await readdir(iterDir);
-  } catch (err) {
-    sendError(res, 500, err instanceof Error ? err.message : String(err));
-    return;
-  }
-
+  const iterDir = iterationRoots[0];
   const manifest = await readIterationsManifest(iterDir);
 
-  // Collect the (v=N, hasTsx, hasPng) set in one pass.
-  const present: Map<number, { tsx: boolean; png: boolean }> = new Map();
-  for (const name of entries) {
-    const m = name.match(/^v(\d+)\.(tsx|png)$/);
-    if (!m) {
-      continue;
-    }
-    const version = m[1];
-    if (version === undefined) {
-      continue;
-    }
-    const n = Number.parseInt(version, 10);
-    if (!Number.isFinite(n)) {
-      continue;
-    }
-    const slot = present.get(n) ?? { tsx: false, png: false };
-    if (m[2] === "tsx") {
-      slot.tsx = true;
-    } else {
-      slot.png = true;
-    }
-    present.set(n, slot);
-  }
+  const versionIndices = await listCompleteIterationVersionsAllRoots(
+    iterationRoots
+  );
 
-  const versions = [...present.entries()]
-    .filter(([, slot]) => slot.tsx && slot.png)
-    .map(([n]) => n)
-    .sort((a, b) => a - b)
-    .map((n) => {
+  const versions = versionIndices.map((n) => {
       const meta = enrichVersionMeta(
         n,
         versionEntryFromManifest(manifest, n),
@@ -1000,48 +970,30 @@ type IterationApplyResult =
   | { ok: true }
   | { ok: false; status: number; message: string };
 
-/** Version indices where both v{N}.tsx and v{N}.png exist in `iterDir`. */
-async function listCompleteIterationVersions(
-  iterDir: string
-): Promise<number[]> {
-  let entries: string[];
-  try {
-    entries = await readdir(iterDir);
-  } catch {
-    return [];
+/** Normalized path after `/api/iterations` (handles mount-stripped and full URLs). */
+function iterationsSubpath(reqUrl: string): string {
+  const url = new URL(reqUrl, "http://localhost");
+  let sub = url.pathname;
+  if (sub.startsWith("/api/iterations")) {
+    sub = sub.slice("/api/iterations".length) || "/";
   }
-  const present: Map<number, { tsx: boolean; png: boolean }> = new Map();
-  for (const name of entries) {
-    const m = name.match(/^v(\d+)\.(tsx|png)$/);
-    if (!m?.[1]) {
-      continue;
-    }
-    const n = Number.parseInt(m[1], 10);
-    if (!Number.isFinite(n)) {
-      continue;
-    }
-    const slot = present.get(n) ?? { tsx: false, png: false };
-    if (m[2] === "tsx") {
-      slot.tsx = true;
-    } else {
-      slot.png = true;
-    }
-    present.set(n, slot);
+  if (!sub.startsWith("/")) {
+    sub = `/${sub}`;
   }
-  return [...present.entries()]
-    .filter(([, slot]) => slot.tsx && slot.png)
-    .map(([n]) => n)
-    .sort((a, b) => a - b);
+  if (sub.length > 1 && sub.endsWith("/")) {
+    sub = sub.slice(0, -1);
+  }
+  return sub;
 }
 
 async function applyIterationVersionToSource(
   found: FoundComment,
-  iterDir: string,
+  iterationRoots: string[],
   id: string,
   v: number
 ): Promise<IterationApplyResult> {
-  const snapshotPath = path.join(iterDir, `v${v}.tsx`);
-  if (!(existsSync(snapshotPath) && statSync(snapshotPath).isFile())) {
+  const snapshotPath = findVersionSnapshotPath(iterationRoots, v);
+  if (!snapshotPath) {
     return {
       ok: false,
       status: 400,
@@ -1193,13 +1145,18 @@ async function handleIterationsActivate(
     return;
   }
 
-  const iterDir = resolveIterationsDir(projectRoot, id);
-  if (!iterDir) {
+  const iterationRoots = resolveIterationDirRoots(projectRoot, id);
+  if (iterationRoots.length === 0) {
     sendError(res, 404, `iterations dir not found: ${id}`);
     return;
   }
 
-  const applied = await applyIterationVersionToSource(found, iterDir, id, v);
+  const applied = await applyIterationVersionToSource(
+    found,
+    iterationRoots,
+    id,
+    v
+  );
   if (!applied.ok) {
     sendError(res, applied.status, applied.message);
     return;
@@ -1249,13 +1206,13 @@ async function handleIterationsDelete(
     return;
   }
 
-  const iterDir = resolveIterationsDir(projectRoot, id);
-  if (!iterDir) {
+  const iterationRoots = resolveIterationDirRoots(projectRoot, id);
+  if (iterationRoots.length === 0) {
     sendError(res, 404, `iterations dir not found: ${id}`);
     return;
   }
 
-  const versions = await listCompleteIterationVersions(iterDir);
+  const versions = await listCompleteIterationVersionsAllRoots(iterationRoots);
   if (!versions.includes(v)) {
     sendError(res, 400, `version v${v} not found`);
     return;
@@ -1271,34 +1228,12 @@ async function handleIterationsDelete(
 
   const targetActive = wasActive ? (remaining.at(-1) ?? 0) : currentActive;
 
-  for (const ext of ["tsx", "png"] as const) {
-    const filePath = path.join(iterDir, `v${v}.${ext}`);
-    try {
-      await unlink(filePath);
-    } catch (err) {
-      const code = (err as NodeJS.ErrnoException).code;
-      if (code !== "ENOENT") {
-        sendError(
-          res,
-          500,
-          err instanceof Error ? err.message : String(err)
-        );
-        return;
-      }
-    }
-  }
-
-  try {
-    await deleteVersionFromManifest(iterDir, v);
-  } catch (err) {
-    sendError(res, 500, err instanceof Error ? err.message : String(err));
-    return;
-  }
-
+  // Switch the live page before removing artifacts so a failed activate does
+  // not leave the comment pointing at a version whose files were deleted.
   if (wasActive) {
     const applied = await applyIterationVersionToSource(
       found,
-      iterDir,
+      iterationRoots,
       id,
       targetActive
     );
@@ -1306,6 +1241,13 @@ async function handleIterationsDelete(
       sendError(res, applied.status, applied.message);
       return;
     }
+  }
+
+  try {
+    await deleteVersionArtifactsAllRoots(iterationRoots, v);
+  } catch (err) {
+    sendError(res, 500, err instanceof Error ? err.message : String(err));
+    return;
   }
 
   res.statusCode = 200;
@@ -1558,8 +1500,8 @@ async function handleIterationsNew(
   }
 
   const nextTsx = path.join(iterDir, `v${nextV}.tsx`);
-  const v0Png = path.join(iterDir, "v0.png");
   const nextPng = path.join(iterDir, `v${nextV}.png`);
+  const iterationRoots = resolveIterationDirRoots(projectRoot, id);
 
   writeEvent({
     type: "progress",
@@ -1578,10 +1520,11 @@ async function handleIterationsNew(
     return;
   }
 
-  // Best-effort PNG copy. Real re-screenshot of the new visual state is a
-  // separate follow-up (would need headless browser or client-side hook).
+  // Best-effort PNG copy (baseline may live under public/ from comment POST).
+  // Real re-screenshot of the new visual state is a separate client follow-up.
   try {
-    if (existsSync(v0Png)) {
+    const v0Png = findVersionPngPath(iterationRoots, 0);
+    if (v0Png) {
       await copyFile(v0Png, nextPng);
     }
   } catch (err) {

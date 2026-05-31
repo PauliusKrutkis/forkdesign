@@ -29,6 +29,7 @@ export function useIterations(
   const [loading, setLoading] = useState(true);
   const [switching, setSwitching] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const reload = useCallback(async () => {
     try {
@@ -102,6 +103,7 @@ export function useIterations(
         return;
       }
       setDeleting(true);
+      setDeleteError(null);
       try {
         const res = await fetch("/api/iterations/delete", {
           method: "POST",
@@ -120,6 +122,11 @@ export function useIterations(
         if (typeof nextActive === "number") {
           setData((prev) => (prev ? { ...prev, active: nextActive } : prev));
         }
+      } catch (err) {
+        const message =
+          err instanceof Error ? err.message : "Failed to delete version";
+        setDeleteError(message);
+        throw err;
       } finally {
         setDeleting(false);
       }
@@ -183,6 +190,7 @@ export function useIterations(
     loading,
     switching,
     deleting,
+    deleteError,
     activate,
     removeVersion,
     reload,

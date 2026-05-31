@@ -10,6 +10,7 @@ import type { IterationsData, IterationVersion } from "./useIterations";
 
 interface CommentVersionHistoryProps {
   active: number;
+  deleteError?: string | null;
   disabled?: boolean;
   onActivate: (v: number) => void;
   onDeleteVersion?: (v: number) => Promise<void>;
@@ -61,6 +62,7 @@ function compareTimelineItems(a: TimelineItem, b: TimelineItem): number {
 export function CommentVersionHistory({
   versions,
   active,
+  deleteError = null,
   replies = [],
   renderReply,
   onActivate,
@@ -113,6 +115,9 @@ export function CommentVersionHistory({
           </HotkeyTip>
         ) : null}
       </div>
+      {deleteError ? (
+        <p className="m-0 mb-2 text-destructive text-xs">{deleteError}</p>
+      ) : null}
       <ul className="m-0 list-none space-y-2.5 p-0">
         {timeline.map((item) =>
           item.kind === "reply" ? (

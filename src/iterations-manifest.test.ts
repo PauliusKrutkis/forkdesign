@@ -1,10 +1,14 @@
-import { mkdtemp, readFile } from "node:fs/promises";
+import { existsSync } from "node:fs";
+import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   defaultSummaryForVersion,
+  deleteVersionArtifactsAllRoots,
   enrichVersionMeta,
+  findVersionSnapshotPath,
+  listCompleteIterationVersionsAllRoots,
   mergeVersionEntry,
   parseManifestJson,
   patchIterationsManifest,
@@ -87,6 +91,61 @@ describe("enrichVersionMeta", () => {
   it("defaultSummaryForVersion", () => {
     expect(defaultSummaryForVersion(0)).toBe("Baseline");
     expect(defaultSummaryForVersion(2)).toBe("AI fix");
+  });
+});
+
+describe("deleteVersionArtifactsAllRoots", () => {
+  it("removes version files from every iteration root", async () => {
+    const base = await mkdtemp(path.join(tmpdir(), "redline-iter-"));
+    const primary = path.join(base, "designs");
+    const legacy = path.join(base, "public");
+    await mkdir(primary, { recursive: true });
+    await mkdir(legacy, { recursive: true });
+    await writeFile(path.join(primary, "v0.tsx"), "baseline", "utf8");
+    await writeFile(path.join(primary, "v0.png"), "png0", "utf8");
+    await writeFile(path.join(primary, "v1.tsx"), "fix1", "utf8");
+    await writeFile(path.join(primary, "v1.png"), "png1", "utf8");
+    await writeFile(path.join(legacy, "v1.png"), "legacy-png1", "utf8");
+    await patchIterationsManifest(primary, 1, {
+      summary: "Fix v1",
+      createdAt: "2026-01-02T00:00:00.000Z",
+    });
+    await patchIterationsManifest(legacy, 1, {
+      summary: "Fix v1",
+      createdAt: "2026-01-02T00:00:00.000Z",
+    });
+
+    await deleteVersionArtifactsAllRoots([primary, legacy], 1);
+
+    expect(existsSync(path.join(primary, "v1.tsx"))).toBe(false);
+    expect(existsSync(path.join(primary, "v1.png"))).toBe(false);
+    expect(existsSync(path.join(legacy, "v1.png"))).toBe(false);
+    expect(existsSync(path.join(primary, "v0.tsx"))).toBe(true);
+    const manifest = await readIterationsManifest(primary);
+    expect(manifest?.versions["1"]).toBeUndefined();
+  });
+});
+
+describe("listCompleteIterationVersionsAllRoots", () => {
+  it("merges tsx/png across split roots", async () => {
+    const base = await mkdtemp(path.join(tmpdir(), "redline-merge-"));
+    const primary = path.join(base, "designs");
+    const legacy = path.join(base, "public");
+    await mkdir(primary, { recursive: true });
+    await mkdir(legacy, { recursive: true });
+    await writeFile(path.join(legacy, "v0.tsx"), "baseline", "utf8");
+    await writeFile(path.join(legacy, "v0.png"), "png0", "utf8");
+    await writeFile(path.join(primary, "v1.tsx"), "fix1", "utf8");
+    await writeFile(path.join(primary, "v1.png"), "png1", "utf8");
+
+    const versions = await listCompleteIterationVersionsAllRoots([
+      primary,
+      legacy,
+    ]);
+    expect(versions).toEqual([0, 1]);
+    expect(findVersionSnapshotPath([primary, legacy], 0)).toBe(
+      path.join(legacy, "v0.tsx")
+    );
   });
 });
 

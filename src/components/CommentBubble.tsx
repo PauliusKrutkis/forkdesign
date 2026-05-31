@@ -104,6 +104,7 @@ export function CommentBubble({
     data: iterations,
     switching: versionSwitching,
     deleting: versionDeleting,
+    deleteError: versionDeleteError,
     activate: activateVersion,
     removeVersion: removeIterationVersion,
     reload: reloadIterations,
@@ -784,6 +785,7 @@ export function CommentBubble({
         shouldShowVersionHistory(iterations) ? (
           <CommentVersionHistory
             active={iterations.active}
+            deleteError={versionDeleteError}
             disabled={iterating || versionDeleting}
             onActivate={(v) => void activateVersion(v)}
             onDeleteVersion={(v) => removeIterationVersion(v)}

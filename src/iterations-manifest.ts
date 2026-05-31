@@ -1,5 +1,5 @@
 import { existsSync, statSync } from "node:fs";
-import { readFile, writeFile } from "node:fs/promises";
+import { readdir, readFile, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 export interface VersionManifestEntry {
@@ -103,20 +103,129 @@ export function enrichVersionMeta(
 }
 
 /**
- * Canonical iteration store used by Fix/activate/list APIs. Falls back to the
- * legacy `public/designs/iterations` tree created at comment POST time.
+ * All on-disk iteration directories for a comment. Baseline artifacts from
+ * comment POST live under `public/designs/iterations/<id>/`; Fix snapshots
+ * are written under `designs/iterations/<id>/`. Both may exist at once.
+ */
+export function resolveIterationDirRoots(
+  projectRoot: string,
+  id: string
+): string[] {
+  const roots: string[] = [];
+  const primary = path.join(projectRoot, "designs", "iterations", id);
+  const legacy = path.join(projectRoot, "public", "designs", "iterations", id);
+  if (existsSync(primary) && statSync(primary).isDirectory()) {
+    roots.push(primary);
+  }
+  if (existsSync(legacy) && statSync(legacy).isDirectory()) {
+    if (!roots.includes(legacy)) {
+      roots.push(legacy);
+    }
+  }
+  return roots;
+}
+
+/**
+ * Canonical iteration store used by Fix/activate/list APIs. Prefers the Fix
+ * snapshot tree, then the legacy public tree from comment POST.
  */
 export function resolveIterationsDir(
   projectRoot: string,
   id: string
 ): string | null {
-  const primary = path.join(projectRoot, "designs", "iterations", id);
-  if (existsSync(primary) && statSync(primary).isDirectory()) {
-    return primary;
+  const roots = resolveIterationDirRoots(projectRoot, id);
+  return roots[0] ?? null;
+}
+
+/** Version indices where both v{N}.tsx and v{N}.png exist in `iterDir`. */
+export async function listCompleteIterationVersionsInDir(
+  iterDir: string
+): Promise<number[]> {
+  let entries: string[];
+  try {
+    entries = await readdir(iterDir);
+  } catch {
+    return [];
   }
-  const legacy = path.join(projectRoot, "public", "designs", "iterations", id);
-  if (existsSync(legacy) && statSync(legacy).isDirectory()) {
-    return legacy;
+  const present = new Map<number, { tsx: boolean; png: boolean }>();
+  for (const name of entries) {
+    const m = name.match(/^v(\d+)\.(tsx|png)$/);
+    if (!m?.[1]) {
+      continue;
+    }
+    const n = Number.parseInt(m[1], 10);
+    if (!Number.isFinite(n)) {
+      continue;
+    }
+    const slot = present.get(n) ?? { tsx: false, png: false };
+    if (m[2] === "tsx") {
+      slot.tsx = true;
+    } else {
+      slot.png = true;
+    }
+    present.set(n, slot);
+  }
+  return [...present.entries()]
+    .filter(([, slot]) => slot.tsx && slot.png)
+    .map(([n]) => n)
+    .sort((a, b) => a - b);
+}
+
+/** Merges version slots across every iteration root for a comment. */
+export async function listCompleteIterationVersionsAllRoots(
+  roots: string[]
+): Promise<number[]> {
+  const present = new Map<number, { tsx: boolean; png: boolean }>();
+  for (const iterDir of roots) {
+    let entries: string[];
+    try {
+      entries = await readdir(iterDir);
+    } catch {
+      continue;
+    }
+    for (const name of entries) {
+      const m = name.match(/^v(\d+)\.(tsx|png)$/);
+      if (!m?.[1]) {
+        continue;
+      }
+      const n = Number.parseInt(m[1], 10);
+      if (!Number.isFinite(n)) {
+        continue;
+      }
+      const slot = present.get(n) ?? { tsx: false, png: false };
+      if (m[2] === "tsx") {
+        slot.tsx = true;
+      } else {
+        slot.png = true;
+      }
+      present.set(n, slot);
+    }
+  }
+  return [...present.entries()]
+    .filter(([, slot]) => slot.tsx && slot.png)
+    .map(([n]) => n)
+    .sort((a, b) => a - b);
+}
+
+export function findVersionSnapshotPath(
+  roots: string[],
+  v: number
+): string | null {
+  for (const iterDir of roots) {
+    const snapshotPath = path.join(iterDir, `v${v}.tsx`);
+    if (existsSync(snapshotPath) && statSync(snapshotPath).isFile()) {
+      return snapshotPath;
+    }
+  }
+  return null;
+}
+
+export function findVersionPngPath(roots: string[], v: number): string | null {
+  for (const iterDir of roots) {
+    const pngPath = path.join(iterDir, `v${v}.png`);
+    if (existsSync(pngPath) && statSync(pngPath).isFile()) {
+      return pngPath;
+    }
   }
   return null;
 }
@@ -171,6 +280,27 @@ export async function deleteVersionFromManifest(
     iterDir,
     removeVersionFromManifest(existing, v)
   );
+}
+
+/** Remove v{N}.tsx/.png and manifest entry from every iteration root. */
+export async function deleteVersionArtifactsAllRoots(
+  roots: string[],
+  v: number
+): Promise<void> {
+  for (const iterDir of roots) {
+    for (const ext of ["tsx", "png"] as const) {
+      const filePath = path.join(iterDir, `v${v}.${ext}`);
+      try {
+        await unlink(filePath);
+      } catch (err) {
+        const code = (err as NodeJS.ErrnoException).code;
+        if (code !== "ENOENT") {
+          throw err;
+        }
+      }
+    }
+    await deleteVersionFromManifest(iterDir, v);
+  }
 }
 
 export function tsxMtimeMs(iterDir: string, v: number): number | null {
