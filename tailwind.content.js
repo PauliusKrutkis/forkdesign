@@ -11,7 +11,7 @@ const packageRoot = dirname(fileURLToPath(import.meta.url));
  */
 export const tailwindContent = [
   join(packageRoot, "src/**/*.{js,ts,jsx,tsx}"),
-  join(packageRoot, "src/components/ui/**/*.{js,ts,jsx,tsx}"),
+  join(packageRoot, "src/client/ui/**/*.{js,ts,jsx,tsx}"),
   join(packageRoot, "dist/**/*.{js,mjs,cjs}"),
 ];
 

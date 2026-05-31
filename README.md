@@ -218,7 +218,7 @@ import "redline/styles.css";
 
 Then `pnpm install` in the host and start its dev server (`pnpm dev`).
 
-**Day-to-day:** edit files under `redline/src/`. With the config above, React/CSS changes hot-reload in the host. **Restart the host dev server** after changes to redline's Vite plugins (`src/plugin.ts`, `src/source-loc-plugin.ts`) or after editing `package.json` exports — those load at startup.
+**Day-to-day:** edit files under `redline/src/`. With the config above, React/CSS changes hot-reload in the host. **Restart the host dev server** after changes to redline's Vite plugins (`src/server/plugins/comments.ts`, `src/server/plugins/source-loc.ts`) or after editing `package.json` exports — those load at startup.
 
 You do **not** need `pnpm build` in redline for UI work; the host reads `redline/src` directly via the `source` export condition.
 

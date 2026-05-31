@@ -13,7 +13,21 @@ Redline ships two public entry points (see `package.json` exports):
 
 **Critical constraint:** the browser module graph must never import Node builtins, `recast`, or `@babel/*`. The split in `src/index.ts` vs `src/plugin/index.ts` exists for this reason. Folder layout should make the boundary obvious at a glance.
 
-## Current layout (problems)
+## Current layout
+
+Migration complete (2026-05-31). Public entries unchanged; internals follow the target structure below.
+
+```
+src/
+├── index.ts                      # client public entry
+├── plugin/index.ts               # server public entry
+├── client/                       # browser-only (overlay, ui, settings, types)
+├── server/                       # node-only (plugins, api, comments, iterations, fix, platform)
+├── shared/fix-model.ts           # cross-runtime contract
+└── styles.css
+```
+
+## Previous layout (pre-migration problems)
 
 ```
 src/
@@ -35,14 +49,37 @@ src/
 | `plugin.ts` vs `plugin/index.ts` | Confusing: real code at root, entry in subfolder |
 | Root-level server files | No grouping by domain |
 | `components/settings.ts` → `fix/models.ts` | Client imports server-side fix module (boundary leak) |
+| `lib/utils.ts` at repo root | UI-only `cn()` helper looks like a global junk drawer |
 
-**Reference:** `src/fix/` is the template to replicate — types, config, strategies, colocated tests, single public surface via `fix/index.ts`.
+**Reference:** `src/server/fix/` follows the original `src/fix/` template — types, config, strategies, colocated tests, single public surface via `fix/index.ts`.
 
 ## Design principle: domain modules, not generic buckets
 
 Avoid a top-level tree like `models/`, `services/`, `tests/` for the whole repo. At ~80 files, generic folders hide intent (“Is `iterations-manifest` a model or a service?”).
 
 **Rule:** folder name = bounded context / feature. Inside each domain, use predictable subfolders by kind (`hooks/`, `lib/`, `ui/`, `strategies/`, etc.).
+
+### Avoiding junk drawers (`helpers/`, `shared/`, `lib/`)
+
+Top-level `helpers/`, `utils/`, `common/`, or a repo-wide `lib/` become catch-alls — anything that doesn’t fit ends up there and the name stops meaning anything.
+
+**Do not create repo-root buckets for miscellaneous code.** Helpers live *inside* the domain that owns them.
+
+| Location | Allowed contents | Not allowed |
+|----------|------------------|-------------|
+| `*/lib/` (inside a domain, e.g. `client/overlay/lib/`) | Pure functions used only within that domain | Cross-domain dumping ground |
+| `server/platform/` | Server-only cross-cutting infra: HTTP helpers, path safety, atomic I/O | Feature or domain logic |
+| `shared/` | Types/constants imported by **both** client and server, with **no** Node or React deps | “Used in two places on the same runtime”, business logic, growing file count |
+| `client/ui/cn.ts` | Tailwind/className merge for UI primitives | General client utilities |
+
+**Admission test** — before adding a file, ask:
+
+1. Used only inside one feature? → that feature’s folder (or `feature/lib/`).
+2. Server-only HTTP/path/I/O plumbing? → `server/platform/`.
+3. Truly cross-runtime type or constant (client **and** server)? → `shared/` (expect very few files).
+4. Used by two domains on the **same** runtime? → pick an **owner** domain; consumers import from there — do **not** add to `shared/`.
+
+If `shared/` grows beyond a handful of contract files, something is wrong — revisit ownership instead of expanding the folder.
 
 ## Target structure
 
@@ -65,6 +102,7 @@ src/
 │   ├── settings.ts
 │   ├── types.ts
 │   └── ui/                       # shadcn-style primitives
+│       └── cn.ts                 # className merge (clsx + tailwind-merge)
 │
 ├── server/                       # node-only
 │   ├── plugins/
@@ -84,16 +122,14 @@ src/
 │   ├── iterations/
 │   │   └── manifest.ts
 │   ├── fix/                      # existing module (move here)
-│   └── lib/                      # shared server utilities
+│   └── platform/                 # server cross-cutting infra (not feature logic)
 │       ├── path-safety.ts
 │       ├── http.ts
 │       └── atomic-write.ts
 │
-├── shared/                       # safe for client AND server
+├── shared/                       # cross-runtime contracts only (strict gate — see above)
 │   └── fix-model.ts              # FixModel type + VALID_FIX_MODELS
 │
-├── lib/
-│   └── utils.ts                  # cn() — client UI helper
 └── styles.css
 ```
 
@@ -103,10 +139,11 @@ src/
 |-------------|---------|
 | `client/` | Browser code only |
 | `server/` | Node / Vite plugin code only |
-| `shared/` | Types/constants with no Node or React deps |
+| `shared/` | Cross-runtime contracts only (types/constants; no Node/React; tiny) |
 | `*/hooks/` | React hooks |
-| `*/lib/` | Pure helpers (no components) |
+| `*/lib/` | Domain-scoped pure helpers (no components; not repo-wide) |
 | `*/ui/` | Presentational primitives |
+| `server/platform/` | Server infra shared across API/plugins (HTTP, paths, I/O) |
 | `server/api/` | HTTP middleware handlers |
 | `server/fix/strategies/` | AI fix backends |
 
@@ -119,17 +156,27 @@ src/
 | UI | `client/ui/` and `client/overlay/*.tsx` |
 | Tests | Colocated `*.test.ts` next to implementation (same as `fix/` today) |
 
-## Migration plan (incremental)
+## Migration plan (completed)
 
-Do not big-bang. Public exports (`redline`, `redline/plugin`) stay stable; restructure internals only.
+Delivered incrementally in seven PRs. Public exports (`redline`, `redline/plugin`) stayed stable throughout.
 
-### Phase 1 — Split the monolith (highest ROI)
+| Phase | Status | Outcome |
+|-------|--------|---------|
+| 1 — `shared/fix-model.ts` | Done | Client settings import cross-runtime contract, not `server/fix/` |
+| 2 — Group server files | Done | `server/comments/`, `server/iterations/`, `server/fix/`, `server/plugins/` |
+| 3 — `server/platform/` | Done | HTTP, path safety, atomic I/O extracted from monolith |
+| 4 — Comments API | Done | `server/api/comments/` + `server/comments/find-comment.ts` |
+| 5 — Iterations API + thin plugin | Done | `server/api/iterations/`, `server/plugins/comments.ts`; root `plugin.ts` removed |
+| 6 — Client restructure | Done | `client/overlay/`, `client/ui/cn.ts`, `client/settings.ts`, `client/types.ts` |
+| 7 — Tooling & docs | Done | `knip.jsonc`, `tailwind.content.js`, README, this doc |
+
+### Original phase notes (reference)
 
 Extract from `plugin.ts` into:
 
 - `server/api/comments/` — GET/POST/PATCH/DELETE handlers
 - `server/api/iterations/` — list, activate, new, screenshot
-- `server/lib/` — `readJsonBody`, `sendError`, atomic writes, path safety
+- `server/platform/` — `readJsonBody`, `sendError`, atomic writes, path safety
 - `server/comments/find-comment.ts` — `findCommentById`, `collectAllowedTsxFiles`
 
 Leave `server/plugins/comments.ts` as thin wiring (~100 lines).
@@ -145,7 +192,7 @@ Leave `server/plugins/comments.ts` as thin wiring (~100 lines).
 
 ### Phase 3 — Restructure client
 
-Move `components/*` → `client/overlay/` (+ `hooks/`, `lib/` subfolders). Update `src/index.ts` re-exports only.
+Move `components/*` → `client/overlay/` (+ `hooks/`, `lib/` subfolders). Move `lib/utils.ts` → `client/ui/cn.ts`. Update `src/index.ts` re-exports only.
 
 ### Phase 4 — Fix boundary leaks
 
@@ -154,7 +201,9 @@ Move `FixModel` and `VALID_FIX_MODELS` to `shared/fix-model.ts`. Client `setting
 ### Phase 5 — Document & enforce
 
 - Keep this doc updated as phases land
-- Optional: `tsconfig` path aliases (`@client/*`, `@server/*`, `@shared/*`)
+- Optional: `tsconfig` path aliases (`@client/*`, `@server/*`, `@shared/*`) — not added; relative imports used instead
+
+## Migration plan (archive — phase detail)
 
 ## Conventions
 
@@ -162,8 +211,9 @@ Move `FixModel` and `VALID_FIX_MODELS` to `shared/fix-model.ts`. Client `setting
 
 - React components: `PascalCase.tsx`
 - Hooks: `use*.ts` in `hooks/`
-- Pure helpers: `camelCase.ts` in `lib/`
-- Prefer consistent casing (e.g. align `comment-thumb.tsx` with `CommentBubble.tsx`)
+- Pure helpers: `camelCase.ts` in the owning domain’s `lib/` (never repo-root `helpers/` or `utils/`)
+- `client/ui/`: kebab-case filenames (shadcn primitives, e.g. `button.tsx`)
+- `client/overlay/`: PascalCase for feature components (e.g. `CommentBubble.tsx`)
 
 ### File size
 
@@ -180,6 +230,8 @@ One convention: colocated `*.test.ts` beside source (matches `fix/` and most of 
 
 ## What not to do
 
+- **Repo-root junk drawers** (`helpers/`, `utils/`, `common/`, top-level `lib/`) — put code in the owning domain instead
+- **Expanding `shared/`** for same-runtime reuse — pick a domain owner and import from there
 - **Pure type-based top-level tree** (`models/`, `services/`, `controllers/`) — wrong fit for a library this size
 - **Central `tests/` mirror** — doubles maintenance; harder to discover impl + spec together
 - **Rename package exports** — keep `redline` and `redline/plugin`
@@ -221,4 +273,4 @@ flowchart TB
 
 ---
 
-*Last updated: 2026-05-30*
+*Last updated: 2026-05-31 (migration complete)*
