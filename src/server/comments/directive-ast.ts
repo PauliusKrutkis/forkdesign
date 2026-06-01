@@ -47,21 +47,6 @@ export function forEachCommentBlock(
   });
 }
 
-export function findCommentBlockById(
-  ast: SourceFileAst,
-  commentId: string
-): CommentBlockMatch | null {
-  let found: CommentBlockMatch | null = null;
-  forEachCommentBlock(ast, ({ block }) => {
-    const idMatch = block.value.match(COMMENT_ID_ATTR_RE);
-    if (idMatch?.[1] === commentId) {
-      found = { block };
-      return false;
-    }
-  });
-  return found;
-}
-
 export function assertValidTsx(source: string, context: string): void {
   try {
     parseBabel(source, {

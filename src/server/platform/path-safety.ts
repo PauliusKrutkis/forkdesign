@@ -2,16 +2,6 @@ import path from "node:path";
 
 export const SRC_REL = "src";
 
-export function toPosixRelative(
-  projectRoot: string,
-  absolutePath: string
-): string {
-  return path
-    .relative(projectRoot, absolutePath)
-    .split(path.sep)
-    .join(path.posix.sep);
-}
-
 export type SafePathResult =
   | { ok: true; absolutePath: string; relativePath: string }
   | { ok: false; reason: string };
