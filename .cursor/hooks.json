@@ -2,9 +2,6 @@
   "hooks": {
     "afterFileEdit": [
       {
-        "command": "pnpm fix --skip=correctness/noUnusedImports"
-      },
-      {
         "command": "pnpm run fix --skip=correctness/noUnusedImports"
       }
     ]

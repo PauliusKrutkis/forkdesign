@@ -16,9 +16,12 @@ export const cursorCliStrategy: FixStrategy = {
   run: runCursorCliFix,
 };
 
-async function runCursorCliFix(input: FixInput): Promise<FixAttemptResult> {
+function runCursorCliFix(input: FixInput): Promise<FixAttemptResult> {
   if (!isComposerModel(input.model)) {
-    return { ok: false, error: `invalid Cursor CLI model: ${input.model}` };
+    return Promise.resolve({
+      ok: false,
+      error: `invalid Cursor CLI model: ${input.model}`,
+    });
   }
 
   const agentPath =
@@ -86,10 +89,11 @@ async function runCursorCliFix(input: FixInput): Promise<FixAttemptResult> {
 
     child.stdout?.on("data", (chunk: Buffer) => {
       stdoutBuffer += chunk.toString("utf8");
-      let nl: number;
-      while ((nl = stdoutBuffer.indexOf("\n")) >= 0) {
+      let nl = stdoutBuffer.indexOf("\n");
+      while (nl >= 0) {
         const line = stdoutBuffer.slice(0, nl).trim();
         stdoutBuffer = stdoutBuffer.slice(nl + 1);
+        nl = stdoutBuffer.indexOf("\n");
         if (!line) {
           continue;
         }

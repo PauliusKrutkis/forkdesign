@@ -48,6 +48,8 @@ export function resolveFixStrategy(model: FixModel): FixStrategy {
     case "claude-sonnet-4-6":
     case "claude-opus-4-7":
       return claudeStrategy;
+    default:
+      return claudeStrategy;
   }
 }
 
@@ -114,7 +116,7 @@ export async function runFix(input: FixRunInput): Promise<FixResult> {
   };
 }
 
-async function runFixAttempt(input: FixInput): Promise<FixAttemptResult> {
+function runFixAttempt(input: FixInput): Promise<FixAttemptResult> {
   const strategy = resolveFixStrategy(input.model);
   return strategy.run(input);
 }

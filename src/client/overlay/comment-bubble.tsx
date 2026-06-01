@@ -7,7 +7,7 @@ import {
   Trash2,
   X,
 } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { OverlayModel } from "../settings.ts";
 import type { CommentData } from "../types.ts";
 import { Button } from "../ui/button.tsx";
@@ -16,25 +16,27 @@ import { Textarea } from "../ui/textarea.tsx";
 import {
   ActionIconButton,
   ModeToggleButton,
-} from "./CommentBubbleActionButtons.tsx";
-import { CommentBubbleAttribution } from "./CommentBubbleAttribution.tsx";
-import { CommentBubbleLightbox } from "./CommentBubbleLightbox.tsx";
-import { CommentBubblePointer } from "./CommentBubblePointer.tsx";
-import { CommentBubbleReplyItem } from "./CommentBubbleReplyItem.tsx";
-import { AdaptiveThumb } from "./CommentThumb.tsx";
+} from "./comment-bubble-action-buttons.tsx";
+import { CommentBubbleAttribution } from "./comment-bubble-attribution.tsx";
+import { CommentBubbleLightbox } from "./comment-bubble-lightbox.tsx";
+import { CommentBubblePointer } from "./comment-bubble-pointer.tsx";
+import { CommentBubbleReplyItem } from "./comment-bubble-reply-item.tsx";
+import { AdaptiveThumb } from "./comment-thumb.tsx";
 import {
   CommentVersionHistory,
   formatVersionDisplay,
   hasMultipleVersions,
   shouldShowVersionHistory,
-} from "./CommentVersionHistory";
-import { CommentVersionPicker } from "./CommentVersionPicker";
-import { HotkeyTip } from "./HotkeyTip";
-import { type BubbleMode, useIterateFix } from "./hooks/useIterateFix.ts";
-import { useIterations } from "./hooks/useIterations.ts";
-import { formatElapsed, readViewport } from "./lib/bubbleFormatters.ts";
+} from "./comment-version-history.tsx";
+import { CommentVersionPicker } from "./comment-version-picker.tsx";
+import { type BubbleMode, useIterateFix } from "./hooks/use-iterate-fix.ts";
+import { useIterations } from "./hooks/use-iterations.ts";
+import { HotkeyTip } from "./hotkey-tip.tsx";
+import { formatElapsed, readViewport } from "./lib/bubble-formatters.ts";
+import { handleCommentBubbleKeydown } from "./lib/comment-bubble-keydown.ts";
+import { ignorePromiseRejection } from "./lib/ignore-promise-rejection.ts";
 import { dotRect, placeFloater } from "./lib/placement.ts";
-import { ShortcutHint, withCtrl } from "./ShortcutHint";
+import { ShortcutHint, withCtrl } from "./shortcut-hint.tsx";
 
 interface CommentBubbleProps {
   comments: CommentData[];
@@ -147,7 +149,7 @@ export function CommentBubble({
     }
   }, [replyOpen]);
 
-  const startEditing = () => {
+  const startEditing = useCallback(() => {
     if (!(lead && onEdit)) {
       return;
     }
@@ -156,13 +158,13 @@ export function CommentBubble({
     setEditDraft(lead.text);
     setEditError(null);
     setReplyOpen(false);
-  };
+  }, [lead, onEdit]);
 
-  const cancelEditing = () => {
+  const cancelEditing = useCallback(() => {
     setEditing(false);
     setEditDraft("");
     setEditError(null);
-  };
+  }, []);
 
   const saveEdit = async () => {
     if (!(lead && onEdit) || editBusy) {
@@ -186,19 +188,19 @@ export function CommentBubble({
     }
   };
 
-  const openReplyComposer = () => {
+  const openReplyComposer = useCallback(() => {
     setMode("detailed");
     setReplyOpen(true);
     setReplyDraft("");
     setReplyError(null);
     setEditing(false);
-  };
+  }, []);
 
-  const cancelReply = () => {
+  const cancelReply = useCallback(() => {
     setReplyOpen(false);
     setReplyDraft("");
     setReplyError(null);
-  };
+  }, []);
 
   const saveReply = async () => {
     if (!(lead && onSubmitReply) || replyBusy) {
@@ -223,7 +225,7 @@ export function CommentBubble({
     }
   };
 
-  const confirmDelete = async () => {
+  const confirmDelete = useCallback(async () => {
     if (!(lead && onDelete) || deleteBusy) {
       return;
     }
@@ -236,24 +238,24 @@ export function CommentBubble({
       setDeleteBusy(false);
       setDeleteConfirming(false);
     }
-  };
+  }, [lead, onDelete, deleteBusy]);
 
-  const requestDelete = () => {
+  const requestDelete = useCallback(() => {
     if (!(lead && onDelete) || deleteBusy) {
       return;
     }
     setDeleteError(null);
     if (skipDeleteConfirmation) {
-      void confirmDelete();
+      confirmDelete().catch(ignorePromiseRejection);
       return;
     }
     setMode("detailed");
     setDeleteConfirming(true);
-  };
+  }, [lead, onDelete, deleteBusy, skipDeleteConfirmation, confirmDelete]);
 
-  const cancelDeleteConfirm = () => {
+  const cancelDeleteConfirm = useCallback(() => {
     setDeleteConfirming(false);
-  };
+  }, []);
 
   useEffect(() => {
     const onResize = () => setViewport(readViewport());
@@ -290,93 +292,29 @@ export function CommentBubble({
       return;
     }
     const onKey = (e: KeyboardEvent) => {
-      const active = document.activeElement;
-      const inInput =
-        active &&
-        (active.tagName === "INPUT" ||
-          active.tagName === "TEXTAREA" ||
-          (active instanceof HTMLElement && active.isContentEditable));
-      if (e.key === "Escape") {
-        if (lightboxSrc) {
-          setLightboxSrc(null);
-          e.preventDefault();
-          e.stopImmediatePropagation();
-          return;
-        }
-        if (deleteConfirming) {
-          cancelDeleteConfirm();
-          e.preventDefault();
-          return;
-        }
-        if (replyOpen) {
-          cancelReply();
-          e.preventDefault();
-          e.stopImmediatePropagation();
-          return;
-        }
-        if (editing) {
-          cancelEditing();
-          e.preventDefault();
-          e.stopImmediatePropagation();
-          return;
-        }
-        onClose();
-        e.preventDefault();
-        return;
-      }
-      if (inInput) {
-        return;
-      }
-      const mod = e.metaKey || e.ctrlKey;
-      const plain = !(e.metaKey || e.ctrlKey || e.altKey || e.shiftKey);
-      const key = e.key.toLowerCase();
-      if (deleteConfirming) {
-        if (plain && key === "enter") {
-          e.preventDefault();
-          void confirmDelete();
-          return;
-        }
-        if (mod && e.key === "Backspace") {
-          e.preventDefault();
-          void confirmDelete();
-          return;
-        }
-      }
-      if (mod && key === "i") {
-        e.preventDefault();
-        if (!iterating) {
-          void handleIterate();
-        }
-      } else if (mod && key === "r") {
-        e.preventDefault();
-        onResolve?.(lead.id);
-      } else if (mod && e.key === "Backspace") {
-        // Destructive, so it takes a modifier — opens the inline confirm
-        // (or deletes outright when confirmation is skipped).
-        if (onDelete) {
-          e.preventDefault();
-          requestDelete();
-        }
-      } else if (plain && key === "e") {
-        if (onEdit) {
-          e.preventDefault();
-          startEditing();
-        }
-      } else if (plain && key === "r") {
-        if (onSubmitReply) {
-          e.preventDefault();
-          openReplyComposer();
-        }
-      } else if (e.key === "Tab") {
-        // Tab toggles compact/detailed when no modifiers are pressed.
-        // Without this guard a stray Tab while the bubble is focused would
-        // both shift the page focus AND toggle the mode.
-        if (e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) {
-          return;
-        }
-        e.preventDefault();
-        setMode((prev) => (prev === "compact" ? "detailed" : "compact"));
-      }
+      handleCommentBubbleKeydown(e, {
+        cancelDeleteConfirm,
+        cancelEditing,
+        cancelReply,
+        confirmDelete,
+        deleteConfirming,
+        editing,
+        handleIterate,
+        iterating,
+        lead,
+        lightboxSrc,
+        onClose,
+        onDelete,
+        onEdit,
+        onResolve,
+        onSubmitReply,
+        openReplyComposer,
+        replyOpen,
+        requestDelete,
+        setLightboxSrc,
+        setMode,
+        startEditing,
+      });
     };
     document.addEventListener("keydown", onKey, true);
     return () => document.removeEventListener("keydown", onKey, true);
@@ -437,7 +375,7 @@ export function CommentBubble({
       aria-label="Comment"
       className="pointer-events-auto fixed z-[9200] flex flex-col overflow-hidden rounded-lg border bg-background shadow-lg transition-[width] duration-200"
       data-comment-overlay="true"
-      onClick={(e) => e.stopPropagation()}
+      onPointerDown={(e) => e.stopPropagation()}
       ref={containerRef}
       role="dialog"
       style={{
@@ -519,7 +457,7 @@ export function CommentBubble({
                 onKeyDown={(e) => {
                   if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
                     e.preventDefault();
-                    void saveEdit();
+                    saveEdit().catch(ignorePromiseRejection);
                   }
                 }}
                 ref={editTextareaRef}
@@ -539,7 +477,9 @@ export function CommentBubble({
                 <Button
                   className="h-7 px-2 text-xs"
                   disabled={editBusy}
-                  onClick={() => void saveEdit()}
+                  onClick={() => {
+                    saveEdit().catch(ignorePromiseRejection);
+                  }}
                   size="sm"
                   type="button"
                 >
@@ -574,7 +514,9 @@ export function CommentBubble({
             <CommentVersionPicker
               data={iterations}
               disabled={iterating || versionDeleting}
-              onActivate={(v) => void activateVersion(v)}
+              onActivate={(v) => {
+                activateVersion(v).catch(ignorePromiseRejection);
+              }}
               switching={versionSwitching || versionDeleting}
             />
           ) : null}
@@ -639,7 +581,9 @@ export function CommentBubble({
             active={iterations.active}
             deleteError={versionDeleteError}
             disabled={iterating || versionDeleting}
-            onActivate={(v) => void activateVersion(v)}
+            onActivate={(v) => {
+              activateVersion(v).catch(ignorePromiseRejection);
+            }}
             onDeleteVersion={(v) => removeIterationVersion(v)}
             onThumbClick={(src) => setLightboxSrc(src)}
             renderReply={(reply, i) => (
@@ -703,7 +647,7 @@ export function CommentBubble({
               onKeyDown={(e) => {
                 if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
                   e.preventDefault();
-                  void saveReply();
+                  saveReply().catch(ignorePromiseRejection);
                 }
               }}
               placeholder="Write a reply…"
@@ -724,7 +668,9 @@ export function CommentBubble({
               <Button
                 className="h-7 px-2 text-xs"
                 disabled={replyBusy}
-                onClick={() => void saveReply()}
+                onClick={() => {
+                  saveReply().catch(ignorePromiseRejection);
+                }}
                 size="sm"
                 type="button"
               >
@@ -810,10 +756,7 @@ export function CommentBubble({
           ) : null}
 
           {deleteConfirming ? (
-            <div
-              className="absolute inset-0 z-10 flex items-center justify-end gap-1.5 bg-gradient-to-l from-55% from-background to-transparent pr-2 pl-8"
-              onClick={(e) => e.stopPropagation()}
-            >
+            <div className="absolute inset-0 z-10 flex items-center justify-end gap-1.5 bg-gradient-to-l from-55% from-background to-transparent pr-2 pl-8">
               <span className="mr-0.5 font-medium text-foreground text-xs">
                 Delete?
               </span>
@@ -833,7 +776,9 @@ export function CommentBubble({
                 <Button
                   className="h-7 px-2 text-xs"
                   disabled={deleteBusy}
-                  onClick={() => void confirmDelete()}
+                  onClick={() => {
+                    confirmDelete().catch(ignorePromiseRejection);
+                  }}
                   size="sm"
                   type="button"
                   variant="destructive"

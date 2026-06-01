@@ -10,17 +10,16 @@ function runTransform(
 ): { code: string } | null {
   const plugin = sourceLoc({ projectRoot, ...options });
   const hook = plugin.transform;
-  const fn =
-    typeof hook === "function"
-      ? hook
-      : hook && "handler" in hook
-        ? hook.handler
-        : null;
+  let fn: ((code: string, id: string) => unknown) | null = null;
+  if (typeof hook === "function") {
+    fn = hook;
+  } else if (hook && "handler" in hook) {
+    fn = hook.handler;
+  }
   if (!fn) {
     throw new Error("plugin has no transform hook");
   }
-  // @ts-expect-error — calling Vite transform hook without full PluginContext
-  const result = fn.call({}, code, id) as unknown;
+  const result = fn.call({}, code, id) as { code: string } | null | undefined;
   if (result == null) {
     return null;
   }

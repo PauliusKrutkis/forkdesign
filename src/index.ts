@@ -10,7 +10,7 @@
 export {
   CommentOverlay,
   type CommentOverlayProps,
-} from "./client/overlay/CommentOverlay.tsx";
+} from "./client/overlay/comment-overlay.tsx";
 export type { OverlaySettings } from "./client/settings.ts";
 // Types exported for consumers that want to type their own UI on top.
 export type {

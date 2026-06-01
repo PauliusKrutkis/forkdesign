@@ -13,6 +13,14 @@ import {
 } from "./writer-ast.ts";
 import { WriteError } from "./writer-errors.ts";
 
+const COMMENT_ID_ATTR_RE = /\bid="([^"]+)"/;
+const ACTIVE_ATTR_RE = /\bactive=(-?[0-9]+)/;
+const ACTIVE_VALUE_RE = /\bactive=-?[0-9]+/;
+const TRAILING_WHITESPACE_RE = /^([\s\S]*?)(\s*)$/;
+const TRAILING_SPACE_RE = /\s$/;
+const TEXT_ATTR_RE = /\btext=(?:"(?:\\.|[^"\\])*")/;
+const REPLIES_ATTR_RE = /\breplies=/;
+
 export interface StoredCommentReply {
   author: string;
   date: string;
@@ -58,7 +66,7 @@ export function extractDirectiveInner(
         if (!trimmed.startsWith("@comment")) {
           continue;
         }
-        const idMatch = block.value.match(/\bid="([^"]+)"/);
+        const idMatch = block.value.match(COMMENT_ID_ATTR_RE);
         if (!idMatch || idMatch[1] !== commentId) {
           continue;
         }
@@ -107,7 +115,7 @@ export function replaceCommentMarkerInSource(
         if (!trimmed.startsWith("@comment")) {
           continue;
         }
-        const idMatch = block.value.match(/\bid="([^"]+)"/);
+        const idMatch = block.value.match(COMMENT_ID_ATTR_RE);
         if (!idMatch || idMatch[1] !== commentId) {
           continue;
         }
@@ -204,7 +212,7 @@ export function injectExistingMarkerIntoSource(
 }
 
 export function readActiveFromDirective(raw: string): number {
-  const match = raw.match(/\bactive=(-?[0-9]+)/);
+  const match = raw.match(ACTIVE_ATTR_RE);
   if (!match?.[1]) {
     return 0;
   }
@@ -219,17 +227,16 @@ export function setActiveOnDirective(raw: string, active: number): string {
   // Replace existing `active=<digits>` (handle optional minus, though we
   // forbid negative on input). Word-boundary so we don't match e.g.
   // `inactive=...`.
-  const existing = /\bactive=-?[0-9]+/;
-  if (existing.test(raw)) {
-    return raw.replace(existing, `active=${active}`);
+  if (ACTIVE_VALUE_RE.test(raw)) {
+    return raw.replace(ACTIVE_VALUE_RE, `active=${active}`);
   }
   // Preserve trailing whitespace on the comment-block value so the
   // closing `*/` keeps its spacing. Split into [content][trailingSpace].
-  const m = raw.match(/^([\s\S]*?)(\s*)$/);
+  const m = raw.match(TRAILING_WHITESPACE_RE);
   const content = m ? m[1] : raw;
   const trail = m ? m[2] : "";
   // Add a single space between the last attr and our addition.
-  const sep = content.length > 0 && !/\s$/.test(content) ? " " : "";
+  const sep = content.length > 0 && !TRAILING_SPACE_RE.test(content) ? " " : "";
   return `${content}${sep}active=${active}${trail}`;
 }
 
@@ -239,14 +246,13 @@ export function setActiveOnDirective(raw: string, active: number): string {
  */
 export function setTextOnDirective(raw: string, text: string): string {
   const replacement = `text=${JSON.stringify(text)}`;
-  const existing = /\btext=(?:"(?:\\.|[^"\\])*")/;
-  if (!existing.test(raw)) {
+  if (!TEXT_ATTR_RE.test(raw)) {
     throw new WriteError(
       "setTextOnDirective: directive is missing required text attribute",
       500
     );
   }
-  return raw.replace(existing, replacement);
+  return raw.replace(TEXT_ATTR_RE, replacement);
 }
 
 export function appendReplyOnDirective(
@@ -289,7 +295,7 @@ function setRepliesOnDirective(
   replies: StoredCommentReply[]
 ): string {
   const serialized = `replies=${JSON.stringify(replies)}`;
-  const idx = raw.search(/\breplies=/);
+  const idx = raw.search(REPLIES_ATTR_RE);
   if (idx >= 0) {
     let pos = idx + "replies=".length;
     while (pos < raw.length && raw[pos] === " ") {
@@ -300,15 +306,15 @@ function setRepliesOnDirective(
       return raw.slice(0, idx) + serialized + raw.slice(bracket.next);
     }
   }
-  const m = raw.match(/^([\s\S]*?)(\s*)$/);
+  const m = raw.match(TRAILING_WHITESPACE_RE);
   const content = m ? m[1] : raw;
   const trail = m ? m[2] : "";
-  const sep = content.length > 0 && !/\s$/.test(content) ? " " : "";
+  const sep = content.length > 0 && !TRAILING_SPACE_RE.test(content) ? " " : "";
   return `${content}${sep}${serialized}${trail}`;
 }
 
 function readRepliesFromDirective(raw: string): StoredCommentReply[] {
-  const idx = raw.search(/\breplies=/);
+  const idx = raw.search(REPLIES_ATTR_RE);
   if (idx < 0) {
     return [];
   }
@@ -429,7 +435,7 @@ export async function mutateCommentDirectiveById(
         if (!trimmed.startsWith("@comment")) {
           continue;
         }
-        const idMatch = block.value.match(/\bid="([^"]+)"/);
+        const idMatch = block.value.match(COMMENT_ID_ATTR_RE);
         if (!idMatch || idMatch[1] !== commentId) {
           continue;
         }

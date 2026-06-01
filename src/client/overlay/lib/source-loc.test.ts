@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { findSourceLoc } from "./sourceLoc.ts";
+import { findSourceLoc } from "./source-loc.ts";
 
 describe("findSourceLoc", () => {
   beforeEach(() => {

@@ -6,7 +6,7 @@
   "ignore": ["src/client/ui/**"],
   "ignoreIssues": {
     "tailwind.content.js": ["duplicates"],
-    "src/client/overlay/CommentThumb.tsx": ["exports"],
+    "src/client/overlay/comment-thumb.tsx": ["exports"],
     "src/client/settings.ts": ["exports"],
     "src/server/fix/index.ts": ["exports", "types"],
     "src/server/fix/config.ts": ["exports"],

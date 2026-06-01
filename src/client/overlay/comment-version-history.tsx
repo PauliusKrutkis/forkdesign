@@ -4,12 +4,13 @@ import type { CommentReply } from "../types.ts";
 import { Badge } from "../ui/badge.tsx";
 import { Button } from "../ui/button.tsx";
 import { cn } from "../ui/cn.ts";
-import { AdaptiveThumb } from "./CommentThumb.tsx";
-import { HotkeyTip } from "./HotkeyTip";
+import { AdaptiveThumb } from "./comment-thumb.tsx";
 import type {
   IterationsData,
   IterationVersion,
-} from "./hooks/useIterations.ts";
+} from "./hooks/use-iterations.ts";
+import { HotkeyTip } from "./hotkey-tip.tsx";
+import { ignorePromiseRejection } from "./lib/ignore-promise-rejection.ts";
 
 interface CommentVersionHistoryProps {
   active: number;
@@ -243,7 +244,9 @@ function VersionHistoryRow({
               <Button
                 className="h-7 px-2 text-xs"
                 disabled={deleteBusy}
-                onClick={() => void confirmDelete()}
+                onClick={() => {
+                  confirmDelete().catch(ignorePromiseRejection);
+                }}
                 size="sm"
                 type="button"
                 variant="destructive"

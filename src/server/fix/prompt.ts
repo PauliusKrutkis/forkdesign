@@ -1,5 +1,28 @@
 import path from "node:path";
 
+const EXPLICIT_TEXT_COLOR_RE =
+  /\btext-(red|blue|green|yellow|orange|purple|pink|gray|grey|black|white|primary|foreground|muted)\b/;
+const EXPLICIT_BG_COLOR_RE =
+  /\bbg-(red|blue|green|yellow|orange|purple|pink|gray|grey|black|white|primary|background|muted)\b/;
+const EXPLICIT_FONT_RE = /\bfont-(bold|medium|semibold|light|normal)\b/;
+const EXPLICIT_LAYOUT_RE =
+  /\b(padding|margin|gap|rounded|border|shadow|opacity|size|width|height)\b/;
+const EXPLICIT_MAKE_CHANGE_RE =
+  /\b(make|change|set|add|use)\s+(it\s+)?(red|blue|green|bold|larger|smaller|bigger)\b/;
+const EXPLICIT_BACKTICK_RE = /`[^`]+`/;
+const EXPLICIT_CLASS_RE = /class(?:name)?[=:\s]/;
+const LEADING_SLASH_RE = /^\//;
+
+const EXPLICIT_FEEDBACK_PATTERNS = [
+  EXPLICIT_TEXT_COLOR_RE,
+  EXPLICIT_BG_COLOR_RE,
+  EXPLICIT_FONT_RE,
+  EXPLICIT_LAYOUT_RE,
+  EXPLICIT_MAKE_CHANGE_RE,
+  EXPLICIT_BACKTICK_RE,
+  EXPLICIT_CLASS_RE,
+] as const;
+
 export interface PromptReply {
   author: string;
   date: string;
@@ -25,17 +48,7 @@ export function shouldIncludeScreenshotInPrompt(text: string): boolean {
     return true;
   }
 
-  const explicitPatterns = [
-    /\btext-(red|blue|green|yellow|orange|purple|pink|gray|grey|black|white|primary|foreground|muted)\b/,
-    /\bbg-(red|blue|green|yellow|orange|purple|pink|gray|grey|black|white|primary|background|muted)\b/,
-    /\bfont-(bold|medium|semibold|light|normal)\b/,
-    /\b(padding|margin|gap|rounded|border|shadow|opacity|size|width|height)\b/,
-    /\b(make|change|set|add|use)\s+(it\s+)?(red|blue|green|bold|larger|smaller|bigger)\b/,
-    /`[^`]+`/,
-    /class(?:name)?[=:\s]/,
-  ];
-
-  return !explicitPatterns.some((pattern) => pattern.test(t));
+  return !EXPLICIT_FEEDBACK_PATTERNS.some((pattern) => pattern.test(t));
 }
 
 export function buildIteratePrompt(input: PromptInput): string {
@@ -58,7 +71,7 @@ export function buildIteratePrompt(input: PromptInput): string {
     const absScreenshot = path.join(
       input.projectRoot,
       "public",
-      input.screenshot.replace(/^\//, "")
+      input.screenshot.replace(LEADING_SLASH_RE, "")
     );
     parts.push(
       "",

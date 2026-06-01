@@ -1,5 +1,5 @@
 import { X } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Button } from "../ui/button.tsx";
 
@@ -12,6 +12,7 @@ export function CommentBubbleLightbox({
   onClose: () => void;
 }) {
   const [portalRoot, setPortalRoot] = useState<HTMLElement | null>(null);
+  const dialogRef = useRef<HTMLDialogElement | null>(null);
 
   useEffect(() => {
     setPortalRoot(
@@ -28,15 +29,20 @@ export function CommentBubbleLightbox({
   }, []);
 
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        e.preventDefault();
-        e.stopImmediatePropagation();
-        onClose();
-      }
+    const dialog = dialogRef.current;
+    if (!dialog) {
+      return;
+    }
+    dialog.showModal();
+    const onCancel = (e: Event) => {
+      e.preventDefault();
+      onClose();
     };
-    document.addEventListener("keydown", onKey, true);
-    return () => document.removeEventListener("keydown", onKey, true);
+    dialog.addEventListener("cancel", onCancel);
+    return () => {
+      dialog.removeEventListener("cancel", onCancel);
+      dialog.close();
+    };
   }, [onClose]);
 
   if (typeof document === "undefined" || !portalRoot) {
@@ -44,18 +50,18 @@ export function CommentBubbleLightbox({
   }
 
   return createPortal(
-    <div
+    <dialog
       aria-label="Comment screenshot"
       className="redline-lightbox-backdrop"
       data-comment-overlay="true"
-      onClick={onClose}
-      role="dialog"
+      ref={dialogRef}
     >
       <img
-        alt=""
+        alt="Comment screenshot"
         className="redline-lightbox-image"
-        onClick={(e) => e.stopPropagation()}
+        height={600}
         src={src}
+        width={800}
       />
       <Button
         aria-label="Close screenshot"
@@ -67,7 +73,7 @@ export function CommentBubbleLightbox({
       >
         <X className="h-4 w-4" />
       </Button>
-    </div>,
+    </dialog>,
     portalRoot
   );
 }

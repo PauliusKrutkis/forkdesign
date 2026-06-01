@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { ignorePromiseRejection } from "../lib/ignore-promise-rejection.ts";
 
 export interface IterationVersion {
   createdAt?: string;
@@ -58,10 +59,12 @@ export function useIterations(
         return;
       }
     };
-    void run();
+    run().catch(ignorePromiseRejection);
 
     if (import.meta.hot) {
-      const handler = () => void reload();
+      const handler = () => {
+        reload().catch(ignorePromiseRejection);
+      };
       import.meta.hot.on("vite:afterUpdate", handler);
       return () => {
         cancelled = true;
@@ -170,7 +173,9 @@ export function useIterations(
       }
       if (e.key === "ArrowLeft" && pos > 0 && !switching && !deleting) {
         e.preventDefault();
-        void activate(versionIndices[pos - 1] ?? data.active);
+        activate(versionIndices[pos - 1] ?? data.active).catch(
+          ignorePromiseRejection
+        );
       } else if (
         e.key === "ArrowRight" &&
         pos < versionIndices.length - 1 &&
@@ -178,7 +183,9 @@ export function useIterations(
         !deleting
       ) {
         e.preventDefault();
-        void activate(versionIndices[pos + 1] ?? data.active);
+        activate(versionIndices[pos + 1] ?? data.active).catch(
+          ignorePromiseRejection
+        );
       }
     };
     document.addEventListener("keydown", onKey);

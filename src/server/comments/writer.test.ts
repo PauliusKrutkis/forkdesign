@@ -17,6 +17,15 @@ import {
   writeCommentToFile,
 } from "./writer.ts";
 
+const FRAGMENT_LABEL_RE = /<>\s*<label/;
+const FRAGMENT_COMMENT_RE = /<\/label>[\s\S]*@comment[\s\S]*<\/>/;
+const NONEXISTENT_UUID_RE = /nonexistent-uuid-deadbeef/;
+const MISSING_ID_RE = /missing-id/;
+const OUT_OF_RANGE_RE = /out of range/;
+const DATA_COMMENT_ANCHOR_RE = /data-comment-anchor/;
+const TRIPLE_BLANK_LINE_RE = /\n\s*\n\s*\n/;
+const NOT_FOUND_RE = /not found/;
+
 const dir = mkdtempSync(path.join(tmpdir(), "babel-writer-test-"));
 
 afterAll(() => {
@@ -137,8 +146,8 @@ export function Card() {
     expect(out).toContain(`@comment id="${result.id}"`);
     expect(out).toContain(`text="label feels heavy"`);
     // The fragment wrap appears.
-    expect(out).toMatch(/<>\s*<label/);
-    expect(out).toMatch(/<\/label>[\s\S]*@comment[\s\S]*<\/>/);
+    expect(out).toMatch(FRAGMENT_LABEL_RE);
+    expect(out).toMatch(FRAGMENT_COMMENT_RE);
 
     // Reader round-trip.
     const { comments, warnings } = readCommentsFromSource(out);
@@ -288,7 +297,7 @@ describe("updateCommentActive", () => {
         commentId: "nonexistent-uuid-deadbeef",
         active: 1,
       })
-    ).rejects.toThrow(/nonexistent-uuid-deadbeef/);
+    ).rejects.toThrow(NONEXISTENT_UUID_RE);
   });
 
   it("reader round-trip returns the new active value after update", async () => {
@@ -357,7 +366,7 @@ describe("updateCommentText", () => {
         commentId: "missing-id",
         text: "nope",
       })
-    ).rejects.toThrow(/missing-id/);
+    ).rejects.toThrow(MISSING_ID_RE);
   });
 });
 
@@ -456,7 +465,7 @@ describe("appendCommentReply", () => {
         commentId: "missing-id",
         reply: { author: "a@local", text: "nope" },
       })
-    ).rejects.toThrow(/missing-id/);
+    ).rejects.toThrow(MISSING_ID_RE);
   });
 });
 
@@ -501,7 +510,7 @@ describe("updateCommentReply", () => {
         replyIndex: 0,
         text: "nope",
       })
-    ).rejects.toThrow(/out of range/);
+    ).rejects.toThrow(OUT_OF_RANGE_RE);
   });
 });
 
@@ -547,7 +556,7 @@ describe("deleteCommentReply", () => {
         commentId: result.id,
         replyIndex: 0,
       })
-    ).rejects.toThrow(/out of range/);
+    ).rejects.toThrow(OUT_OF_RANGE_RE);
   });
 });
 
@@ -613,10 +622,13 @@ describe("injectExistingMarkerIntoSource", () => {
       "<button>",
       `<button data-comment-anchor="${result.anchor}">`
     );
+    if (directiveInner === null) {
+      throw new Error("expected directive inner");
+    }
     const out = injectExistingMarkerIntoSource(
       legacySnapshot,
       result.anchor,
-      directiveInner!
+      directiveInner
     );
     const { comments, warnings } = readCommentsFromSource(out);
     expect(warnings).toEqual([]);
@@ -639,7 +651,7 @@ describe("injectExistingMarkerIntoSource", () => {
         anchor,
         directiveInner
       )
-    ).toThrow(/data-comment-anchor/);
+    ).toThrow(DATA_COMMENT_ANCHOR_RE);
   });
 });
 
@@ -661,8 +673,11 @@ describe("replaceCommentMarkerInSource", () => {
     const liveInner = extractDirectiveInner(liveSource, result.id);
     expect(liveInner).toContain("replies=");
 
+    if (liveInner === null) {
+      throw new Error("expected live directive");
+    }
     const staleSnapshot = liveSource.replace(
-      liveInner!,
+      liveInner,
       ` @comment id="${result.id}" anchor="${result.anchor}" text="fix the button" author="dev@local" date="${result.date}" `
     );
     const { comments: before } = readCommentsFromSource(staleSnapshot);
@@ -671,7 +686,7 @@ describe("replaceCommentMarkerInSource", () => {
     const out = replaceCommentMarkerInSource(
       staleSnapshot,
       result.id,
-      liveInner!
+      liveInner
     );
     const { comments: after, warnings } = readCommentsFromSource(out);
     expect(warnings).toEqual([]);
@@ -704,14 +719,17 @@ describe("replaceCommentMarkerInSource", () => {
     });
     const liveSource = readFileSync(file, "utf8");
     const liveInner = extractDirectiveInner(liveSource, result.id);
+    if (liveInner === null) {
+      throw new Error("expected live directive");
+    }
     const staleSnapshot = liveSource.replace(
-      liveInner!,
+      liveInner,
       ` @comment id="${result.id}" anchor="${result.anchor}" text="fix the button" author="dev@local" date="${result.date}" active=1 `
     );
     const out = replaceCommentMarkerInSource(
       staleSnapshot,
       result.id,
-      liveInner!
+      liveInner
     );
     const { comments: after } = readCommentsFromSource(out);
     expect(after[0]?.replies?.[0]?.v).toBe(1);
@@ -797,7 +815,7 @@ describe("deleteCommentMarker", () => {
 
     const out = readFileSync(file, "utf8");
     // No double blank lines left behind from the splice.
-    expect(out).not.toMatch(/\n\s*\n\s*\n/);
+    expect(out).not.toMatch(TRIPLE_BLANK_LINE_RE);
     // Re-parsing has to succeed; if not, deleteCommentMarker itself would have
     // thrown WriteError(500). Read for good measure.
     const { warnings } = readCommentsFromSource(out);
@@ -826,7 +844,7 @@ describe("deleteCommentMarker", () => {
     }
     expect(caught).toBeInstanceOf(WriteError);
     expect((caught as WriteError).status).toBe(404);
-    expect((caught as Error).message).toMatch(/not found/);
+    expect((caught as Error).message).toMatch(NOT_FOUND_RE);
   });
 
   it("preserves the rest of the source verbatim when removing one of three siblings on different anchors", async () => {

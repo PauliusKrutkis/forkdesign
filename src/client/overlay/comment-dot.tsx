@@ -2,7 +2,7 @@ import { Check, Pencil } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import type { CommentData } from "../types.ts";
 import { cn } from "../ui/cn.ts";
-import { useAnchorRects } from "./hooks/useAnchorElement.ts";
+import { useAnchorRects } from "./hooks/use-anchor-element.ts";
 import { dotRect } from "./lib/placement.ts";
 
 export interface DotInstanceTarget {
@@ -117,7 +117,7 @@ export function CommentDot({
               "pointer-events-auto fixed z-[9100] m-0 p-0 outline-none transition-transform duration-150 ease-out hover:scale-110 focus-visible:scale-110",
               isOpen && "scale-110"
             )}
-            key={instance}
+            key={`${anchor}-${instance}`}
             onBlur={() => onHover(null)}
             onClick={(e) => {
               e.stopPropagation();

@@ -3,6 +3,8 @@ import recast from "recast";
 import babelTsParser from "recast/parsers/babel-ts.js";
 import { WriteError } from "./writer-errors.ts";
 
+const INDENT_ONLY_RE = /^[ \t]*$/;
+
 export function pushComments(
   list: readonly t.Comment[] | null | undefined,
   out: t.Comment[]
@@ -412,7 +414,7 @@ function inferSiblingIndent(
       const nl = raw.lastIndexOf("\n");
       if (nl >= 0) {
         const indent = raw.slice(nl + 1);
-        if (/^[ \t]*$/.test(indent)) {
+        if (INDENT_ONLY_RE.test(indent)) {
           return indent;
         }
       }

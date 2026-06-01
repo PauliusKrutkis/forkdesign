@@ -1,9 +1,9 @@
 import type { ReactNode } from "react";
 import { Button } from "../ui/button.tsx";
 import { cn } from "../ui/cn.ts";
-import { HotkeyTip } from "./HotkeyTip";
-import type { BubbleMode } from "./hooks/useIterateFix.ts";
-import { ShortcutHint } from "./ShortcutHint";
+import type { BubbleMode } from "./hooks/use-iterate-fix.ts";
+import { HotkeyTip } from "./hotkey-tip.tsx";
+import { ShortcutHint } from "./shortcut-hint.tsx";
 
 export function ModeToggleButton({
   mode,

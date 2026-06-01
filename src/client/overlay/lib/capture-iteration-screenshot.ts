@@ -1,5 +1,6 @@
 import { toPng } from "html-to-image";
-import { cssEscape } from "./cssEscape.ts";
+import { cssEscape } from "./css-escape.ts";
+import { ignorePromiseRejection } from "./ignore-promise-rejection.ts";
 import { effectiveBackgroundColor } from "./screenshot.ts";
 
 /** Post-edit screenshot capture after HMR settles; failures degrade silently. */
@@ -47,7 +48,7 @@ export function captureAndUploadV(args: {
     debounceId = window.setTimeout(() => {
       window.requestAnimationFrame(() => {
         window.requestAnimationFrame(() => {
-          void run();
+          run().catch(ignorePromiseRejection);
         });
       });
     }, 150);

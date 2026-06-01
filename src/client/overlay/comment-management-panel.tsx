@@ -4,6 +4,7 @@ import type { CommentData } from "../types.ts";
 import { Badge } from "../ui/badge.tsx";
 import { Button } from "../ui/button.tsx";
 import { cn } from "../ui/cn.ts";
+import { ignorePromiseRejection } from "./lib/ignore-promise-rejection.ts";
 
 type CommentWithFile = CommentData & { file?: string };
 
@@ -144,19 +145,20 @@ function FileGroup({
         </span>
       </Button>
       {open ? (
-        <div>
+        <ul className="m-0 list-none p-0">
           {comments.map((c) => (
-            <CommentRow
-              comment={c}
-              jumpable
-              key={c.id}
-              navigable={false}
-              onDelete={onDelete}
-              onGoToPage={() => {}}
-              onJump={onJump}
-            />
+            <li key={c.id}>
+              <CommentRow
+                comment={c}
+                jumpable
+                navigable={false}
+                onDelete={onDelete}
+                onGoToPage={() => undefined}
+                onJump={onJump}
+              />
+            </li>
           ))}
-        </div>
+        </ul>
       ) : null}
     </section>
   );
@@ -249,10 +251,7 @@ function CommentRow({
           <p className="m-0 mt-1 text-destructive text-xs">{error}</p>
         ) : null}
       </div>
-      <div
-        className="flex shrink-0 items-center self-start"
-        onClick={(e) => e.stopPropagation()}
-      >
+      <div className="flex shrink-0 items-center self-start">
         <Button
           aria-label="Delete comment"
           className="h-7 w-7 text-muted-foreground opacity-0 transition-opacity hover:text-destructive focus-visible:opacity-100 group-hover:opacity-100"
@@ -269,10 +268,7 @@ function CommentRow({
       </div>
 
       {confirming ? (
-        <div
-          className="absolute inset-y-0 right-0 z-10 flex items-center gap-1.5 rounded-r-[inherit] bg-gradient-to-l from-55% from-background to-transparent pr-3 pl-14"
-          onClick={(e) => e.stopPropagation()}
-        >
+        <div className="absolute inset-y-0 right-0 z-10 flex items-center gap-1.5 rounded-r-[inherit] bg-gradient-to-l from-55% from-background to-transparent pr-3 pl-14">
           <span className="mr-0.5 font-medium text-foreground text-xs">
             Delete?
           </span>
@@ -294,7 +290,7 @@ function CommentRow({
             disabled={busy}
             onClick={(e) => {
               e.stopPropagation();
-              void handleDelete();
+              handleDelete().catch(ignorePromiseRejection);
             }}
             size="sm"
             type="button"
@@ -309,20 +305,9 @@ function CommentRow({
 
   if (interactive) {
     return (
-      <div
-        className={rowClass}
-        onClick={handleRowActivate}
-        onKeyDown={(e) => {
-          if (e.key === "Enter" || e.key === " ") {
-            e.preventDefault();
-            handleRowActivate();
-          }
-        }}
-        role="button"
-        tabIndex={0}
-      >
+      <button className={rowClass} onClick={handleRowActivate} type="button">
         {inner}
-      </div>
+      </button>
     );
   }
 
@@ -335,8 +320,10 @@ function Thumbnail({ src }: { src?: string }) {
       <img
         alt=""
         className="block h-9 w-9 shrink-0 rounded-md border bg-muted object-cover"
+        height={36}
         loading="lazy"
         src={src}
+        width={36}
       />
     );
   }
@@ -363,6 +350,7 @@ function Chevron({ rotated }: { rotated: boolean }) {
       viewBox="0 0 16 16"
       width="9"
     >
+      <title>{rotated ? "Collapse section" : "Expand section"}</title>
       <polyline points="3,5 8,11 13,5" />
     </svg>
   );

@@ -44,6 +44,10 @@ export * from "./writer-ast.ts";
 export * from "./writer-directive.ts";
 export * from "./writer-errors.ts";
 
+const COMMENT_ID_ATTR_RE = /\bid="([^"]+)"/;
+const ANCHOR_ATTR_RE = /\banchor="([^"]+)"/;
+const TRAILING_NEWLINE_INDENT_RE = /\n[ \t]*$/;
+
 export interface WriteCommentInput {
   /** Absolute path to the .tsx file. */
   absolutePath: string;
@@ -422,11 +426,11 @@ export async function deleteCommentMarker(
         if (!trimmed.startsWith("@comment")) {
           continue;
         }
-        const idMatch = block.value.match(/\bid="([^"]+)"/);
+        const idMatch = block.value.match(COMMENT_ID_ATTR_RE);
         if (!idMatch || idMatch[1] !== input.commentId) {
           continue;
         }
-        const anchorMatch = block.value.match(/\banchor="([^"]+)"/);
+        const anchorMatch = block.value.match(ANCHOR_ATTR_RE);
         anchor = anchorMatch ? (anchorMatch[1] ?? null) : null;
         matched = true;
         break;
@@ -482,7 +486,7 @@ export async function deleteCommentMarker(
     // Trim trailing `\n[ \t]*` so the next sibling on a new line lands flush
     // against the previous element's closing tag. Falls back to removing the
     // whole node when it was nothing but whitespace.
-    const stripped = text.replace(/\n[ \t]*$/, "");
+    const stripped = text.replace(TRAILING_NEWLINE_INDENT_RE, "");
     if (stripped.length === 0) {
       // It was purely whitespace — fold it into the splice so we don't leave
       // an orphan empty JSXText behind.
@@ -525,7 +529,7 @@ export async function deleteCommentMarker(
           if (!trimmed.startsWith("@comment")) {
             continue;
           }
-          const anchorMatch = block.value.match(/\banchor="([^"]+)"/);
+          const anchorMatch = block.value.match(ANCHOR_ATTR_RE);
           if (anchorMatch && anchorMatch[1] === targetAnchor) {
             anchorStillReferenced = true;
             return false;

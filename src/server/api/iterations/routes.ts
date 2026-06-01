@@ -22,6 +22,9 @@ import {
   runFix,
 } from "../../fix/index.ts";
 import type { FixModel } from "../../fix/models.ts";
+
+const VERSION_TSX_FILE_RE = /^v(\d+)\.tsx$/;
+
 import {
   deleteVersionArtifactsAllRoots,
   enrichVersionMeta,
@@ -624,7 +627,7 @@ export async function handleIterationsNew(
       const entries = await readdir(iterDir);
       let max = -1;
       for (const name of entries) {
-        const m = name.match(/^v(\d+)\.tsx$/);
+        const m = name.match(VERSION_TSX_FILE_RE);
         if (!m) {
           continue;
         }
@@ -697,12 +700,14 @@ export async function handleIterationsNew(
       active: nextV,
     });
   } catch (err) {
-    const message =
-      err instanceof WriteError
-        ? err.message
-        : err instanceof Error
-          ? err.message
-          : String(err);
+    let message: string;
+    if (err instanceof WriteError) {
+      message = err.message;
+    } else if (err instanceof Error) {
+      message = err.message;
+    } else {
+      message = String(err);
+    }
     endStream({ type: "done", ok: false, error: message });
     return;
   }

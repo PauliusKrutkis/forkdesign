@@ -1,0 +1,81 @@
+import { describe, expect, it } from "vitest";
+import {
+  parseActivateBody,
+  parseDeleteVersionBody,
+  parseScreenshotBody,
+} from "./parse-body.ts";
+
+describe("parseActivateBody", () => {
+  it("accepts a valid body", () => {
+    expect(parseActivateBody({ id: "comment-1", v: 2 })).toEqual({
+      ok: true,
+      value: { id: "comment-1", v: 2 },
+    });
+  });
+
+  it("rejects missing id", () => {
+    expect(parseActivateBody({ v: 1 })).toEqual({
+      ok: false,
+      reason: "field `id` must be a non-empty string",
+    });
+  });
+
+  it("rejects negative version", () => {
+    expect(parseActivateBody({ id: "comment-1", v: -1 })).toEqual({
+      ok: false,
+      reason: "field `v` must be a non-negative integer",
+    });
+  });
+});
+
+describe("parseDeleteVersionBody", () => {
+  it("accepts v >= 1", () => {
+    expect(parseDeleteVersionBody({ id: "comment-1", v: 1 })).toEqual({
+      ok: true,
+      value: { id: "comment-1", v: 1 },
+    });
+  });
+
+  it("rejects baseline v0 deletion", () => {
+    expect(parseDeleteVersionBody({ id: "comment-1", v: 0 })).toEqual({
+      ok: false,
+      reason:
+        "field `v` must be an integer >= 1 (baseline v0 cannot be deleted)",
+    });
+  });
+
+  it("rejects non-object body", () => {
+    expect(parseDeleteVersionBody(null)).toEqual({
+      ok: false,
+      reason: "body must be a JSON object",
+    });
+  });
+});
+
+describe("parseScreenshotBody", () => {
+  it("accepts a valid body", () => {
+    expect(
+      parseScreenshotBody({
+        id: "comment-1",
+        v: 0,
+        screenshotPng: "data:image/png;base64,abc",
+      })
+    ).toEqual({
+      ok: true,
+      value: {
+        id: "comment-1",
+        v: 0,
+        screenshotPng: "data:image/png;base64,abc",
+      },
+    });
+  });
+
+  it("rejects empty screenshotPng", () => {
+    expect(
+      parseScreenshotBody({ id: "comment-1", v: 0, screenshotPng: "" })
+    ).toEqual({
+      ok: false,
+      reason: "field `screenshotPng` must be a non-empty string",
+    });
+  });
+});

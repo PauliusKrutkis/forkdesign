@@ -19,14 +19,24 @@ export function AdaptiveThumb({
     <img
       alt=""
       className="h-full w-full object-contain"
+      height={dims.height}
       key={src}
-      onLoad={(e) => {
-        const img = e.currentTarget;
-        if (img.naturalWidth > 0 && img.naturalHeight > 0) {
-          setNatural({ w: img.naturalWidth, h: img.naturalHeight });
+      ref={(img) => {
+        if (!img) {
+          return;
+        }
+        const syncNatural = () => {
+          if (img.naturalWidth > 0 && img.naturalHeight > 0) {
+            setNatural({ w: img.naturalWidth, h: img.naturalHeight });
+          }
+        };
+        img.addEventListener("load", syncNatural);
+        if (img.complete) {
+          syncNatural();
         }
       }}
       src={src}
+      width={dims.width}
     />
   );
 
@@ -64,8 +74,10 @@ export function MicroThumb({ src }: { src: string }) {
       <img
         alt=""
         className="h-full w-full object-contain"
+        height={32}
         key={src}
         src={src}
+        width={32}
       />
     </span>
   );

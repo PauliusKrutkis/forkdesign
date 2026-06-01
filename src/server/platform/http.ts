@@ -4,12 +4,13 @@ export type ReadBodyResult =
   | { ok: true; value: unknown }
   | { ok: false; reason: string };
 
-export async function readJsonBody(
-  req: IncomingMessage
-): Promise<ReadBodyResult> {
+export function readJsonBody(req: IncomingMessage): Promise<ReadBodyResult> {
   const contentType = req.headers["content-type"] ?? "";
   if (!contentType.toString().toLowerCase().includes("application/json")) {
-    return { ok: false, reason: "expected content-type: application/json" };
+    return Promise.resolve({
+      ok: false,
+      reason: "expected content-type: application/json",
+    });
   }
   // 8 MiB ceiling — the body now carries an optional base64-encoded PNG of
   // the targeted element, which can run a few MB for big captures. The PNG

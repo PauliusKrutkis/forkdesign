@@ -6,21 +6,22 @@ import {
 } from "../settings.ts";
 import type { CommentData } from "../types.ts";
 import { TooltipProvider } from "../ui/tooltip.tsx";
-import { CommentBubble } from "./CommentBubble";
+import { CommentBubble } from "./comment-bubble.tsx";
 import {
   CommentComposer,
   type ComposerSubmission,
   type ComposerSubmitResult,
-} from "./CommentComposer";
-import type { DotInstanceTarget } from "./CommentDot";
-import { CommentDot } from "./CommentDot";
-import { CommentManagementPanel } from "./CommentManagementPanel";
-import { CommentSettingsPanel } from "./CommentSettingsPanel";
-import { CommentShell, type ShellTab } from "./CommentShell";
-import { useAnchorRects } from "./hooks/useAnchorElement.ts";
+} from "./comment-composer.tsx";
+import type { DotInstanceTarget } from "./comment-dot.tsx";
+import { CommentDot } from "./comment-dot.tsx";
+import { CommentManagementPanel } from "./comment-management-panel.tsx";
+import { CommentSettingsPanel } from "./comment-settings-panel.tsx";
+import { CommentShell, type ShellTab } from "./comment-shell.tsx";
+import { useAnchorRects } from "./hooks/use-anchor-element.ts";
+import { ignorePromiseRejection } from "./lib/ignore-promise-rejection.ts";
 import { dotRect, placeFloater } from "./lib/placement.ts";
-import { findSourceLoc } from "./lib/sourceLoc.ts";
-import { OverlayDock } from "./OverlayDock";
+import { findSourceLoc } from "./lib/source-loc.ts";
+import { OverlayDock } from "./overlay-dock.tsx";
 
 /**
  * Top-level comment overlay. Mounted once globally in App.tsx, guarded by
@@ -118,12 +119,14 @@ export function CommentOverlay({
         }
       }
     };
-    void load();
+    load().catch(ignorePromiseRejection);
 
     // import.meta.hot exists in Vite dev; production builds tree-shake the
     // overlay entirely so this branch isn't reachable in prod.
     if (import.meta.hot) {
-      const handler = () => void load();
+      const handler = () => {
+        load().catch(ignorePromiseRejection);
+      };
       import.meta.hot.on("vite:afterUpdate", handler);
       return () => {
         cancelled = true;
@@ -260,12 +263,12 @@ export function CommentOverlay({
     }
     const nodes = document.querySelectorAll("[data-comment-anchor]");
     const next = new Set<string>();
-    nodes.forEach((el) => {
+    for (const el of nodes) {
       const v = el.getAttribute("data-comment-anchor");
       if (v) {
         next.add(v);
       }
-    });
+    }
     setInDomAnchors(next);
   }, []);
 

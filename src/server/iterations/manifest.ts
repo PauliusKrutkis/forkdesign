@@ -12,6 +12,7 @@ export interface IterationsManifest {
 }
 
 const EMPTY_MANIFEST: IterationsManifest = { versions: {} };
+const VERSION_ASSET_FILE_RE = /^v(\d+)\.(tsx|png)$/;
 
 export function parseManifestJson(raw: string): IterationsManifest {
   let parsed: unknown;
@@ -151,7 +152,7 @@ export async function listCompleteIterationVersionsInDir(
   }
   const present = new Map<number, { tsx: boolean; png: boolean }>();
   for (const name of entries) {
-    const m = name.match(/^v(\d+)\.(tsx|png)$/);
+    const m = name.match(VERSION_ASSET_FILE_RE);
     if (!m?.[1]) {
       continue;
     }
@@ -186,7 +187,7 @@ export async function listCompleteIterationVersionsAllRoots(
       continue;
     }
     for (const name of entries) {
-      const m = name.match(/^v(\d+)\.(tsx|png)$/);
+      const m = name.match(VERSION_ASSET_FILE_RE);
       if (!m?.[1]) {
         continue;
       }

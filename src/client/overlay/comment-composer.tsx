@@ -1,12 +1,13 @@
 import { toPng } from "html-to-image";
 import { Check, SquareDashedMousePointer } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 import { Button } from "../ui/button.tsx";
 import { Kbd } from "../ui/kbd.tsx";
 import { Textarea } from "../ui/textarea.tsx";
-import { HotkeyTip } from "./HotkeyTip";
+import { HotkeyTip } from "./hotkey-tip.tsx";
+import { ignorePromiseRejection } from "./lib/ignore-promise-rejection.ts";
 import { effectiveBackgroundColor } from "./lib/screenshot.ts";
-import { withCtrl } from "./ShortcutHint";
+import { withCtrl } from "./shortcut-hint.tsx";
 
 export interface ComposerSubmission {
   /** anchor uuid assigned to the targeted element */
@@ -344,7 +345,7 @@ function ComposerPanel({
     <div
       className="pointer-events-auto fixed z-[9300] flex flex-col overflow-hidden rounded-lg border bg-background shadow-lg"
       data-comment-overlay="true"
-      onClick={(e) => e.stopPropagation()}
+      onPointerDown={(e) => e.stopPropagation()}
       style={{ left, top, width: PANEL_WIDTH }}
     >
       {/* Header — orients the user: what they're doing (left) and which element
@@ -379,7 +380,7 @@ function ComposerPanel({
           onKeyDown={(e) => {
             if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
               e.preventDefault();
-              void submit();
+              submit().catch(ignorePromiseRejection);
             }
             if (e.key === "Escape") {
               e.preventDefault();
@@ -422,21 +423,12 @@ function ComposerPanel({
           <Button
             disabled={!text.trim() || submitting || saved}
             onClick={() => {
-              void submit();
+              submit().catch(ignorePromiseRejection);
             }}
             size="sm"
             type="button"
           >
-            {submitting ? (
-              "Saving…"
-            ) : saved ? (
-              <>
-                <Check aria-hidden />
-                Saved
-              </>
-            ) : (
-              "Save"
-            )}
+            {saveButtonLabel(submitting, saved)}
           </Button>
         </div>
       </div>
@@ -553,14 +545,29 @@ async function captureElementScreenshot(
   }
 }
 
+function saveButtonLabel(submitting: boolean, saved: boolean): ReactNode {
+  if (submitting) {
+    return "Saving…";
+  }
+  if (saved) {
+    return (
+      <>
+        <Check aria-hidden />
+        Saved
+      </>
+    );
+  }
+  return "Save";
+}
+
 function randomUuid(): string {
   if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
     return crypto.randomUUID();
   }
   // Fallback for older runtimes — good enough for dev seeds.
   return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
-    const r = (Math.random() * 16) | 0;
-    const v = c === "x" ? r : (r & 0x3) | 0x8;
+    const r = Math.floor(Math.random() * 16);
+    const v = c === "x" ? r : (r % 4) + 8;
     return v.toString(16);
   });
 }

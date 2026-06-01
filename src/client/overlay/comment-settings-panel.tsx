@@ -3,7 +3,7 @@ import { Input } from "../ui/input.tsx";
 import { Kbd } from "../ui/kbd.tsx";
 import { Label } from "../ui/label.tsx";
 import { Switch } from "../ui/switch.tsx";
-import { DockPositionPicker } from "./DockPositionPicker";
+import { DockPositionPicker } from "./dock-position-picker.tsx";
 
 interface Props {
   onChange: (patch: Partial<OverlaySettings>) => void;

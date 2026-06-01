@@ -31,6 +31,8 @@ import {
   parsePostBody,
 } from "./parse-body.ts";
 
+const LEADING_SLASHES_RE = /^\/+/;
+
 export async function handleGet(
   req: IncomingMessage,
   res: ServerResponse,
@@ -290,7 +292,7 @@ export async function handlePatch(
   excludeSrcPrefixes: string[]
 ): Promise<void> {
   const url = new URL(req.url ?? "", "http://localhost");
-  const id = url.pathname.replace(/^\/+/, "");
+  const id = url.pathname.replace(LEADING_SLASHES_RE, "");
   if (id.length === 0) {
     sendError(res, 400, "PATCH /api/comments/:id requires a non-empty id");
     return;
@@ -419,7 +421,7 @@ export async function handleDelete(
   // The middleware is mounted at `/api/comments`, so `req.url` is the suffix
   // (e.g. "/<id>"). Slice off the leading slash and trim any query string.
   const url = new URL(req.url ?? "", "http://localhost");
-  const id = url.pathname.replace(/^\/+/, "");
+  const id = url.pathname.replace(LEADING_SLASHES_RE, "");
   if (id.length === 0) {
     sendError(res, 400, "DELETE /api/comments/:id requires a non-empty id");
     return;

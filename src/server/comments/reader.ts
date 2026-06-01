@@ -28,6 +28,11 @@ import type {
 } from "@babel/types";
 import type { CommentProps, CommentReply } from "../../client/types.ts";
 
+const WHITESPACE_CHAR_RE = /\s/;
+const ATTR_KEY_CHAR_RE = /[A-Za-z0-9_-]/;
+const INTEGER_TOKEN_RE = /^-?[0-9]+$/;
+const HEX4_RE = /^[0-9a-fA-F]{4}$/;
+
 // @babel/traverse is published as CJS; under ESM `import x from` may resolve to
 // `{ default: fn }` depending on bundler interop. Normalize both shapes.
 type TraverseFn = typeof _traverse;
@@ -232,7 +237,7 @@ function parseAttributes(
 
   while (i < len) {
     // Skip whitespace
-    while (i < len && /\s/.test(source.charAt(i))) {
+    while (i < len && WHITESPACE_CHAR_RE.test(source.charAt(i))) {
       i++;
     }
     if (i >= len) {
@@ -241,7 +246,7 @@ function parseAttributes(
 
     // Key
     const keyStart = i;
-    while (i < len && /[A-Za-z0-9_-]/.test(source.charAt(i))) {
+    while (i < len && ATTR_KEY_CHAR_RE.test(source.charAt(i))) {
       i++;
     }
     if (i === keyStart) {
@@ -303,7 +308,7 @@ function parseAttributes(
         // Anything that isn't a clean integer is soft-skipped: we emit a
         // warning and drop the attribute, but keep the rest of the comment.
         const tokStart = i;
-        while (i < len && !/\s/.test(source.charAt(i))) {
+        while (i < len && !WHITESPACE_CHAR_RE.test(source.charAt(i))) {
           i++;
         }
         const token = source.slice(tokStart, i);
@@ -313,7 +318,7 @@ function parseAttributes(
           );
           return null;
         }
-        if (/^-?[0-9]+$/.test(token)) {
+        if (INTEGER_TOKEN_RE.test(token)) {
           const n = Number.parseInt(token, 10);
           if (Number.isNaN(n)) {
             warnings.push(
@@ -388,7 +393,7 @@ function readDoubleQuotedString(
           break;
         case "u": {
           const hex = source.slice(j + 2, j + 6);
-          if (!/^[0-9a-fA-F]{4}$/.test(hex)) {
+          if (!HEX4_RE.test(hex)) {
             return null;
           }
           out += String.fromCharCode(Number.parseInt(hex, 16));

@@ -5,8 +5,9 @@ import { Textarea } from "../ui/textarea.tsx";
 import {
   CommentBubbleAttribution,
   ReplyVersionBadge,
-} from "./CommentBubbleAttribution.tsx";
-import { ShortcutHint, withCtrl } from "./ShortcutHint";
+} from "./comment-bubble-attribution.tsx";
+import { ignorePromiseRejection } from "./lib/ignore-promise-rejection.ts";
+import { ShortcutHint, withCtrl } from "./shortcut-hint.tsx";
 
 export function CommentBubbleReplyItem({
   reply,
@@ -103,7 +104,7 @@ export function CommentBubbleReplyItem({
     setDeleteError(null);
     setEditing(false);
     if (skipDeleteConfirmation) {
-      void confirmDelete();
+      confirmDelete().catch(ignorePromiseRejection);
       return;
     }
     setDeleteConfirming(true);
@@ -125,7 +126,7 @@ export function CommentBubbleReplyItem({
             onKeyDown={(e) => {
               if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
                 e.preventDefault();
-                void saveEdit();
+                saveEdit().catch(ignorePromiseRejection);
               }
             }}
             ref={editTextareaRef}
@@ -145,7 +146,9 @@ export function CommentBubbleReplyItem({
             <Button
               className="h-7 px-2 text-xs"
               disabled={editBusy}
-              onClick={() => void saveEdit()}
+              onClick={() => {
+                saveEdit().catch(ignorePromiseRejection);
+              }}
               size="sm"
               type="button"
             >
@@ -207,10 +210,7 @@ export function CommentBubbleReplyItem({
         ) : null}
 
         {deleteConfirming ? (
-          <div
-            className="absolute inset-y-0 right-0 flex items-center justify-end gap-1.5 bg-gradient-to-l from-55% from-background to-transparent pl-8"
-            onClick={(e) => e.stopPropagation()}
-          >
+          <div className="absolute inset-y-0 right-0 flex items-center justify-end gap-1.5 bg-gradient-to-l from-55% from-background to-transparent pl-8">
             <span className="mr-0.5 font-medium text-foreground text-xs">
               Delete?
             </span>
@@ -227,7 +227,9 @@ export function CommentBubbleReplyItem({
             <Button
               className="h-7 px-2 text-xs"
               disabled={deleteBusy}
-              onClick={() => void confirmDelete()}
+              onClick={() => {
+                confirmDelete().catch(ignorePromiseRejection);
+              }}
               size="sm"
               type="button"
               variant="destructive"

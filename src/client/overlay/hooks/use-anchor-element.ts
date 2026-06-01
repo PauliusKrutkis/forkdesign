@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { cssEscape } from "../lib/cssEscape.ts";
+import { cssEscape } from "../lib/css-escape.ts";
 
 /**
  * Tracks the live DOMRects of ALL elements carrying
@@ -47,7 +47,9 @@ export function useAnchorRects(anchorId: string): DOMRect[] {
     };
 
     const sync = () => {
-      observers.forEach((o) => o.disconnect());
+      for (const o of observers) {
+        o.disconnect();
+      }
       observers = [];
       elements = Array.from(
         document.querySelectorAll<HTMLElement>(
@@ -55,11 +57,11 @@ export function useAnchorRects(anchorId: string): DOMRect[] {
         )
       );
       if (typeof ResizeObserver !== "undefined") {
-        elements.forEach((el) => {
+        for (const el of elements) {
           const ro = new ResizeObserver(() => measure());
           ro.observe(el);
           observers.push(ro);
-        });
+        }
       }
       measure();
     };
@@ -83,7 +85,9 @@ export function useAnchorRects(anchorId: string): DOMRect[] {
       mutationObserver.disconnect();
       window.removeEventListener("scroll", onScroll, true);
       window.removeEventListener("resize", onResize);
-      observers.forEach((o) => o.disconnect());
+      for (const o of observers) {
+        o.disconnect();
+      }
     };
   }, [anchorId]);
 

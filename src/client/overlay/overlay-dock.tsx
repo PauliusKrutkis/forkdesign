@@ -3,8 +3,8 @@ import { useEffect, useRef, useState } from "react";
 import { type OverlayPosition, POSITION_CLASSES } from "../settings.ts";
 import { cn } from "../ui/cn.ts";
 import { Switch } from "../ui/switch.tsx";
-import type { ShellTab } from "./CommentShell";
-import { ShortcutHint } from "./ShortcutHint";
+import type { ShellTab } from "./comment-shell.tsx";
+import { ShortcutHint } from "./shortcut-hint.tsx";
 
 /**
  * The redline dock — a single quiet pill in the chosen corner that expands
@@ -141,7 +141,7 @@ export function OverlayDock({
         "bg-popover/95 text-popover-foreground backdrop-blur-md",
         "animate-dock-in shadow-[0_8px_40px_-12px_rgba(0,0,0,0.35)]"
       )}
-      onClick={(e) => e.stopPropagation()}
+      onPointerDown={(e) => e.stopPropagation()}
       role="menu"
       style={
         {
@@ -195,6 +195,7 @@ export function OverlayDock({
 
       <label
         className="flex cursor-pointer items-center gap-2.5 rounded-md px-2.5 py-2 text-sm hover:bg-accent"
+        htmlFor="redline-review-toggle"
         style={{ animationDelay: `${(enabled ? 3 : 1) * 28}ms` }}
       >
         <span
@@ -205,8 +206,8 @@ export function OverlayDock({
         />
         <span className="flex-1">{enabled ? "Reviewing" : "Paused"}</span>
         <Switch
-          aria-label="Toggle reviewing"
           checked={enabled}
+          id="redline-review-toggle"
           onCheckedChange={onToggleEnabled}
         />
       </label>

@@ -72,11 +72,12 @@ export function placeFloater({
     right: anchor.right + gap + size.width <= viewport.width - padding,
   };
 
-  const side: FloaterSide = fits[preferredSide]
-    ? preferredSide
-    : fits[OPPOSITE[preferredSide]]
+  let side: FloaterSide = preferredSide;
+  if (!fits[preferredSide]) {
+    side = fits[OPPOSITE[preferredSide]]
       ? OPPOSITE[preferredSide]
       : preferredSide;
+  }
 
   let left: number;
   let top: number;

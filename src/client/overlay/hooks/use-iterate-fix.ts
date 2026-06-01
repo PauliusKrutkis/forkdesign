@@ -5,8 +5,9 @@ import {
   formatProgress,
   type IterateDoneEvent,
   type IterateStreamEvent,
-} from "../lib/bubbleFormatters.ts";
-import { captureAndUploadV } from "../lib/captureIterationScreenshot.ts";
+} from "../lib/bubble-formatters.ts";
+import { captureAndUploadV } from "../lib/capture-iteration-screenshot.ts";
+import { ignorePromiseRejection } from "../lib/ignore-promise-rejection.ts";
 
 export type BubbleMode = "compact" | "detailed";
 
@@ -64,10 +65,11 @@ export function useIterateFix(args: {
           break;
         }
         buffer += decoder.decode(value, { stream: true });
-        let nl: number;
-        while ((nl = buffer.indexOf("\n")) >= 0) {
+        let nl = buffer.indexOf("\n");
+        while (nl >= 0) {
           const line = buffer.slice(0, nl).trim();
           buffer = buffer.slice(nl + 1);
+          nl = buffer.indexOf("\n");
           if (!line) {
             continue;
           }
@@ -112,13 +114,15 @@ export function useIterateFix(args: {
       setIterateStatus(successStatus);
       window.setTimeout(() => setIterateStatus(null), 3000);
 
-      void reloadIterations();
+      Promise.resolve(reloadIterations()).catch(ignorePromiseRejection);
       if (done.v !== undefined && done.ok === true && done.changed === true) {
         captureAndUploadV({
           id: lead.id,
           anchor: lead.anchor,
           v: done.v,
-          onUploaded: () => void reloadIterations(),
+          onUploaded: () => {
+            Promise.resolve(reloadIterations()).catch(ignorePromiseRejection);
+          },
         });
       }
     } catch (err) {

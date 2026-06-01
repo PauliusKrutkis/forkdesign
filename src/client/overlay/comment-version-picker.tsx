@@ -2,9 +2,35 @@ import { ChevronDown } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Button } from "../ui/button.tsx";
 import { cn } from "../ui/cn.ts";
-import { MicroThumb } from "./CommentThumb.tsx";
-import { HotkeyTip } from "./HotkeyTip";
-import type { IterationsData } from "./hooks/useIterations.ts";
+import { MicroThumb } from "./comment-thumb.tsx";
+import type {
+  IterationsData,
+  IterationVersion,
+} from "./hooks/use-iterations.ts";
+import { HotkeyTip } from "./hotkey-tip.tsx";
+
+function renderActiveVersionThumb(
+  showActiveThumb: boolean,
+  activeVersion: IterationVersion | undefined,
+  onPreviewActive?: (src: string) => void
+) {
+  if (!(showActiveThumb && activeVersion)) {
+    return null;
+  }
+  if (onPreviewActive) {
+    return (
+      <button
+        aria-label="Show active version screenshot"
+        className="rounded-md transition-shadow hover:ring-1 hover:ring-ring"
+        onClick={() => onPreviewActive(activeVersion.png)}
+        type="button"
+      >
+        <MicroThumb src={activeVersion.png} />
+      </button>
+    );
+  }
+  return <MicroThumb src={activeVersion.png} />;
+}
 
 interface CommentVersionPickerProps {
   data: IterationsData;
@@ -68,20 +94,11 @@ export function CommentVersionPicker({
       )}
       ref={rootRef}
     >
-      {showActiveThumb && activeVersion ? (
-        onPreviewActive ? (
-          <button
-            aria-label="Show active version screenshot"
-            className="rounded-md transition-shadow hover:ring-1 hover:ring-ring"
-            onClick={() => onPreviewActive(activeVersion.png)}
-            type="button"
-          >
-            <MicroThumb src={activeVersion.png} />
-          </button>
-        ) : (
-          <MicroThumb src={activeVersion.png} />
-        )
-      ) : null}
+      {renderActiveVersionThumb(
+        showActiveThumb,
+        activeVersion,
+        onPreviewActive
+      )}
       <HotkeyTip keys="← →" label="Change version" side="bottom">
         <Button
           aria-expanded={open}
