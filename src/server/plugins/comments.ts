@@ -1,3 +1,4 @@
+import type { IncomingMessage, ServerResponse } from "node:http";
 import type { Plugin } from "vite";
 import {
   handleDelete,
@@ -13,10 +14,75 @@ import {
   handleIterationsScreenshot,
   iterationsSubpath,
 } from "../api/iterations/routes.ts";
-import { configureFixRuntime } from "../fix/index.ts";
-import { sendError } from "../platform/http.ts";
+import { configureFixRuntime } from "../fix/config.ts";
+import { errorMessage, sendError, wrapApiHandler } from "../platform/http.ts";
+import { sourceLoc as createSourceLocPlugin } from "./source-loc.ts";
 
 const INJECT_MARKER = "<!-- vite-plugin-comments injected -->";
+
+function handleIterationsMiddleware(
+  req: IncomingMessage,
+  res: ServerResponse,
+  projectRoot: string,
+  excludeSrcPrefixes: string[],
+  next: () => void
+): void {
+  const sub = iterationsSubpath(req.url ?? "");
+
+  if (req.method === "GET" && (sub === "" || sub === "/")) {
+    wrapApiHandler((r, s) =>
+      handleIterationsList(r, s, projectRoot, excludeSrcPrefixes)
+    )(req, res);
+    return;
+  }
+  if (req.method === "POST" && sub === "/activate") {
+    wrapApiHandler((r, s) =>
+      handleIterationsActivate(r, s, projectRoot, excludeSrcPrefixes)
+    )(req, res);
+    return;
+  }
+  if (req.method === "POST" && sub === "/new") {
+    handleIterationsNew(req, res, projectRoot, excludeSrcPrefixes).catch(
+      (err: unknown) => {
+        sendIterationsStreamError(res, err);
+      }
+    );
+    return;
+  }
+  if (req.method === "POST" && sub === "/screenshot") {
+    wrapApiHandler((r, s) =>
+      handleIterationsScreenshot(r, s, projectRoot, excludeSrcPrefixes)
+    )(req, res);
+    return;
+  }
+  if (req.method === "POST" && sub === "/delete") {
+    wrapApiHandler((r, s) =>
+      handleIterationsDelete(r, s, projectRoot, excludeSrcPrefixes)
+    )(req, res);
+    return;
+  }
+  next();
+}
+
+function sendIterationsStreamError(res: ServerResponse, err: unknown): void {
+  const message = errorMessage(err);
+  if (res.headersSent) {
+    try {
+      res.write(
+        `${JSON.stringify({ type: "done", ok: false, error: message })}\n`
+      );
+    } catch {
+      /* socket already gone */
+    }
+    try {
+      res.end();
+    } catch {
+      /* already closed */
+    }
+    return;
+  }
+  sendError(res, 500, message);
+}
 
 /**
  * Directories under src/ that may NOT receive comment markers. These are the
@@ -62,51 +128,27 @@ export function comments(options: CommentsPluginOptions = {}): Plugin {
           return;
         }
         if (req.method === "GET") {
-          handleGet(req, res, projectRoot, excludeSrcPrefixes).catch(
-            (err: unknown) => {
-              sendError(
-                res,
-                500,
-                err instanceof Error ? err.message : String(err)
-              );
-            }
-          );
+          wrapApiHandler((r, s) =>
+            handleGet(r, s, projectRoot, excludeSrcPrefixes)
+          )(req, res);
           return;
         }
         if (req.method === "POST") {
-          handlePost(req, res, projectRoot, excludeSrcPrefixes).catch(
-            (err: unknown) => {
-              sendError(
-                res,
-                500,
-                err instanceof Error ? err.message : String(err)
-              );
-            }
-          );
+          wrapApiHandler((r, s) =>
+            handlePost(r, s, projectRoot, excludeSrcPrefixes)
+          )(req, res);
           return;
         }
         if (req.method === "DELETE") {
-          handleDelete(req, res, projectRoot, excludeSrcPrefixes).catch(
-            (err: unknown) => {
-              sendError(
-                res,
-                500,
-                err instanceof Error ? err.message : String(err)
-              );
-            }
-          );
+          wrapApiHandler((r, s) =>
+            handleDelete(r, s, projectRoot, excludeSrcPrefixes)
+          )(req, res);
           return;
         }
         if (req.method === "PATCH") {
-          handlePatch(req, res, projectRoot, excludeSrcPrefixes).catch(
-            (err: unknown) => {
-              sendError(
-                res,
-                500,
-                err instanceof Error ? err.message : String(err)
-              );
-            }
-          );
+          wrapApiHandler((r, s) =>
+            handlePatch(r, s, projectRoot, excludeSrcPrefixes)
+          )(req, res);
           return;
         }
         next();
@@ -118,90 +160,13 @@ export function comments(options: CommentsPluginOptions = {}): Plugin {
           res.end();
           return;
         }
-        const sub = iterationsSubpath(req.url ?? "");
-
-        if (req.method === "GET" && (sub === "" || sub === "/")) {
-          handleIterationsList(req, res, projectRoot, excludeSrcPrefixes).catch(
-            (err: unknown) => {
-              sendError(
-                res,
-                500,
-                err instanceof Error ? err.message : String(err)
-              );
-            }
-          );
-          return;
-        }
-        if (req.method === "POST" && sub === "/activate") {
-          handleIterationsActivate(
-            req,
-            res,
-            projectRoot,
-            excludeSrcPrefixes
-          ).catch((err: unknown) => {
-            sendError(
-              res,
-              500,
-              err instanceof Error ? err.message : String(err)
-            );
-          });
-          return;
-        }
-        if (req.method === "POST" && sub === "/new") {
-          handleIterationsNew(req, res, projectRoot, excludeSrcPrefixes).catch(
-            (err: unknown) => {
-              const message = err instanceof Error ? err.message : String(err);
-              if (res.headersSent) {
-                try {
-                  res.write(
-                    `${JSON.stringify({ type: "done", ok: false, error: message })}\n`
-                  );
-                } catch {
-                  /* socket already gone */
-                }
-                try {
-                  res.end();
-                } catch {
-                  /* already closed */
-                }
-              } else {
-                sendError(res, 500, message);
-              }
-            }
-          );
-          return;
-        }
-        if (req.method === "POST" && sub === "/screenshot") {
-          handleIterationsScreenshot(
-            req,
-            res,
-            projectRoot,
-            excludeSrcPrefixes
-          ).catch((err: unknown) => {
-            sendError(
-              res,
-              500,
-              err instanceof Error ? err.message : String(err)
-            );
-          });
-          return;
-        }
-        if (req.method === "POST" && sub === "/delete") {
-          handleIterationsDelete(
-            req,
-            res,
-            projectRoot,
-            excludeSrcPrefixes
-          ).catch((err: unknown) => {
-            sendError(
-              res,
-              500,
-              err instanceof Error ? err.message : String(err)
-            );
-          });
-          return;
-        }
-        next();
+        handleIterationsMiddleware(
+          req,
+          res,
+          projectRoot,
+          excludeSrcPrefixes,
+          next
+        );
       });
     },
 
@@ -215,4 +180,11 @@ export function comments(options: CommentsPluginOptions = {}): Plugin {
       },
     },
   };
+}
+
+/** Re-exported for `redline/plugin` consumers configuring the dev source-loc stamper. */
+export function sourceLoc(
+  options: Parameters<typeof createSourceLocPlugin>[0]
+): ReturnType<typeof createSourceLocPlugin> {
+  return createSourceLocPlugin(options);
 }

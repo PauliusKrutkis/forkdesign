@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { existsSync, statSync } from "node:fs";
-import { mkdir, readFile, rm } from "node:fs/promises";
+import { readFile, rm } from "node:fs/promises";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import path from "node:path";
 import {
@@ -15,23 +15,50 @@ import {
   updateCommentReply,
   updateCommentText,
   type WriteCommentResult,
-  WriteError,
   writeCommentToFile,
 } from "../../comments/writer.ts";
-import { patchIterationsManifest } from "../../iterations/manifest.ts";
-import {
-  atomicWriteBytes,
-  atomicWriteText,
-} from "../../platform/atomic-write.ts";
-import { readJsonBody, sendError } from "../../platform/http.ts";
+import { WriteError } from "../../comments/writer-errors.ts";
+import { seedBaselineIteration } from "../../iterations/baseline.ts";
+import { readJsonBody, sendError, sendJson } from "../../platform/http.ts";
+import { decodeScreenshotPng } from "../../platform/media.ts";
 import { resolveSafePagePath } from "../../platform/path-safety.ts";
-import {
-  decodeScreenshotPng,
-  parsePatchBody,
-  parsePostBody,
-} from "./parse-body.ts";
+import { parsePatchBody, parsePostBody } from "./parse-body.ts";
 
 const LEADING_SLASHES_RE = /^\/+/;
+
+async function handleGetAllComments(
+  projectRoot: string,
+  excludeSrcPrefixes: string[]
+): Promise<Record<string, unknown>[]> {
+  const files = await collectAllowedTsxFiles(projectRoot, excludeSrcPrefixes);
+  const all: Record<string, unknown>[] = [];
+  for (const absolutePath of files) {
+    const relativePath = path
+      .relative(projectRoot, absolutePath)
+      .split(path.sep)
+      .join(path.posix.sep);
+    try {
+      const { comments: list, warnings } =
+        await readCommentsFromFile(absolutePath);
+      for (const w of warnings) {
+        console.warn(`[vite-plugin-comments] ${relativePath}: ${w}`);
+      }
+      for (const c of list) {
+        all.push({ ...c, file: relativePath });
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.warn(
+        `[vite-plugin-comments] ${relativePath}: parse error — ${message}`
+      );
+    }
+  }
+  return all;
+}
+
+function sendJsonOk(res: ServerResponse, body: unknown): void {
+  sendJson(res, body);
+}
 
 export async function handleGet(
   req: IncomingMessage,
@@ -48,36 +75,8 @@ export async function handleGet(
   // is currently shown.
   if (!file) {
     try {
-      const files = await collectAllowedTsxFiles(
-        projectRoot,
-        excludeSrcPrefixes
-      );
-      const all: Record<string, unknown>[] = [];
-      for (const absolutePath of files) {
-        const relativePath = path
-          .relative(projectRoot, absolutePath)
-          .split(path.sep)
-          .join(path.posix.sep);
-        try {
-          const { comments: list, warnings } =
-            await readCommentsFromFile(absolutePath);
-          for (const w of warnings) {
-            console.warn(`[vite-plugin-comments] ${relativePath}: ${w}`);
-          }
-          for (const c of list) {
-            all.push({ ...c, file: relativePath });
-          }
-        } catch (err) {
-          const message = err instanceof Error ? err.message : String(err);
-          console.warn(
-            `[vite-plugin-comments] ${relativePath}: parse error — ${message}`
-          );
-        }
-      }
-      res.statusCode = 200;
-      res.setHeader("content-type", "application/json; charset=utf-8");
-      res.setHeader("cache-control", "no-store");
-      res.end(JSON.stringify({ comments: all }));
+      const all = await handleGetAllComments(projectRoot, excludeSrcPrefixes);
+      sendJsonOk(res, { comments: all });
       return;
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
@@ -113,20 +112,16 @@ export async function handleGet(
       console.warn(`[vite-plugin-comments] ${file}: ${w}`);
     }
 
-    res.statusCode = 200;
-    res.setHeader("content-type", "application/json; charset=utf-8");
-    res.setHeader("cache-control", "no-store");
-    res.end(
-      JSON.stringify({
-        file: resolved.relativePath,
-        comments: list,
-      })
-    );
+    sendJsonOk(res, {
+      file: resolved.relativePath,
+      comments: list,
+    });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     sendError(res, 500, `parse error: ${message}`);
   }
 }
+
 export async function handlePost(
   req: IncomingMessage,
   res: ServerResponse,
@@ -220,43 +215,12 @@ export async function handlePost(
     baselineSource = null;
   }
 
-  // Persist the iteration artifacts. Failures here are logged but don't fail
-  // the request; the comment marker is already on disk.
-  let savedScreenshotUrl: string | null = null;
-  if (willSaveScreenshot || baselineSource !== null) {
-    try {
-      const iterDir = path.join(
-        projectRoot,
-        "public",
-        "designs",
-        "iterations",
-        commentId
-      );
-      await mkdir(iterDir, { recursive: true });
-      if (screenshotBytes) {
-        await atomicWriteBytes(path.join(iterDir, "v0.png"), screenshotBytes);
-        savedScreenshotUrl = `/designs/iterations/${commentId}/v0.png`;
-      }
-      if (baselineSource !== null) {
-        await atomicWriteText(path.join(iterDir, "v0.tsx"), baselineSource);
-      }
-      try {
-        await patchIterationsManifest(iterDir, 0, {
-          summary: "Baseline",
-          createdAt: new Date().toISOString(),
-        });
-      } catch (manifestErr) {
-        console.warn(
-          `[vite-plugin-comments] failed to write iteration manifest: ${manifestErr instanceof Error ? manifestErr.message : String(manifestErr)}`
-        );
-      }
-    } catch (err) {
-      console.warn(
-        `[vite-plugin-comments] failed to write iteration artifacts: ${err instanceof Error ? err.message : String(err)}`
-      );
-      savedScreenshotUrl = null;
-    }
-  }
+  const savedScreenshotUrl = await seedBaselineIteration(
+    projectRoot,
+    commentId,
+    screenshotBytes,
+    baselineSource
+  );
 
   // Recover the `view` slug by re-reading the freshly-written file. The
   // reader is the source of truth for ancestor-walk view resolution; this
@@ -271,19 +235,14 @@ export async function handlePost(
     view = null;
   }
 
-  res.statusCode = 200;
-  res.setHeader("content-type", "application/json; charset=utf-8");
-  res.setHeader("cache-control", "no-store");
-  res.end(
-    JSON.stringify({
-      id: result.id,
-      anchor: result.anchor,
-      view,
-      date: result.date,
-      file: resolved.relativePath,
-      ...(savedScreenshotUrl ? { screenshot: savedScreenshotUrl } : {}),
-    })
-  );
+  sendJsonOk(res, {
+    id: result.id,
+    anchor: result.anchor,
+    view,
+    date: result.date,
+    file: resolved.relativePath,
+    ...(savedScreenshotUrl ? { screenshot: savedScreenshotUrl } : {}),
+  });
 }
 export async function handlePatch(
   req: IncomingMessage,

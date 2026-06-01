@@ -1,44 +1,9 @@
-const PNG_DATA_URL_PREFIX = "data:image/png;base64,";
-/** Hard cap on the decoded PNG. 5 MB is plenty for an element-bbox capture. */
-const MAX_PNG_BYTES = 5 * 1024 * 1024;
-/** First 8 bytes of any PNG. Used as a structural sanity check after decode. */
-const PNG_SIGNATURE = Buffer.from([
-  0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
-]);
-
-/**
- * Parse a `data:image/png;base64,...` URL, decode it, and apply size + signature
- * guards. Returns null on any mismatch — caller logs a warning and proceeds
- * without a screenshot.
- */
-export function decodeScreenshotPng(dataUrl: string): Buffer | null {
-  if (!dataUrl.startsWith(PNG_DATA_URL_PREFIX)) {
-    return null;
-  }
-  const payload = dataUrl.slice(PNG_DATA_URL_PREFIX.length);
-  if (payload.length === 0) {
-    return null;
-  }
-  let bytes: Buffer;
-  try {
-    bytes = Buffer.from(payload, "base64");
-  } catch {
-    return null;
-  }
-  if (bytes.length === 0) {
-    return null;
-  }
-  if (bytes.length > MAX_PNG_BYTES) {
-    return null;
-  }
-  if (bytes.length < PNG_SIGNATURE.length) {
-    return null;
-  }
-  if (!bytes.subarray(0, PNG_SIGNATURE.length).equals(PNG_SIGNATURE)) {
-    return null;
-  }
-  return bytes;
-}
+import {
+  type ParseResult,
+  requireInt,
+  requireNonEmptyString,
+  requireObject,
+} from "../../platform/validation.ts";
 
 export interface PostBody {
   author: string;
@@ -58,9 +23,8 @@ export interface PostBody {
   text: string;
 }
 
-export type ParseBodyResult =
-  | { ok: true; value: PostBody }
-  | { ok: false; reason: string };
+export type ParseBodyResult = ParseResult<PostBody>;
+export type ParsePatchBodyResult = ParseResult<PatchBody>;
 
 export type PatchBody =
   | { kind: "text"; text: string }
@@ -68,80 +32,64 @@ export type PatchBody =
   | { kind: "editReply"; replyIndex: number; text: string }
   | { kind: "deleteReply"; replyIndex: number };
 
-export type ParsePatchBodyResult =
-  | { ok: true; value: PatchBody }
-  | { ok: false; reason: string };
-
-export function parsePatchBody(value: unknown): ParsePatchBodyResult {
-  if (!value || typeof value !== "object") {
-    return { ok: false, reason: "body must be a JSON object" };
+function parsePatchTextField(
+  obj: Record<string, unknown>
+): ParsePatchBodyResult {
+  const text = obj.text;
+  if (typeof text !== "string" || text.trim().length === 0) {
+    return { ok: false, reason: "field `text` must be a non-empty string" };
   }
-  const obj = value as Record<string, unknown>;
-  const hasText = "text" in obj;
-  const hasReply = "reply" in obj;
-  const hasEditReply = "editReply" in obj;
-  const hasDeleteReply = "deleteReply" in obj;
-  const fieldCount = [hasText, hasReply, hasEditReply, hasDeleteReply].filter(
-    Boolean
-  ).length;
+  return { ok: true, value: { kind: "text", text: text.trim() } };
+}
 
-  if (fieldCount !== 1) {
+function parsePatchEditReplyField(
+  obj: Record<string, unknown>
+): ParsePatchBodyResult {
+  const editReply = obj.editReply;
+  if (!editReply || typeof editReply !== "object") {
+    return { ok: false, reason: "field `editReply` must be an object" };
+  }
+  const editReplyObj = editReply as Record<string, unknown>;
+  const index = editReplyObj.index;
+  const text = editReplyObj.text;
+  if (typeof index !== "number" || !Number.isInteger(index) || index < 0) {
     return {
       ok: false,
-      reason:
-        "body must include exactly one of `text`, `reply`, `editReply`, or `deleteReply`",
+      reason: "field `editReply.index` must be a non-negative integer",
     };
   }
-
-  if (hasText) {
-    const text = obj.text;
-    if (typeof text !== "string" || text.trim().length === 0) {
-      return { ok: false, reason: "field `text` must be a non-empty string" };
-    }
-    return { ok: true, value: { kind: "text", text: text.trim() } };
-  }
-
-  if (hasEditReply) {
-    const editReply = obj.editReply;
-    if (!editReply || typeof editReply !== "object") {
-      return { ok: false, reason: "field `editReply` must be an object" };
-    }
-    const editReplyObj = editReply as Record<string, unknown>;
-    const index = editReplyObj.index;
-    const text = editReplyObj.text;
-    if (typeof index !== "number" || !Number.isInteger(index) || index < 0) {
-      return {
-        ok: false,
-        reason: "field `editReply.index` must be a non-negative integer",
-      };
-    }
-    if (typeof text !== "string" || text.trim().length === 0) {
-      return {
-        ok: false,
-        reason: "field `editReply.text` must be a non-empty string",
-      };
-    }
+  if (typeof text !== "string" || text.trim().length === 0) {
     return {
-      ok: true,
-      value: { kind: "editReply", replyIndex: index, text: text.trim() },
+      ok: false,
+      reason: "field `editReply.text` must be a non-empty string",
     };
   }
+  return {
+    ok: true,
+    value: { kind: "editReply", replyIndex: index, text: text.trim() },
+  };
+}
 
-  if (hasDeleteReply) {
-    const deleteReply = obj.deleteReply;
-    if (!deleteReply || typeof deleteReply !== "object") {
-      return { ok: false, reason: "field `deleteReply` must be an object" };
-    }
-    const index = (deleteReply as Record<string, unknown>).index;
-    if (typeof index !== "number" || !Number.isInteger(index) || index < 0) {
-      return {
-        ok: false,
-        reason: "field `deleteReply.index` must be a non-negative integer",
-      };
-    }
-    return { ok: true, value: { kind: "deleteReply", replyIndex: index } };
+function parsePatchDeleteReplyField(
+  obj: Record<string, unknown>
+): ParsePatchBodyResult {
+  const deleteReply = obj.deleteReply;
+  if (!deleteReply || typeof deleteReply !== "object") {
+    return { ok: false, reason: "field `deleteReply` must be an object" };
   }
+  const index = (deleteReply as Record<string, unknown>).index;
+  if (typeof index !== "number" || !Number.isInteger(index) || index < 0) {
+    return {
+      ok: false,
+      reason: "field `deleteReply.index` must be a non-negative integer",
+    };
+  }
+  return { ok: true, value: { kind: "deleteReply", replyIndex: index } };
+}
 
+function parsePatchReplyField(
+  obj: Record<string, unknown>
+): ParsePatchBodyResult {
   const reply = obj.reply;
   if (!reply || typeof reply !== "object") {
     return { ok: false, reason: "field `reply` must be an object" };
@@ -184,35 +132,47 @@ export function parsePatchBody(value: unknown): ParsePatchBodyResult {
   };
 }
 
-export function parsePostBody(value: unknown): ParseBodyResult {
-  if (!value || typeof value !== "object") {
-    return { ok: false, reason: "body must be a JSON object" };
+export function parsePatchBody(value: unknown): ParsePatchBodyResult {
+  const objResult = requireObject(value);
+  if (!objResult.ok) {
+    return objResult;
   }
-  const obj = value as Record<string, unknown>;
-  const file = obj.file;
-  const line = obj.line;
-  const column = obj.column;
-  const text = obj.text;
-  const author = obj.author;
+  const obj = objResult.value;
+  const hasText = "text" in obj;
+  const hasReply = "reply" in obj;
+  const hasEditReply = "editReply" in obj;
+  const hasDeleteReply = "deleteReply" in obj;
+  const fieldCount = [hasText, hasReply, hasEditReply, hasDeleteReply].filter(
+    Boolean
+  ).length;
+
+  if (fieldCount !== 1) {
+    return {
+      ok: false,
+      reason:
+        "body must include exactly one of `text`, `reply`, `editReply`, or `deleteReply`",
+    };
+  }
+
+  if (hasText) {
+    return parsePatchTextField(obj);
+  }
+  if (hasEditReply) {
+    return parsePatchEditReplyField(obj);
+  }
+  if (hasDeleteReply) {
+    return parsePatchDeleteReplyField(obj);
+  }
+  return parsePatchReplyField(obj);
+}
+
+function parseOptionalPostFields(
+  obj: Record<string, unknown>
+): { ok: true; value: Partial<PostBody> } | { ok: false; reason: string } {
   const existingAnchor = obj.existingAnchor;
   const screenshotPng = obj.screenshotPng;
   const route = obj.route;
 
-  if (typeof file !== "string" || file.length === 0) {
-    return { ok: false, reason: "field `file` must be a non-empty string" };
-  }
-  if (typeof line !== "number" || !Number.isInteger(line) || line < 1) {
-    return { ok: false, reason: "field `line` must be a positive integer" };
-  }
-  if (typeof column !== "number" || !Number.isInteger(column) || column < 1) {
-    return { ok: false, reason: "field `column` must be a positive integer" };
-  }
-  if (typeof text !== "string" || text.trim().length === 0) {
-    return { ok: false, reason: "field `text` must be a non-empty string" };
-  }
-  if (typeof author !== "string" || author.trim().length === 0) {
-    return { ok: false, reason: "field `author` must be a non-empty string" };
-  }
   if (existingAnchor !== undefined && typeof existingAnchor !== "string") {
     return { ok: false, reason: "field `existingAnchor` must be a string" };
   }
@@ -222,17 +182,61 @@ export function parsePostBody(value: unknown): ParseBodyResult {
   if (route !== undefined && typeof route !== "string") {
     return { ok: false, reason: "field `route` must be a string" };
   }
+
   return {
     ok: true,
     value: {
-      file,
-      line,
-      column,
-      text,
-      author: author.trim(),
       ...(typeof existingAnchor === "string" ? { existingAnchor } : {}),
       ...(typeof screenshotPng === "string" ? { screenshotPng } : {}),
       ...(typeof route === "string" ? { route } : {}),
+    },
+  };
+}
+
+export function parsePostBody(value: unknown): ParseBodyResult {
+  const objResult = requireObject(value);
+  if (!objResult.ok) {
+    return objResult;
+  }
+  const obj = objResult.value;
+  const file = requireNonEmptyString(obj, "file");
+  if (!file.ok) {
+    return file;
+  }
+  const line = requireInt(obj, "line", { min: 1 });
+  if (!line.ok) {
+    return { ok: false, reason: "field `line` must be a positive integer" };
+  }
+  const column = requireInt(obj, "column", { min: 1 });
+  if (!column.ok) {
+    return { ok: false, reason: "field `column` must be a positive integer" };
+  }
+  const text = requireNonEmptyString(obj, "text");
+  if (!text.ok) {
+    return { ok: false, reason: "field `text` must be a non-empty string" };
+  }
+  if (text.value.trim().length === 0) {
+    return { ok: false, reason: "field `text` must be a non-empty string" };
+  }
+  const author = requireNonEmptyString(obj, "author");
+  if (!author.ok) {
+    return { ok: false, reason: "field `author` must be a non-empty string" };
+  }
+
+  const optional = parseOptionalPostFields(obj);
+  if (!optional.ok) {
+    return optional;
+  }
+
+  return {
+    ok: true,
+    value: {
+      file: file.value,
+      line: line.value,
+      column: column.value,
+      text: text.value,
+      author: author.value.trim(),
+      ...optional.value,
     },
   };
 }

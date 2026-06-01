@@ -7,15 +7,17 @@ import {
   appendCommentReply,
   deleteCommentMarker,
   deleteCommentReply,
-  extractDirectiveInner,
-  injectExistingMarkerIntoSource,
-  replaceCommentMarkerInSource,
   updateCommentActive,
   updateCommentReply,
   updateCommentText,
-  WriteError,
   writeCommentToFile,
 } from "./writer.ts";
+import {
+  extractDirectiveInner,
+  injectExistingMarkerIntoSource,
+  replaceCommentMarkerInSource,
+} from "./writer-directive.ts";
+import { WriteError } from "./writer-errors.ts";
 
 const FRAGMENT_LABEL_RE = /<>\s*<label/;
 const FRAGMENT_COMMENT_RE = /<\/label>[\s\S]*@comment[\s\S]*<\/>/;

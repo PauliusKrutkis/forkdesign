@@ -1,6 +1,11 @@
 import { useEffect, useState } from "react";
 import { cssEscape } from "../lib/css-escape.ts";
 
+export interface AnchorInstanceRect {
+  instance: number;
+  rect: DOMRect;
+}
+
 /**
  * Tracks the live DOMRects of ALL elements carrying
  * `data-comment-anchor="<uuid>"` — there can be more than one when the
@@ -13,8 +18,8 @@ import { cssEscape } from "../lib/css-escape.ts";
  *   - any matching element resizes (per-element ResizeObserver)
  *   - the window scrolls or resizes (passive listeners)
  */
-export function useAnchorRects(anchorId: string): DOMRect[] {
-  const [rects, setRects] = useState<DOMRect[]>([]);
+export function useAnchorRects(anchorId: string): AnchorInstanceRect[] {
+  const [instances, setInstances] = useState<AnchorInstanceRect[]>([]);
 
   useEffect(() => {
     if (typeof document === "undefined") {
@@ -25,18 +30,22 @@ export function useAnchorRects(anchorId: string): DOMRect[] {
     let observers: ResizeObserver[] = [];
 
     const measure = () => {
-      const next = elements.map((el) => el.getBoundingClientRect());
-      setRects((prev) => {
+      const next = elements.map((el, instance) => ({
+        instance,
+        rect: el.getBoundingClientRect(),
+      }));
+      setInstances((prev) => {
         if (
           prev.length === next.length &&
-          prev.every((r, i) => {
+          prev.every((item, i) => {
             const n = next[i];
             return (
               !!n &&
-              r.x === n.x &&
-              r.y === n.y &&
-              r.width === n.width &&
-              r.height === n.height
+              item.instance === n.instance &&
+              item.rect.x === n.rect.x &&
+              item.rect.y === n.rect.y &&
+              item.rect.width === n.rect.width &&
+              item.rect.height === n.rect.height
             );
           })
         ) {
@@ -91,5 +100,12 @@ export function useAnchorRects(anchorId: string): DOMRect[] {
     };
   }, [anchorId]);
 
-  return rects;
+  return instances;
+}
+
+export function findAnchorInstanceRect(
+  instances: AnchorInstanceRect[],
+  instance: number
+): DOMRect | null {
+  return instances.find((item) => item.instance === instance)?.rect ?? null;
 }

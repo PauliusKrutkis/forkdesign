@@ -20,25 +20,6 @@ import type {
   FixStrategy,
 } from "./types.ts";
 
-export type { FixModel } from "../../shared/fix-model.ts";
-export { configureFixRuntime, resetFixRuntimeConfig } from "./config.ts";
-export {
-  buildFixModelChain,
-  DEFAULT_FIX_MODEL_PRIORITY,
-  parseFixModel,
-} from "./models.ts";
-export {
-  buildIteratePrompt,
-  shouldIncludeScreenshotInPrompt,
-} from "./prompt.ts";
-export type {
-  FixInput,
-  FixProgress,
-  FixResult,
-  FixRunInput,
-  FixStrategy,
-} from "./types.ts";
-
 export function resolveFixStrategy(model: FixModel): FixStrategy {
   switch (model) {
     case "composer-2.5":

@@ -1,7 +1,7 @@
 import { EventEmitter } from "node:events";
 import type { IncomingMessage } from "node:http";
 import { describe, expect, it } from "vitest";
-import { readJsonBody, sendError } from "./http.ts";
+import { readJsonBody, sendError, sendJson } from "./http.ts";
 import { createJsonRequest, createMockResponse } from "./http-test-helpers.ts";
 
 const INVALID_JSON_PREFIX_RE = /^invalid JSON:/;
@@ -53,5 +53,25 @@ describe("sendError", () => {
       "application/json; charset=utf-8"
     );
     expect(mock.getJson()).toEqual({ error: "bad request" });
+  });
+});
+
+describe("sendJson", () => {
+  it("sets status, headers, and JSON body", () => {
+    const mock = createMockResponse();
+    sendJson(mock.res, { ok: true }, 201);
+    expect(mock.getStatus()).toBe(201);
+    expect(mock.res.getHeader("cache-control")).toBe("no-store");
+    expect(mock.getJson()).toEqual({ ok: true });
+  });
+});
+
+describe("validation", () => {
+  it("requireObject rejects non-objects", async () => {
+    const { requireObject } = await import("./validation.ts");
+    expect(requireObject(null)).toEqual({
+      ok: false,
+      reason: "body must be a JSON object",
+    });
   });
 });

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   parseActivateBody,
   parseDeleteVersionBody,
+  parseNewIterationBody,
   parseScreenshotBody,
 } from "./parse-body.ts";
 
@@ -49,6 +50,21 @@ describe("parseDeleteVersionBody", () => {
       ok: false,
       reason: "body must be a JSON object",
     });
+  });
+});
+
+describe("parseNewIterationBody", () => {
+  it("omits model when not provided", () => {
+    const parsed = parseNewIterationBody({ id: "abc" });
+    expect(parsed).toEqual({
+      ok: true,
+      value: { id: "abc" },
+    });
+  });
+
+  it("rejects unsupported model", () => {
+    const parsed = parseNewIterationBody({ id: "abc", model: "unknown" });
+    expect(parsed.ok).toBe(false);
   });
 });
 

@@ -1,16 +1,18 @@
 import { Trash2 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import type { CommentReply } from "../types.ts";
 import { Badge } from "../ui/badge.tsx";
 import { Button } from "../ui/button.tsx";
 import { cn } from "../ui/cn.ts";
 import { AdaptiveThumb } from "./comment-thumb.tsx";
+import { DeleteConfirmOverlay } from "./delete-confirm-overlay.tsx";
+import { useDeleteConfirm } from "./hooks/use-delete-confirm.ts";
 import type {
   IterationsData,
   IterationVersion,
 } from "./hooks/use-iterations.ts";
 import { HotkeyTip } from "./hotkey-tip.tsx";
-import { ignorePromiseRejection } from "./lib/ignore-promise-rejection.ts";
+import { formatDate } from "./lib/bubble-formatters.ts";
 
 interface CommentVersionHistoryProps {
   active: number;
@@ -167,35 +169,29 @@ function VersionHistoryRow({
   disabled: boolean;
   canDelete: boolean;
 }) {
-  const [deleteConfirming, setDeleteConfirming] = useState(false);
-  const [deleteBusy, setDeleteBusy] = useState(false);
+  const {
+    confirming: deleteConfirming,
+    busy: deleteBusy,
+    requestDelete,
+    confirmDelete,
+    cancelDelete,
+  } = useDeleteConfirm({
+    onDelete: async () => {
+      if (!onDeleteVersion) {
+        return;
+      }
+      await onDeleteVersion(version.v);
+    },
+  });
+
   const isActive = version.v === active;
   const label = version.v === 0 ? "Baseline" : "Fix";
 
-  const requestDelete = () => {
+  const handleRequestDelete = () => {
     if (!onDeleteVersion || deleteBusy || disabled) {
       return;
     }
-    setDeleteConfirming(true);
-  };
-
-  const cancelDelete = () => {
-    setDeleteConfirming(false);
-  };
-
-  const confirmDelete = async () => {
-    if (!onDeleteVersion || deleteBusy) {
-      return;
-    }
-    setDeleteBusy(true);
-    try {
-      await onDeleteVersion(version.v);
-      setDeleteConfirming(false);
-    } catch {
-      setDeleteConfirming(false);
-    } finally {
-      setDeleteBusy(false);
-    }
+    requestDelete();
   };
 
   return (
@@ -223,37 +219,17 @@ function VersionHistoryRow({
               </span>
             ) : null}
             <span className="ml-auto shrink-0 font-mono text-[10px] text-muted-foreground tabular-nums">
-              {formatTimelineDate(version.createdAt)}
+              {formatDate(version.createdAt)}
             </span>
           </div>
           {deleteConfirming ? (
-            <div className="mt-2 flex flex-wrap items-center gap-1.5">
-              <span className="text-foreground text-xs">
-                Delete {formatVersionDisplay(version.v)}?
-              </span>
-              <Button
-                className="h-7 px-2 text-xs"
-                disabled={deleteBusy}
-                onClick={cancelDelete}
-                size="sm"
-                type="button"
-                variant="ghost"
-              >
-                Cancel
-              </Button>
-              <Button
-                className="h-7 px-2 text-xs"
-                disabled={deleteBusy}
-                onClick={() => {
-                  confirmDelete().catch(ignorePromiseRejection);
-                }}
-                size="sm"
-                type="button"
-                variant="destructive"
-              >
-                {deleteBusy ? "Deleting…" : "Delete"}
-              </Button>
-            </div>
+            <DeleteConfirmOverlay
+              busy={deleteBusy}
+              label={`Delete ${formatVersionDisplay(version.v)}?`}
+              layout="inline"
+              onCancel={cancelDelete}
+              onConfirm={confirmDelete}
+            />
           ) : (
             <div className="mt-2 flex flex-wrap items-center gap-1.5">
               {isActive ? null : (
@@ -272,7 +248,7 @@ function VersionHistoryRow({
                 <Button
                   className="h-7 gap-1 px-2 text-xs hover:bg-destructive/10 hover:text-destructive"
                   disabled={disabled || switching || deleteBusy}
-                  onClick={requestDelete}
+                  onClick={handleRequestDelete}
                   size="sm"
                   type="button"
                   variant="ghost"
@@ -291,32 +267,6 @@ function VersionHistoryRow({
       </div>
     </div>
   );
-}
-
-function formatTimelineDate(iso: string | undefined): string {
-  if (!iso) {
-    return "";
-  }
-  const ts = Date.parse(iso);
-  if (Number.isNaN(ts)) {
-    return "";
-  }
-  const d = new Date(ts);
-  const today = new Date();
-  const sameDay =
-    d.getFullYear() === today.getFullYear() &&
-    d.getMonth() === today.getMonth() &&
-    d.getDate() === today.getDate();
-  if (sameDay) {
-    return d.toLocaleTimeString(undefined, {
-      hour: "2-digit",
-      minute: "2-digit",
-    });
-  }
-  return d.toLocaleDateString(undefined, {
-    month: "short",
-    day: "numeric",
-  });
 }
 
 export function shouldShowVersionHistory(data: IterationsData | null): boolean {

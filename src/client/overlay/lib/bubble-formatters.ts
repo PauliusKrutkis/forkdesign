@@ -52,7 +52,10 @@ export function formatElapsed(ms: number): string {
   return `${m}:${s.toString().padStart(2, "0")}`;
 }
 
-export function formatDate(iso: string): string {
+export function formatDate(iso: string | undefined): string {
+  if (!iso) {
+    return "";
+  }
   const ts = Date.parse(iso);
   if (Number.isNaN(ts)) {
     return iso;

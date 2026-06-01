@@ -1,19 +1,21 @@
-import { readFile, rename, writeFile } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import path from "node:path";
-import { parse as parseBabel } from "@babel/parser";
-import type * as t from "@babel/types";
-import recast from "recast";
-import babelTsParser from "recast/parsers/babel-ts.js";
+import { atomicWriteText } from "../platform/atomic-write.ts";
+import { errorMessage } from "../platform/errors.ts";
+import {
+  assertValidTsx,
+  COMMENT_ID_ATTR_RE,
+  forEachCommentBlock,
+  parseSourceAst,
+  printAst,
+} from "./directive-ast.ts";
 import {
   buildMarkerFromInner,
   findJsxElementByAnchor,
   insertAfterSibling,
-  pushComments,
 } from "./writer-ast.ts";
 import { WriteError } from "./writer-errors.ts";
 
-const COMMENT_ID_ATTR_RE = /\bid="([^"]+)"/;
 const ACTIVE_ATTR_RE = /\bactive=(-?[0-9]+)/;
 const ACTIVE_VALUE_RE = /\bactive=-?[0-9]+/;
 const TRAILING_WHITESPACE_RE = /^([\s\S]*?)(\s*)$/;
@@ -42,40 +44,14 @@ export function extractDirectiveInner(
   source: string,
   commentId: string
 ): string | null {
-  const ast = recast.parse(source, { parser: babelTsParser });
+  const ast = parseSourceAst(source);
   let result: string | null = null;
-  recast.visit(ast, {
-    visitJSXExpressionContainer(p) {
-      if (result !== null) {
-        return false;
-      }
-      const node = p.node as t.JSXExpressionContainer;
-      if (node.expression.type !== "JSXEmptyExpression") {
-        this.traverse(p);
-        return;
-      }
-      const blocks: t.Comment[] = [];
-      pushComments(node.expression.innerComments, blocks);
-      pushComments(node.expression.leadingComments, blocks);
-      pushComments(node.expression.trailingComments, blocks);
-      for (const block of blocks) {
-        if (block.type !== "CommentBlock") {
-          continue;
-        }
-        const trimmed = block.value.trim();
-        if (!trimmed.startsWith("@comment")) {
-          continue;
-        }
-        const idMatch = block.value.match(COMMENT_ID_ATTR_RE);
-        if (!idMatch || idMatch[1] !== commentId) {
-          continue;
-        }
-        result = block.value;
-        return false;
-      }
-      this.traverse(p);
-      return;
-    },
+  forEachCommentBlock(ast, ({ block }) => {
+    const idMatch = block.value.match(COMMENT_ID_ATTR_RE);
+    if (idMatch?.[1] === commentId) {
+      result = block.value;
+      return false;
+    }
   });
   return result;
 }
@@ -91,41 +67,19 @@ export function replaceCommentMarkerInSource(
   commentId: string,
   directiveInner: string
 ): string {
-  const ast = recast.parse(source, { parser: babelTsParser });
+  const ast = parseSourceAst(source);
   let replaced = false;
-  recast.visit(ast, {
-    visitJSXExpressionContainer(p) {
-      if (replaced) {
-        return false;
-      }
-      const node = p.node as t.JSXExpressionContainer;
-      if (node.expression.type !== "JSXEmptyExpression") {
-        this.traverse(p);
-        return;
-      }
-      const blocks: t.Comment[] = [];
-      pushComments(node.expression.innerComments, blocks);
-      pushComments(node.expression.leadingComments, blocks);
-      pushComments(node.expression.trailingComments, blocks);
-      for (const block of blocks) {
-        if (block.type !== "CommentBlock") {
-          continue;
-        }
-        const trimmed = block.value.trim();
-        if (!trimmed.startsWith("@comment")) {
-          continue;
-        }
-        const idMatch = block.value.match(COMMENT_ID_ATTR_RE);
-        if (!idMatch || idMatch[1] !== commentId) {
-          continue;
-        }
-        block.value = directiveInner;
-        replaced = true;
-        return false;
-      }
-      this.traverse(p);
+  forEachCommentBlock(ast, ({ block }) => {
+    if (replaced) {
+      return false;
+    }
+    const idMatch = block.value.match(COMMENT_ID_ATTR_RE);
+    if (idMatch?.[1] !== commentId) {
       return;
-    },
+    }
+    block.value = directiveInner;
+    replaced = true;
+    return false;
   });
   if (!replaced) {
     throw new WriteError(
@@ -134,20 +88,8 @@ export function replaceCommentMarkerInSource(
     );
   }
 
-  const output = recast.print(ast).code;
-  try {
-    parseBabel(output, {
-      sourceType: "module",
-      plugins: ["jsx", "typescript"],
-      errorRecovery: false,
-    });
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    throw new WriteError(
-      `replaceCommentMarkerInSource: generated output failed to re-parse: ${message}`,
-      500
-    );
-  }
+  const output = printAst(ast);
+  assertValidTsx(output, "replaceCommentMarkerInSource");
   return output;
 }
 
@@ -175,9 +117,7 @@ export function injectExistingMarkerIntoSource(
   anchorUuid: string,
   directiveInner: string
 ): string {
-  const ast = recast.parse(source, { parser: babelTsParser });
-
-  // Locate the element bearing data-comment-anchor="<anchorUuid>".
+  const ast = parseSourceAst(source);
   const target = findJsxElementByAnchor(ast, anchorUuid);
   if (!target) {
     throw new WriteError(
@@ -186,28 +126,11 @@ export function injectExistingMarkerIntoSource(
     );
   }
 
-  // Build the marker from the existing directive text. The wrap-and-extract
-  // trick from buildCommentMarker also works here: we just stuff the original
-  // directive between the comment markers.
   const marker = buildMarkerFromInner(directiveInner);
-
   insertAfterSibling(ast, target, marker);
 
-  const output = recast.print(ast).code;
-  try {
-    parseBabel(output, {
-      sourceType: "module",
-      plugins: ["jsx", "typescript"],
-      errorRecovery: false,
-    });
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    throw new WriteError(
-      `injectExistingMarkerIntoSource: generated output failed to re-parse: ${message}`,
-      500
-    );
-  }
-
+  const output = printAst(ast);
+  assertValidTsx(output, "injectExistingMarkerIntoSource");
   return output;
 }
 
@@ -363,6 +286,25 @@ function readRepliesFromDirective(raw: string): StoredCommentReply[] {
   }
 }
 
+function skipQuotedString(source: string, start: number): number {
+  const q = source.charAt(start);
+  if (q !== '"' && q !== "'") {
+    return start;
+  }
+  let j = start + 1;
+  while (j < source.length) {
+    if (source[j] === "\\") {
+      j += 2;
+      continue;
+    }
+    if (source[j] === q) {
+      return j + 1;
+    }
+    j++;
+  }
+  return j;
+}
+
 function readBalancedSlice(
   source: string,
   start: number,
@@ -377,19 +319,7 @@ function readBalancedSlice(
   while (j < source.length) {
     const c = source.charAt(j);
     if (c === '"' || c === "'") {
-      const q = c;
-      j++;
-      while (j < source.length) {
-        if (source[j] === "\\") {
-          j += 2;
-          continue;
-        }
-        if (source[j] === q) {
-          j++;
-          break;
-        }
-        j++;
-      }
+      j = skipQuotedString(source, j);
       continue;
     }
     if (c === open) {
@@ -412,41 +342,20 @@ export async function mutateCommentDirectiveById(
   operationName: string
 ): Promise<void> {
   const source = await readFile(absolutePath, "utf8");
-  const ast = recast.parse(source, { parser: babelTsParser });
+  const ast = parseSourceAst(source);
 
   let mutated = false;
-  recast.visit(ast, {
-    visitJSXExpressionContainer(p) {
-      const node = p.node as t.JSXExpressionContainer;
-      if (node.expression.type !== "JSXEmptyExpression") {
-        this.traverse(p);
-        return;
-      }
-      const blocks: t.Comment[] = [];
-      pushComments(node.expression.innerComments, blocks);
-      pushComments(node.expression.leadingComments, blocks);
-      pushComments(node.expression.trailingComments, blocks);
-
-      for (const block of blocks) {
-        if (block.type !== "CommentBlock") {
-          continue;
-        }
-        const trimmed = block.value.trim();
-        if (!trimmed.startsWith("@comment")) {
-          continue;
-        }
-        const idMatch = block.value.match(COMMENT_ID_ATTR_RE);
-        if (!idMatch || idMatch[1] !== commentId) {
-          continue;
-        }
-
-        block.value = mutate(block.value);
-        mutated = true;
-        return false;
-      }
-      this.traverse(p);
+  forEachCommentBlock(ast, ({ block }) => {
+    if (mutated) {
+      return false;
+    }
+    const idMatch = block.value.match(COMMENT_ID_ATTR_RE);
+    if (idMatch?.[1] !== commentId) {
       return;
-    },
+    }
+    block.value = mutate(block.value);
+    mutated = true;
+    return false;
   });
 
   if (!mutated) {
@@ -456,20 +365,8 @@ export async function mutateCommentDirectiveById(
     );
   }
 
-  const output = recast.print(ast).code;
-  try {
-    parseBabel(output, {
-      sourceType: "module",
-      plugins: ["jsx", "typescript"],
-      errorRecovery: false,
-    });
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    throw new WriteError(
-      `${operationName}: generated output failed to re-parse: ${message}`,
-      500
-    );
-  }
+  const output = printAst(ast);
+  assertValidTsx(output, operationName);
 
   await atomicWrite(absolutePath, output);
 }
@@ -478,19 +375,11 @@ export async function atomicWrite(
   absolutePath: string,
   content: string
 ): Promise<void> {
-  // Write to a sibling tmp file (same directory) and rename — this is atomic
-  // on the same filesystem volume, which is the common case for source files.
-  const dir = path.dirname(absolutePath);
-  const base = path.basename(absolutePath);
-  const tmp = path.join(dir, `.${base}.${process.pid}.${Date.now()}.tmp`);
   try {
-    await writeFile(tmp, content, "utf8");
-    await rename(tmp, absolutePath);
+    await atomicWriteText(absolutePath, content);
   } catch (err) {
-    const hint = tmpdir();
-    const message = err instanceof Error ? err.message : String(err);
     throw new WriteError(
-      `failed to write file (tmpdir=${hint}): ${message}`,
+      `failed to write file (tmpdir=${tmpdir()}): ${errorMessage(err)}`,
       500
     );
   }

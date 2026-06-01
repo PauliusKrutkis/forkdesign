@@ -1,26 +1,30 @@
-import * as TooltipPrimitive from "@radix-ui/react-tooltip";
+import {
+  Content,
+  Portal,
+  Provider,
+  Root,
+  Trigger,
+} from "@radix-ui/react-tooltip";
 import type * as React from "react";
 import { cn } from "./cn.ts";
 
-const TooltipProvider = TooltipPrimitive.Provider;
+const TooltipProvider = Provider;
 
-const Tooltip = TooltipPrimitive.Root;
-const TooltipTrigger = TooltipPrimitive.Trigger;
+const Tooltip = Root;
+const TooltipTrigger = Trigger;
 
 const TooltipContent = ({
   className,
   sideOffset = 6,
   ref,
   ...props
-}: React.ComponentPropsWithoutRef<typeof TooltipPrimitive.Content> & {
-  ref?: React.RefObject<React.ComponentRef<
-    typeof TooltipPrimitive.Content
-  > | null>;
+}: React.ComponentPropsWithoutRef<typeof Content> & {
+  ref?: React.RefObject<React.ComponentRef<typeof Content> | null>;
 }) => (
-  <TooltipPrimitive.Portal>
+  <Portal>
     {/* z above the whole overlay stack (dock 9400 · lightbox 9700) so a
         tooltip never renders behind its trigger. */}
-    <TooltipPrimitive.Content
+    <Content
       className={cn(
         "z-[9600] animate-tooltip-in overflow-hidden rounded-md border bg-popover px-2.5 py-1.5 text-popover-foreground shadow-md",
         className
@@ -29,8 +33,8 @@ const TooltipContent = ({
       sideOffset={sideOffset}
       {...props}
     />
-  </TooltipPrimitive.Portal>
+  </Portal>
 );
-TooltipContent.displayName = TooltipPrimitive.Content.displayName;
+TooltipContent.displayName = Content.displayName;
 
 export { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger };

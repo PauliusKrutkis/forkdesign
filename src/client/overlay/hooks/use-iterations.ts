@@ -1,5 +1,9 @@
 import { useCallback, useEffect, useState } from "react";
+import { readApiError } from "../lib/api.ts";
+import { toErrorMessage } from "../lib/errors.ts";
 import { ignorePromiseRejection } from "../lib/ignore-promise-rejection.ts";
+import { handleIterationVersionKeydown } from "../lib/iteration-version-keydown.ts";
+import { useViteHmrReload } from "./use-vite-hmr-reload.ts";
 
 export interface IterationVersion {
   createdAt?: string;
@@ -51,30 +55,11 @@ export function useIterations(
   }, [commentId]);
 
   useEffect(() => {
-    let cancelled = false;
     setLoading(true);
-    const run = async () => {
-      await reload();
-      if (cancelled) {
-        return;
-      }
-    };
-    run().catch(ignorePromiseRejection);
-
-    if (import.meta.hot) {
-      const handler = () => {
-        reload().catch(ignorePromiseRejection);
-      };
-      import.meta.hot.on("vite:afterUpdate", handler);
-      return () => {
-        cancelled = true;
-        import.meta.hot?.off("vite:afterUpdate", handler);
-      };
-    }
-    return () => {
-      cancelled = true;
-    };
+    reload().catch(ignorePromiseRejection);
   }, [reload]);
+
+  useViteHmrReload(reload);
 
   const activate = useCallback(
     async (v: number) => {
@@ -114,10 +99,7 @@ export function useIterations(
           body: JSON.stringify({ id: commentId, v }),
         });
         if (!res.ok) {
-          const body = (await res.json().catch(() => ({}))) as {
-            error?: string;
-          };
-          throw new Error(body.error ?? `request failed (${res.status})`);
+          throw new Error(await readApiError(res));
         }
         const body = (await res.json()) as { active?: number };
         await reload();
@@ -126,9 +108,7 @@ export function useIterations(
           setData((prev) => (prev ? { ...prev, active: nextActive } : prev));
         }
       } catch (err) {
-        const message =
-          err instanceof Error ? err.message : "Failed to delete version";
-        setDeleteError(message);
+        setDeleteError(toErrorMessage(err, "Failed to delete version"));
         throw err;
       } finally {
         setDeleting(false);
@@ -155,38 +135,13 @@ export function useIterations(
     }
     const versionIndices = data.versions.map((x) => x.v).sort((a, b) => a - b);
     const onKey = (e: KeyboardEvent) => {
-      if (e.metaKey || e.ctrlKey || e.altKey) {
-        return;
-      }
-      const activeEl = document.activeElement;
-      const inInput =
-        activeEl &&
-        (activeEl.tagName === "INPUT" ||
-          activeEl.tagName === "TEXTAREA" ||
-          (activeEl instanceof HTMLElement && activeEl.isContentEditable));
-      if (inInput) {
-        return;
-      }
-      const pos = versionIndices.indexOf(data.active);
-      if (pos < 0) {
-        return;
-      }
-      if (e.key === "ArrowLeft" && pos > 0 && !switching && !deleting) {
-        e.preventDefault();
-        activate(versionIndices[pos - 1] ?? data.active).catch(
-          ignorePromiseRejection
-        );
-      } else if (
-        e.key === "ArrowRight" &&
-        pos < versionIndices.length - 1 &&
-        !switching &&
-        !deleting
-      ) {
-        e.preventDefault();
-        activate(versionIndices[pos + 1] ?? data.active).catch(
-          ignorePromiseRejection
-        );
-      }
+      handleIterationVersionKeydown(e, {
+        active: data.active,
+        activate,
+        deleting,
+        switching,
+        versionIndices,
+      });
     };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);

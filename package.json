@@ -70,7 +70,7 @@
   ],
   "exports": {
     ".": {
-      "source": "./src/index.ts",
+      "source": "./src/client/overlay/comment-overlay.tsx",
       "types": {
         "import": "./dist/index.d.ts",
         "require": "./dist/index.d.cts"
@@ -79,7 +79,7 @@
       "require": "./dist/index.cjs"
     },
     "./plugin": {
-      "source": "./src/plugin/index.ts",
+      "source": "./src/server/plugins/comments.ts",
       "types": {
         "import": "./dist/plugin/index.d.ts",
         "require": "./dist/plugin/index.d.cts"

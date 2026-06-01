@@ -1,9 +1,6 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
-/**
- * Adaptive screenshot thumbnail. See CommentBubble for sizing rules.
- */
-export function AdaptiveThumb({
+function AdaptiveThumbImage({
   src,
   onClick,
   className,
@@ -13,28 +10,34 @@ export function AdaptiveThumb({
   className?: string;
 }) {
   const [natural, setNatural] = useState<{ w: number; h: number } | null>(null);
+  const imgRef = useRef<HTMLImageElement>(null);
   const dims = useMemo(() => computeThumbDims(natural), [natural]);
+
+  useEffect(() => {
+    const img = imgRef.current;
+    if (!img) {
+      return;
+    }
+    const syncNatural = () => {
+      if (img.naturalWidth > 0 && img.naturalHeight > 0) {
+        setNatural({ w: img.naturalWidth, h: img.naturalHeight });
+      }
+    };
+    img.addEventListener("load", syncNatural);
+    if (img.complete) {
+      syncNatural();
+    }
+    return () => {
+      img.removeEventListener("load", syncNatural);
+    };
+  }, []);
 
   const inner = (
     <img
       alt=""
       className="h-full w-full object-contain"
       height={dims.height}
-      key={src}
-      ref={(img) => {
-        if (!img) {
-          return;
-        }
-        const syncNatural = () => {
-          if (img.naturalWidth > 0 && img.naturalHeight > 0) {
-            setNatural({ w: img.naturalWidth, h: img.naturalHeight });
-          }
-        };
-        img.addEventListener("load", syncNatural);
-        if (img.complete) {
-          syncNatural();
-        }
-      }}
+      ref={imgRef}
       src={src}
       width={dims.width}
     />
@@ -68,7 +71,26 @@ export function AdaptiveThumb({
   );
 }
 
-export function MicroThumb({ src }: { src: string }) {
+/**
+ * Adaptive screenshot thumbnail. See CommentBubble for sizing rules.
+ */
+export function AdaptiveThumb(props: {
+  src: string;
+  onClick?: () => void;
+  className?: string;
+}) {
+  return <AdaptiveThumbImage key={props.src} {...props} />;
+}
+
+export function MicroThumb({ src }: { src?: string }) {
+  if (!src) {
+    return (
+      <span
+        aria-hidden
+        className="block h-8 w-8 shrink-0 rounded border bg-muted"
+      />
+    );
+  }
   return (
     <span className="block h-8 w-8 shrink-0 overflow-hidden rounded border bg-muted">
       <img

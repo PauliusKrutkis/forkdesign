@@ -17,10 +17,19 @@ import { CommentDot } from "./comment-dot.tsx";
 import { CommentManagementPanel } from "./comment-management-panel.tsx";
 import { CommentSettingsPanel } from "./comment-settings-panel.tsx";
 import { CommentShell, type ShellTab } from "./comment-shell.tsx";
-import { useAnchorRects } from "./hooks/use-anchor-element.ts";
+import {
+  findAnchorInstanceRect,
+  useAnchorRects,
+} from "./hooks/use-anchor-element.ts";
+import { useViewport } from "./hooks/use-viewport.ts";
+import { useViteHmrReload } from "./hooks/use-vite-hmr-reload.ts";
+import { deleteComment, patchComment } from "./lib/api.ts";
+import { currentAppRoute, getCommentAuthor } from "./lib/comment-author.ts";
 import { ignorePromiseRejection } from "./lib/ignore-promise-rejection.ts";
+import { isOverlayElement } from "./lib/overlay-dom.ts";
+import { handleOverlayGlobalKeydown } from "./lib/overlay-global-keydown.ts";
 import { dotRect, placeFloater } from "./lib/placement.ts";
-import { findSourceLoc } from "./lib/source-loc.ts";
+import { submitComment } from "./lib/submit-comment.ts";
 import { OverlayDock } from "./overlay-dock.tsx";
 
 /**
@@ -98,45 +107,25 @@ export function CommentOverlay({
   // (e.g., PrototypeCard) appear regardless of which page is currently shown.
   // Dots only render for anchors whose elements are in the current DOM, so
   // the visual result is naturally page-scoped.
-  useEffect(() => {
-    let cancelled = false;
-    const load = async () => {
-      try {
-        const res = await fetch("/api/comments");
-        if (!res.ok) {
-          if (!cancelled) {
-            setComments([]);
-          }
-          return;
-        }
-        const body = (await res.json()) as { comments?: CommentData[] };
-        if (!cancelled) {
-          setComments(body.comments ?? []);
-        }
-      } catch {
-        if (!cancelled) {
-          setComments([]);
-        }
+  const reloadComments = useCallback(async () => {
+    try {
+      const res = await fetch("/api/comments");
+      if (!res.ok) {
+        setComments([]);
+        return;
       }
-    };
-    load().catch(ignorePromiseRejection);
-
-    // import.meta.hot exists in Vite dev; production builds tree-shake the
-    // overlay entirely so this branch isn't reachable in prod.
-    if (import.meta.hot) {
-      const handler = () => {
-        load().catch(ignorePromiseRejection);
-      };
-      import.meta.hot.on("vite:afterUpdate", handler);
-      return () => {
-        cancelled = true;
-        import.meta.hot?.off("vite:afterUpdate", handler);
-      };
+      const body = (await res.json()) as { comments?: CommentData[] };
+      setComments(body.comments ?? []);
+    } catch {
+      setComments([]);
     }
-    return () => {
-      cancelled = true;
-    };
   }, []);
+
+  useEffect(() => {
+    reloadComments().catch(ignorePromiseRejection);
+  }, [reloadComments]);
+
+  useViteHmrReload(reloadComments);
 
   // After a successful submit, watch for the new comment to appear in the
   // refetched list, then auto-open its bubble. Clears the pending id once
@@ -173,43 +162,15 @@ export function CommentOverlay({
     setShell((prev) => (prev === tab ? null : tab));
   }, []);
 
-  // Global hotkeys: `C` composer, `L` list shell, `,` settings shell.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.metaKey || e.ctrlKey || e.altKey) {
-        return;
-      }
-      if (isInTextInput(document.activeElement)) {
-        return;
-      }
-      if (e.key === ",") {
-        e.preventDefault();
-        toggleShell("settings");
-        return;
-      }
-      if (!settings.enabled) {
-        return;
-      }
-      if (e.key === "c" || e.key === "C") {
-        if (openTarget) {
-          return;
-        }
-        if (composerActive) {
-          e.preventDefault();
-          setComposerActive(false);
-          return;
-        }
-        e.preventDefault();
-        setComposerActive(true);
-        return;
-      }
-      if (e.key === "l" || e.key === "L") {
-        if (composerActive || openTarget) {
-          return;
-        }
-        e.preventDefault();
-        toggleShell("list");
-      }
+      handleOverlayGlobalKeydown(e, {
+        composerActive,
+        enabled: settings.enabled,
+        openTarget,
+        setComposerActive,
+        toggleShell,
+      });
     };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
@@ -304,15 +265,9 @@ export function CommentOverlay({
       }
     };
     const onClick = (e: MouseEvent) => {
-      let cur: Element | null = e.target instanceof Element ? e.target : null;
-      while (cur) {
-        if (
-          cur instanceof HTMLElement &&
-          cur.dataset.commentOverlay === "true"
-        ) {
-          return;
-        }
-        cur = cur.parentElement;
+      const target = e.target instanceof Element ? e.target : null;
+      if (isOverlayElement(target)) {
+        return;
       }
       setOpenTarget(null);
     };
@@ -326,157 +281,48 @@ export function CommentOverlay({
 
   const handleSubmit = useCallback(
     async (entry: ComposerSubmission): Promise<ComposerSubmitResult> => {
-      const src = findSourceLoc(entry.target);
-      if (!src) {
-        return {
-          ok: false,
-          error:
-            "couldn't locate this element in source. Try a different element.",
-        };
+      const result = await submitComment(entry);
+      if (!result.ok) {
+        return result.result;
       }
-      // Path validation is delegated to the plugin's POST handler so the
-      // policy lives in one place. Anything under src/*.tsx except the
-      // overlay's own infrastructure (e.g. src/dev/) is
-      // accepted there.
-
-      const existingAnchor =
-        entry.target.getAttribute("data-comment-anchor") ?? undefined;
-
-      // Sniff author from a global the host app might set. Fall back to a
-      // deterministic dev placeholder so the comment file shape stays stable
-      // when no override is provided.
-      const author =
-        (typeof window !== "undefined" &&
-          (window as unknown as { __COMMENT_AUTHOR__?: unknown })
-            .__COMMENT_AUTHOR__) ||
-        "dev@local";
-
-      const route =
-        typeof window === "undefined"
-          ? undefined
-          : window.location.pathname +
-            window.location.search +
-            window.location.hash;
-
-      try {
-        const res = await fetch("/api/comments", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({
-            file: src.file,
-            line: src.line,
-            column: src.column,
-            text: entry.text,
-            author: String(author),
-            ...(existingAnchor ? { existingAnchor } : {}),
-            ...(entry.screenshotPng
-              ? { screenshotPng: entry.screenshotPng }
-              : {}),
-            ...(route ? { route } : {}),
-          }),
-        });
-        if (!res.ok) {
-          const body = (await res.json().catch(() => ({}))) as {
-            error?: string;
-          };
-          return {
-            ok: false,
-            error: body.error ?? `request failed (${res.status})`,
-          };
-        }
-        // Capture the new comment's id from the response so we can auto-open
-        // its bubble as soon as the next /api/comments fetch returns. The
-        // server's POST response shape: { id, anchor, view, date, file }.
-        const body = (await res.json().catch(() => ({}))) as {
-          id?: string;
-        };
-        if (body.id) {
-          setPendingOpenId(body.id);
-        }
-        // Success: Vite HMR will fire `vite:afterUpdate` once it picks up the
-        // file write, the load() effect re-runs, and the new dot appears.
-        // Close the composer after the panel finishes its "Saved" pulse.
-        window.setTimeout(() => {
-          setComposerActive(false);
-        }, 650);
-        return { ok: true };
-      } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        return { ok: false, error: `network error: ${message}` };
+      if (result.id) {
+        setPendingOpenId(result.id);
       }
+      window.setTimeout(() => {
+        setComposerActive(false);
+      }, 650);
+      return { ok: true };
     },
     []
   );
 
   const handleEdit = useCallback(async (id: string, text: string) => {
-    const res = await fetch(`/api/comments/${encodeURIComponent(id)}`, {
-      method: "PATCH",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ text }),
-    });
-    if (!res.ok) {
-      const body = (await res.json().catch(() => ({}))) as { error?: string };
-      throw new Error(body.error ?? `request failed (${res.status})`);
-    }
+    await patchComment(id, { text });
   }, []);
 
   const handleSubmitReply = useCallback(
     async (id: string, text: string, v?: number) => {
-      const author =
-        settings.author.trim() ||
-        (typeof window !== "undefined" &&
-          (window as unknown as { __COMMENT_AUTHOR__?: unknown })
-            .__COMMENT_AUTHOR__ &&
-          String(
-            (window as unknown as { __COMMENT_AUTHOR__?: unknown })
-              .__COMMENT_AUTHOR__
-          )) ||
-        "dev@local";
-      const res = await fetch(`/api/comments/${encodeURIComponent(id)}`, {
-        method: "PATCH",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          reply: {
-            text,
-            author: String(author),
-            ...(v === undefined ? {} : { v }),
-          },
-        }),
+      await patchComment(id, {
+        reply: {
+          text,
+          author: getCommentAuthor(),
+          ...(v === undefined ? {} : { v }),
+        },
       });
-      if (!res.ok) {
-        const body = (await res.json().catch(() => ({}))) as { error?: string };
-        throw new Error(body.error ?? `request failed (${res.status})`);
-      }
     },
-    [settings.author]
+    []
   );
 
   const handleEditReply = useCallback(
     async (id: string, replyIndex: number, text: string) => {
-      const res = await fetch(`/api/comments/${encodeURIComponent(id)}`, {
-        method: "PATCH",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ editReply: { index: replyIndex, text } }),
-      });
-      if (!res.ok) {
-        const body = (await res.json().catch(() => ({}))) as { error?: string };
-        throw new Error(body.error ?? `request failed (${res.status})`);
-      }
+      await patchComment(id, { editReply: { index: replyIndex, text } });
     },
     []
   );
 
   const handleDeleteReply = useCallback(
     async (id: string, replyIndex: number) => {
-      const res = await fetch(`/api/comments/${encodeURIComponent(id)}`, {
-        method: "PATCH",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ deleteReply: { index: replyIndex } }),
-      });
-      if (!res.ok) {
-        const body = (await res.json().catch(() => ({}))) as { error?: string };
-        throw new Error(body.error ?? `request failed (${res.status})`);
-      }
+      await patchComment(id, { deleteReply: { index: replyIndex } });
     },
     []
   );
@@ -531,12 +377,7 @@ export function CommentOverlay({
         return;
       }
 
-      const currentRoute =
-        typeof window === "undefined"
-          ? ""
-          : window.location.pathname +
-            window.location.search +
-            window.location.hash;
+      const currentRoute = currentAppRoute() ?? "";
 
       setShell(null);
       setPendingOpen({
@@ -564,13 +405,7 @@ export function CommentOverlay({
       // Optimistic: the row will disappear on the next HMR-triggered refetch.
       // Errors propagate to the panel row so the user gets inline feedback
       // instead of a swallowed failure.
-      const res = await fetch(`/api/comments/${encodeURIComponent(id)}`, {
-        method: "DELETE",
-      });
-      if (!res.ok) {
-        const body = (await res.json().catch(() => ({}))) as { error?: string };
-        throw new Error(body.error ?? `request failed (${res.status})`);
-      }
+      await deleteComment(id);
       // If the open bubble was anchored on the deleted comment's anchor, close
       // it. The HMR refetch will reconcile the rest.
       setOpenTarget((prev) => {
@@ -716,21 +551,11 @@ function HoverPreview({
   target: DotInstanceTarget;
   comments: CommentData[];
 }) {
-  const rects = useAnchorRects(target.anchor);
-  const rect = rects[target.instance] ?? null;
+  const instances = useAnchorRects(target.anchor);
+  const rect = findAnchorInstanceRect(instances, target.instance);
   const previewRef = useRef<HTMLDivElement | null>(null);
   const [size, setSize] = useState({ width: PREVIEW_WIDTH, height: 72 });
-  const [viewport, setViewport] = useState(() => readViewport());
-
-  useEffect(() => {
-    const onResize = () => setViewport(readViewport());
-    window.addEventListener("resize", onResize);
-    window.addEventListener("scroll", onResize, { passive: true });
-    return () => {
-      window.removeEventListener("resize", onResize);
-      window.removeEventListener("scroll", onResize);
-    };
-  }, []);
+  const viewport = useViewport();
 
   useEffect(() => {
     const el = previewRef.current;
@@ -791,32 +616,6 @@ function HoverPreview({
   );
 }
 
-function readViewport() {
-  if (typeof window === "undefined") {
-    return { width: 1024, height: 768 };
-  }
-  return { width: window.innerWidth, height: window.innerHeight };
-}
-
-/**
- * Hotkeys should never fire while the user is typing into a textarea,
- * input, or contenteditable. Centralised here so all keymap surfaces use
- * the same definition.
- */
-function isInTextInput(el: Element | null): boolean {
-  if (!el) {
-    return false;
-  }
-  const tag = el.tagName;
-  if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") {
-    return true;
-  }
-  if (el instanceof HTMLElement && el.isContentEditable) {
-    return true;
-  }
-  return false;
-}
-
 function OpenBubble({
   target,
   comments,
@@ -842,8 +641,8 @@ function OpenBubble({
   onEditReply: (id: string, replyIndex: number, text: string) => Promise<void>;
   onDeleteReply: (id: string, replyIndex: number) => Promise<void>;
 }) {
-  const rects = useAnchorRects(target.anchor);
-  const rect = rects[target.instance] ?? null;
+  const instances = useAnchorRects(target.anchor);
+  const rect = findAnchorInstanceRect(instances, target.instance);
   if (!rect) {
     // Anchor not in DOM — future: render a "removed in v<n>" floater.
     return null;
@@ -877,3 +676,11 @@ function scrollToDataView(view: string) {
     .querySelector(`[data-view="${escaped}"]`)
     ?.scrollIntoView({ block: "nearest", behavior: "smooth" });
 }
+
+export type { OverlaySettings } from "../settings.ts";
+export type {
+  CommentData,
+  CommentProps,
+  CommentReply,
+  RegisteredComment,
+} from "../types.ts";

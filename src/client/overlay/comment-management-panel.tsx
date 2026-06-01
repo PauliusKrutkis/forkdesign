@@ -4,7 +4,9 @@ import type { CommentData } from "../types.ts";
 import { Badge } from "../ui/badge.tsx";
 import { Button } from "../ui/button.tsx";
 import { cn } from "../ui/cn.ts";
-import { ignorePromiseRejection } from "./lib/ignore-promise-rejection.ts";
+import { MicroThumb } from "./comment-thumb.tsx";
+import { DeleteConfirmOverlay } from "./delete-confirm-overlay.tsx";
+import { useDeleteConfirm } from "./hooks/use-delete-confirm.ts";
 
 type CommentWithFile = CommentData & { file?: string };
 
@@ -179,9 +181,18 @@ function CommentRow({
   onGoToPage: (comment: CommentWithFile) => void;
   onDelete: CommentManagementPanelProps["onDelete"];
 }) {
-  const [confirming, setConfirming] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const {
+    confirming,
+    busy,
+    error,
+    requestDelete,
+    confirmDelete,
+    cancelDelete,
+  } = useDeleteConfirm({
+    onDelete: async () => {
+      await onDelete(comment.id);
+    },
+  });
 
   const handleRowActivate = () => {
     if (jumpable) {
@@ -190,19 +201,6 @@ function CommentRow({
     }
     if (navigable) {
       onGoToPage(comment);
-    }
-  };
-
-  const handleDelete = async () => {
-    setBusy(true);
-    setError(null);
-    try {
-      await onDelete(comment.id);
-      // Row unmounts on success; no need to reset state.
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-      setBusy(false);
-      setConfirming(false);
     }
   };
 
@@ -217,7 +215,7 @@ function CommentRow({
 
   const inner = (
     <>
-      <Thumbnail src={comment.screenshot} />
+      <MicroThumb src={comment.screenshot} />
       <div className="min-w-0 flex-1">
         <p
           className="m-0 overflow-hidden text-foreground text-sm leading-snug"
@@ -257,7 +255,7 @@ function CommentRow({
           className="h-7 w-7 text-muted-foreground opacity-0 transition-opacity hover:text-destructive focus-visible:opacity-100 group-hover:opacity-100"
           onClick={(e) => {
             e.stopPropagation();
-            setConfirming(true);
+            requestDelete();
           }}
           size="icon"
           type="button"
@@ -268,37 +266,14 @@ function CommentRow({
       </div>
 
       {confirming ? (
-        <div className="absolute inset-y-0 right-0 z-10 flex items-center gap-1.5 rounded-r-[inherit] bg-gradient-to-l from-55% from-background to-transparent pr-3 pl-14">
-          <span className="mr-0.5 font-medium text-foreground text-xs">
-            Delete?
-          </span>
-          <Button
-            className="h-7 px-2 text-xs"
-            disabled={busy}
-            onClick={(e) => {
-              e.stopPropagation();
-              setConfirming(false);
-            }}
-            size="sm"
-            type="button"
-            variant="ghost"
-          >
-            Cancel
-          </Button>
-          <Button
-            className="h-7 px-2 text-xs"
-            disabled={busy}
-            onClick={(e) => {
-              e.stopPropagation();
-              handleDelete().catch(ignorePromiseRejection);
-            }}
-            size="sm"
-            type="button"
-            variant="destructive"
-          >
-            {busy ? "Deleting…" : "Delete"}
-          </Button>
-        </div>
+        <DeleteConfirmOverlay
+          busy={busy}
+          layout="panel"
+          onCancel={cancelDelete}
+          onConfirm={async () => {
+            await confirmDelete();
+          }}
+        />
       ) : null}
     </>
   );
@@ -312,27 +287,6 @@ function CommentRow({
   }
 
   return <div className={rowClass}>{inner}</div>;
-}
-
-function Thumbnail({ src }: { src?: string }) {
-  if (src) {
-    return (
-      <img
-        alt=""
-        className="block h-9 w-9 shrink-0 rounded-md border bg-muted object-cover"
-        height={36}
-        loading="lazy"
-        src={src}
-        width={36}
-      />
-    );
-  }
-  return (
-    <span
-      aria-hidden
-      className="block h-9 w-9 shrink-0 rounded-md border bg-muted"
-    />
-  );
 }
 
 function Chevron({ rotated }: { rotated: boolean }) {

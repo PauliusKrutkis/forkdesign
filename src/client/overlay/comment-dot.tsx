@@ -1,8 +1,9 @@
 import { Check, Pencil } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo } from "react";
 import type { CommentData } from "../types.ts";
 import { cn } from "../ui/cn.ts";
 import { useAnchorRects } from "./hooks/use-anchor-element.ts";
+import { useViewport } from "./hooks/use-viewport.ts";
 import { dotRect } from "./lib/placement.ts";
 
 export interface DotInstanceTarget {
@@ -26,13 +27,6 @@ const RECENT_WINDOW_MS = 24 * 60 * 60 * 1000;
  * perfectly circular; the pointing corner is shaped via border-radius.
  */
 const PIN_SIZE = 20;
-
-function readViewport() {
-  if (typeof window === "undefined") {
-    return { width: 1024, height: 768 };
-  }
-  return { width: window.innerWidth, height: window.innerHeight };
-}
 
 type PinState = "recent" | "default" | "resolved";
 
@@ -63,18 +57,8 @@ export function CommentDot({
   onOpen,
   onHover,
 }: CommentDotProps) {
-  const rects = useAnchorRects(anchor);
-  const [viewport, setViewport] = useState(readViewport);
-
-  useEffect(() => {
-    const onResize = () => setViewport(readViewport());
-    window.addEventListener("resize", onResize);
-    window.addEventListener("scroll", onResize, { passive: true });
-    return () => {
-      window.removeEventListener("resize", onResize);
-      window.removeEventListener("scroll", onResize);
-    };
-  }, []);
+  const instances = useAnchorRects(anchor);
+  const viewport = useViewport();
 
   const lead = comments[0];
   const unresolvedRecent = useMemo(() => {
@@ -91,7 +75,7 @@ export function CommentDot({
     });
   }, [comments]);
 
-  if (rects.length === 0 || !lead) {
+  if (instances.length === 0 || !lead) {
     return null;
   }
 
@@ -103,7 +87,7 @@ export function CommentDot({
 
   return (
     <>
-      {rects.map((rect, instance) => {
+      {instances.map(({ instance, rect }) => {
         const { left, top } = dotRect(
           { right: rect.right, top: rect.top },
           viewport

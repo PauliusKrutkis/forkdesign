@@ -1,13 +1,15 @@
 import { useCallback, useEffect, useState } from "react";
 import type { OverlayModel } from "../../settings.ts";
 import type { CommentData } from "../../types.ts";
-import {
-  formatProgress,
-  type IterateDoneEvent,
-  type IterateStreamEvent,
-} from "../lib/bubble-formatters.ts";
+import { readApiError } from "../lib/api.ts";
 import { captureAndUploadV } from "../lib/capture-iteration-screenshot.ts";
+import { toErrorMessage } from "../lib/errors.ts";
 import { ignorePromiseRejection } from "../lib/ignore-promise-rejection.ts";
+import {
+  formatIterateSuccess,
+  readIterateStream,
+  validateIterateDone,
+} from "../lib/parse-iterate-stream.ts";
 
 export type BubbleMode = "compact" | "detailed";
 
@@ -49,85 +51,35 @@ export function useIterateFix(args: {
         body: JSON.stringify({ id: lead.id, model: fixModel }),
       });
       if (!(res.ok && res.body)) {
-        const body = (await res.json().catch(() => ({}))) as { error?: string };
-        setIterateError(body.error ?? `request failed (${res.status})`);
+        setIterateError(await readApiError(res));
         return;
       }
 
-      const reader = res.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = "";
-      let done: IterateDoneEvent | null = null;
-
-      streamLoop: while (true) {
-        const { done: streamDone, value } = await reader.read();
-        if (streamDone) {
-          break;
-        }
-        buffer += decoder.decode(value, { stream: true });
-        let nl = buffer.indexOf("\n");
-        while (nl >= 0) {
-          const line = buffer.slice(0, nl).trim();
-          buffer = buffer.slice(nl + 1);
-          nl = buffer.indexOf("\n");
-          if (!line) {
-            continue;
-          }
-          let event: IterateStreamEvent;
-          try {
-            event = JSON.parse(line) as IterateStreamEvent;
-          } catch {
-            continue;
-          }
-          if (event.type === "progress") {
-            setIterateStatus(formatProgress(event));
-          } else if (event.type === "done") {
-            done = event;
-            break streamLoop;
-          }
-        }
+      const done = await readIterateStream(res.body, {
+        onProgress: setIterateStatus,
+      });
+      const validated = validateIterateDone(done);
+      if (!validated.ok) {
+        setIterateError(validated.error);
+        return;
       }
 
-      if (!done) {
-        setIterateError("stream closed without a result");
-        return;
-      }
-      if (!done.ok) {
-        setIterateError(done.error ?? "agent failed");
-        return;
-      }
-      if (done.changed === false) {
-        setIterateError("AI made no changes — try a more specific instruction");
-        return;
-      }
-      const parts: string[] = [];
-      if (done.modelUsed) {
-        parts.push(done.modelUsed);
-      }
-      if (typeof done.durationMs === "number") {
-        parts.push(`${Math.round(done.durationMs / 1000)}s`);
-      }
-      if (typeof done.turnsUsed === "number") {
-        parts.push(`${done.turnsUsed} turns`);
-      }
-      const successStatus = parts.length > 0 ? parts.join(" · ") : "Done";
-      setIterateStatus(successStatus);
+      setIterateStatus(formatIterateSuccess(validated.value));
       window.setTimeout(() => setIterateStatus(null), 3000);
 
       Promise.resolve(reloadIterations()).catch(ignorePromiseRejection);
-      if (done.v !== undefined && done.ok === true && done.changed === true) {
+      if (validated.value.v !== undefined && validated.value.changed === true) {
         captureAndUploadV({
           id: lead.id,
           anchor: lead.anchor,
-          v: done.v,
+          v: validated.value.v,
           onUploaded: () => {
             Promise.resolve(reloadIterations()).catch(ignorePromiseRejection);
           },
         });
       }
     } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      setIterateError(`network error: ${message}`);
+      setIterateError(`network error: ${toErrorMessage(err)}`);
     } finally {
       setIterating(false);
       setIterateStartedAt(null);

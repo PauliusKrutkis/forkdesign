@@ -1,13 +1,14 @@
 import { useEffect, useRef, useState } from "react";
 import type { CommentReply } from "../types.ts";
 import { Button } from "../ui/button.tsx";
-import { Textarea } from "../ui/textarea.tsx";
 import {
   CommentBubbleAttribution,
   ReplyVersionBadge,
 } from "./comment-bubble-attribution.tsx";
-import { ignorePromiseRejection } from "./lib/ignore-promise-rejection.ts";
-import { ShortcutHint, withCtrl } from "./shortcut-hint.tsx";
+import { DeleteConfirmOverlay } from "./delete-confirm-overlay.tsx";
+import { useDeleteConfirm } from "./hooks/use-delete-confirm.ts";
+import { useTextEditAction } from "./hooks/use-text-edit-action.ts";
+import { InlineCommentEditor } from "./inline-comment-editor.tsx";
 
 export function CommentBubbleReplyItem({
   reply,
@@ -30,10 +31,38 @@ export function CommentBubbleReplyItem({
   const [editDraft, setEditDraft] = useState("");
   const [editBusy, setEditBusy] = useState(false);
   const [editError, setEditError] = useState<string | null>(null);
-  const [deleteConfirming, setDeleteConfirming] = useState(false);
-  const [deleteBusy, setDeleteBusy] = useState(false);
-  const [deleteError, setDeleteError] = useState<string | null>(null);
   const editTextareaRef = useRef<HTMLTextAreaElement | null>(null);
+
+  const { save: saveEditAction } = useTextEditAction({
+    emptyMessage: "Reply cannot be empty",
+    onSubmit: async (trimmed) => {
+      if (!onEdit) {
+        return;
+      }
+      await onEdit(commentId, replyIndex, trimmed);
+    },
+  });
+
+  const {
+    confirming: deleteConfirming,
+    busy: deleteBusy,
+    error: deleteError,
+    requestDelete,
+    confirmDelete,
+    cancelDelete: cancelDeleteConfirm,
+  } = useDeleteConfirm({
+    skipConfirmation: skipDeleteConfirmation,
+    onBeforeConfirm: () => {
+      onInteraction?.();
+      setEditing(false);
+    },
+    onDelete: async () => {
+      if (!onDelete) {
+        return;
+      }
+      await onDelete(commentId, replyIndex);
+    },
+  });
 
   useEffect(() => {
     if (editing) {
@@ -49,8 +78,7 @@ export function CommentBubbleReplyItem({
     setEditing(true);
     setEditDraft(reply.text);
     setEditError(null);
-    setDeleteConfirming(false);
-    setDeleteError(null);
+    cancelDeleteConfirm();
   };
 
   const cancelEditing = () => {
@@ -59,113 +87,38 @@ export function CommentBubbleReplyItem({
     setEditError(null);
   };
 
-  const saveEdit = async () => {
-    if (!onEdit || editBusy) {
-      return;
-    }
-    const trimmed = editDraft.trim();
-    if (!trimmed) {
-      setEditError("Reply cannot be empty");
-      return;
-    }
-    setEditBusy(true);
-    setEditError(null);
-    try {
-      await onEdit(commentId, replyIndex, trimmed);
-      setEditing(false);
-      setEditDraft("");
-    } catch (err) {
-      setEditError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setEditBusy(false);
-    }
-  };
+  const saveEdit = () =>
+    saveEditAction({
+      draft: editDraft,
+      busy: editBusy,
+      setBusy: setEditBusy,
+      setError: setEditError,
+      onSuccess: () => {
+        setEditing(false);
+        setEditDraft("");
+      },
+    });
 
-  const confirmDelete = async () => {
-    if (!onDelete || deleteBusy) {
+  const handleRequestDelete = () => {
+    if (!onDelete) {
       return;
     }
-    setDeleteBusy(true);
-    setDeleteError(null);
-    try {
-      await onDelete(commentId, replyIndex);
-    } catch (err) {
-      setDeleteError(err instanceof Error ? err.message : String(err));
-      setDeleteBusy(false);
-      setDeleteConfirming(false);
-    }
-  };
-
-  const requestDelete = () => {
-    if (!onDelete || deleteBusy) {
-      return;
-    }
-    onInteraction?.();
-    setDeleteError(null);
-    setEditing(false);
-    if (skipDeleteConfirmation) {
-      confirmDelete().catch(ignorePromiseRejection);
-      return;
-    }
-    setDeleteConfirming(true);
-  };
-
-  const cancelDeleteConfirm = () => {
-    setDeleteConfirming(false);
+    requestDelete();
   };
 
   return (
     <li>
       {editing ? (
-        <div className="space-y-2">
-          <Textarea
-            aria-label="Edit reply"
-            className="min-h-[64px] resize-none text-sm leading-relaxed"
-            disabled={editBusy}
-            onChange={(e) => setEditDraft(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
-                e.preventDefault();
-                saveEdit().catch(ignorePromiseRejection);
-              }
-            }}
-            ref={editTextareaRef}
-            value={editDraft}
-          />
-          <div className="flex items-center justify-end gap-1.5">
-            <Button
-              className="h-7 px-2 text-xs"
-              disabled={editBusy}
-              onClick={cancelEditing}
-              size="sm"
-              type="button"
-              variant="ghost"
-            >
-              Cancel
-            </Button>
-            <Button
-              className="h-7 px-2 text-xs"
-              disabled={editBusy}
-              onClick={() => {
-                saveEdit().catch(ignorePromiseRejection);
-              }}
-              size="sm"
-              type="button"
-            >
-              {editBusy ? (
-                "Saving…"
-              ) : (
-                <>
-                  Save
-                  <ShortcutHint onPrimary>{withCtrl("⏎")}</ShortcutHint>
-                </>
-              )}
-            </Button>
-          </div>
-          {editError ? (
-            <p className="m-0 text-destructive text-xs">{editError}</p>
-          ) : null}
-        </div>
+        <InlineCommentEditor
+          ariaLabel="Edit reply"
+          busy={editBusy}
+          error={editError}
+          onCancel={cancelEditing}
+          onChange={setEditDraft}
+          onSave={saveEdit}
+          textareaRef={editTextareaRef}
+          value={editDraft}
+        />
       ) : (
         <p className="m-0 text-muted-foreground text-sm leading-snug">
           {reply.text}
@@ -198,7 +151,7 @@ export function CommentBubbleReplyItem({
               <Button
                 className="h-auto px-1.5 py-1 text-xs hover:bg-destructive/10 hover:text-destructive"
                 disabled={deleteBusy}
-                onClick={requestDelete}
+                onClick={handleRequestDelete}
                 size="sm"
                 type="button"
                 variant="ghost"
@@ -210,33 +163,12 @@ export function CommentBubbleReplyItem({
         ) : null}
 
         {deleteConfirming ? (
-          <div className="absolute inset-y-0 right-0 flex items-center justify-end gap-1.5 bg-gradient-to-l from-55% from-background to-transparent pl-8">
-            <span className="mr-0.5 font-medium text-foreground text-xs">
-              Delete?
-            </span>
-            <Button
-              className="h-7 px-2 text-xs"
-              disabled={deleteBusy}
-              onClick={cancelDeleteConfirm}
-              size="sm"
-              type="button"
-              variant="ghost"
-            >
-              Cancel
-            </Button>
-            <Button
-              className="h-7 px-2 text-xs"
-              disabled={deleteBusy}
-              onClick={() => {
-                confirmDelete().catch(ignorePromiseRejection);
-              }}
-              size="sm"
-              type="button"
-              variant="destructive"
-            >
-              {deleteBusy ? "Deleting…" : "Delete"}
-            </Button>
-          </div>
+          <DeleteConfirmOverlay
+            busy={deleteBusy}
+            layout="overlay"
+            onCancel={cancelDeleteConfirm}
+            onConfirm={confirmDelete}
+          />
         ) : null}
       </div>
 

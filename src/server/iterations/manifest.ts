@@ -1,5 +1,5 @@
 import { existsSync, statSync } from "node:fs";
-import { readdir, readFile, unlink, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 export interface VersionManifestEntry {
@@ -13,6 +13,40 @@ export interface IterationsManifest {
 
 const EMPTY_MANIFEST: IterationsManifest = { versions: {} };
 const VERSION_ASSET_FILE_RE = /^v(\d+)\.(tsx|png)$/;
+const VERSION_TSX_FILE_RE = /^v(\d+)\.tsx$/;
+
+export type VersionSlotMap = Map<number, { tsx: boolean; png: boolean }>;
+
+/** Merges v{N}.tsx/.png filenames from a directory listing into `present`. */
+export function mergeVersionSlotsFromDirEntries(
+  present: VersionSlotMap,
+  entries: string[]
+): void {
+  for (const name of entries) {
+    const m = name.match(VERSION_ASSET_FILE_RE);
+    if (!m?.[1]) {
+      continue;
+    }
+    const n = Number.parseInt(m[1], 10);
+    if (!Number.isFinite(n)) {
+      continue;
+    }
+    const slot = present.get(n) ?? { tsx: false, png: false };
+    if (m[2] === "tsx") {
+      slot.tsx = true;
+    } else {
+      slot.png = true;
+    }
+    present.set(n, slot);
+  }
+}
+
+function completeVersionIndices(present: VersionSlotMap): number[] {
+  return [...present.entries()]
+    .filter(([, slot]) => slot.tsx && slot.png)
+    .map(([n]) => n)
+    .sort((a, b) => a - b);
+}
 
 export function parseManifestJson(raw: string): IterationsManifest {
   let parsed: unknown;
@@ -150,35 +184,16 @@ export async function listCompleteIterationVersionsInDir(
   } catch {
     return [];
   }
-  const present = new Map<number, { tsx: boolean; png: boolean }>();
-  for (const name of entries) {
-    const m = name.match(VERSION_ASSET_FILE_RE);
-    if (!m?.[1]) {
-      continue;
-    }
-    const n = Number.parseInt(m[1], 10);
-    if (!Number.isFinite(n)) {
-      continue;
-    }
-    const slot = present.get(n) ?? { tsx: false, png: false };
-    if (m[2] === "tsx") {
-      slot.tsx = true;
-    } else {
-      slot.png = true;
-    }
-    present.set(n, slot);
-  }
-  return [...present.entries()]
-    .filter(([, slot]) => slot.tsx && slot.png)
-    .map(([n]) => n)
-    .sort((a, b) => a - b);
+  const present: VersionSlotMap = new Map();
+  mergeVersionSlotsFromDirEntries(present, entries);
+  return completeVersionIndices(present);
 }
 
 /** Merges version slots across every iteration root for a comment. */
 export async function listCompleteIterationVersionsAllRoots(
   roots: string[]
 ): Promise<number[]> {
-  const present = new Map<number, { tsx: boolean; png: boolean }>();
+  const present: VersionSlotMap = new Map();
   for (const iterDir of roots) {
     let entries: string[];
     try {
@@ -186,28 +201,46 @@ export async function listCompleteIterationVersionsAllRoots(
     } catch {
       continue;
     }
-    for (const name of entries) {
-      const m = name.match(VERSION_ASSET_FILE_RE);
-      if (!m?.[1]) {
-        continue;
-      }
-      const n = Number.parseInt(m[1], 10);
-      if (!Number.isFinite(n)) {
-        continue;
-      }
-      const slot = present.get(n) ?? { tsx: false, png: false };
-      if (m[2] === "tsx") {
-        slot.tsx = true;
-      } else {
-        slot.png = true;
-      }
-      present.set(n, slot);
-    }
+    mergeVersionSlotsFromDirEntries(present, entries);
   }
-  return [...present.entries()]
-    .filter(([, slot]) => slot.tsx && slot.png)
-    .map(([n]) => n)
-    .sort((a, b) => a - b);
+  return completeVersionIndices(present);
+}
+
+/**
+ * Next snapshot version index for Fix iterations under `iterDir`. Creates the
+ * directory when absent; scans existing v{N}.tsx files for the high water mark.
+ */
+export async function nextIterationVersion(
+  iterDir: string
+): Promise<{ ok: true; nextV: number } | { ok: false; error: string }> {
+  try {
+    if (existsSync(iterDir) && statSync(iterDir).isDirectory()) {
+      const entries = await readdir(iterDir);
+      let max = -1;
+      for (const name of entries) {
+        const m = name.match(VERSION_TSX_FILE_RE);
+        if (!m) {
+          continue;
+        }
+        const version = m[1];
+        if (version === undefined) {
+          continue;
+        }
+        const n = Number.parseInt(version, 10);
+        if (Number.isFinite(n) && n > max) {
+          max = n;
+        }
+      }
+      return { ok: true, nextV: max >= 0 ? max + 1 : 1 };
+    }
+    await mkdir(iterDir, { recursive: true });
+    return { ok: true, nextV: 1 };
+  } catch (err) {
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : String(err),
+    };
+  }
 }
 
 export function findVersionSnapshotPath(

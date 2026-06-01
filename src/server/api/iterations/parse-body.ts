@@ -1,32 +1,15 @@
+import { type FixModel, parseFixModel } from "../../fix/models.ts";
+import {
+  type ParseResult,
+  requireInt,
+  requireNonEmptyString,
+  requireObject,
+} from "../../platform/validation.ts";
+
 export interface ScreenshotBody {
   id: string;
   screenshotPng: string;
   v: number;
-}
-
-export function parseScreenshotBody(
-  value: unknown
-): { ok: true; value: ScreenshotBody } | { ok: false; reason: string } {
-  if (!value || typeof value !== "object") {
-    return { ok: false, reason: "body must be a JSON object" };
-  }
-  const obj = value as Record<string, unknown>;
-  const id = obj.id;
-  const v = obj.v;
-  const screenshotPng = obj.screenshotPng;
-  if (typeof id !== "string" || id.length === 0) {
-    return { ok: false, reason: "field `id` must be a non-empty string" };
-  }
-  if (typeof v !== "number" || !Number.isInteger(v) || v < 0) {
-    return { ok: false, reason: "field `v` must be a non-negative integer" };
-  }
-  if (typeof screenshotPng !== "string" || screenshotPng.length === 0) {
-    return {
-      ok: false,
-      reason: "field `screenshotPng` must be a non-empty string",
-    };
-  }
-  return { ok: true, value: { id, v, screenshotPng } };
 }
 
 export interface ActivateBody {
@@ -34,42 +17,103 @@ export interface ActivateBody {
   v: number;
 }
 
-export function parseActivateBody(
+export interface NewIterationBody {
+  id: string;
+  model?: FixModel;
+}
+
+function parseIdVersionBody(
+  value: unknown,
+  vMin: number,
+  vMinReason: string
+): ParseResult<ActivateBody> {
+  const objResult = requireObject(value);
+  if (!objResult.ok) {
+    return objResult;
+  }
+  const obj = objResult.value;
+  const id = requireNonEmptyString(obj, "id");
+  if (!id.ok) {
+    return id;
+  }
+  const v = requireInt(obj, "v", { min: vMin });
+  if (!v.ok) {
+    return { ok: false, reason: vMinReason };
+  }
+  return { ok: true, value: { id: id.value, v: v.value } };
+}
+
+export function parseScreenshotBody(
   value: unknown
-): { ok: true; value: ActivateBody } | { ok: false; reason: string } {
-  if (!value || typeof value !== "object") {
-    return { ok: false, reason: "body must be a JSON object" };
+): ParseResult<ScreenshotBody> {
+  const base = parseIdVersionBody(
+    value,
+    0,
+    "field `v` must be a non-negative integer"
+  );
+  if (!base.ok) {
+    return base;
   }
-  const obj = value as Record<string, unknown>;
-  const id = obj.id;
-  const v = obj.v;
-  if (typeof id !== "string" || id.length === 0) {
-    return { ok: false, reason: "field `id` must be a non-empty string" };
+  const objResult = requireObject(value);
+  if (!objResult.ok) {
+    return objResult;
   }
-  if (typeof v !== "number" || !Number.isInteger(v) || v < 0) {
-    return { ok: false, reason: "field `v` must be a non-negative integer" };
+  const screenshotPng = requireNonEmptyString(objResult.value, "screenshotPng");
+  if (!screenshotPng.ok) {
+    return {
+      ok: false,
+      reason: "field `screenshotPng` must be a non-empty string",
+    };
   }
-  return { ok: true, value: { id, v } };
+  return {
+    ok: true,
+    value: {
+      ...base.value,
+      screenshotPng: screenshotPng.value,
+    },
+  };
+}
+
+export function parseActivateBody(value: unknown): ParseResult<ActivateBody> {
+  return parseIdVersionBody(
+    value,
+    0,
+    "field `v` must be a non-negative integer"
+  );
 }
 
 export function parseDeleteVersionBody(
   value: unknown
-): { ok: true; value: ActivateBody } | { ok: false; reason: string } {
-  if (!value || typeof value !== "object") {
-    return { ok: false, reason: "body must be a JSON object" };
+): ParseResult<ActivateBody> {
+  return parseIdVersionBody(
+    value,
+    1,
+    "field `v` must be an integer >= 1 (baseline v0 cannot be deleted)"
+  );
+}
+
+export function parseNewIterationBody(
+  value: unknown
+): ParseResult<NewIterationBody> {
+  const objResult = requireObject(value);
+  if (!objResult.ok) {
+    return objResult;
   }
-  const obj = value as Record<string, unknown>;
-  const id = obj.id;
-  const v = obj.v;
-  if (typeof id !== "string" || id.length === 0) {
-    return { ok: false, reason: "field `id` must be a non-empty string" };
+  const obj = objResult.value;
+  const id = requireNonEmptyString(obj, "id");
+  if (!id.ok) {
+    return id;
   }
-  if (typeof v !== "number" || !Number.isInteger(v) || v < 1) {
-    return {
-      ok: false,
-      reason:
-        "field `v` must be an integer >= 1 (baseline v0 cannot be deleted)",
-    };
+  const modelRaw = obj.model;
+  if (modelRaw === undefined) {
+    return { ok: true, value: { id: id.value } };
   }
-  return { ok: true, value: { id, v } };
+  if (typeof modelRaw !== "string") {
+    return { ok: false, reason: "field `model` must be a string" };
+  }
+  const model = parseFixModel(modelRaw);
+  if (!model) {
+    return { ok: false, reason: `unknown fix model: ${modelRaw}` };
+  }
+  return { ok: true, value: { id: id.value, model } };
 }

@@ -6,6 +6,7 @@ import { Kbd } from "../ui/kbd.tsx";
 import { Textarea } from "../ui/textarea.tsx";
 import { HotkeyTip } from "./hotkey-tip.tsx";
 import { ignorePromiseRejection } from "./lib/ignore-promise-rejection.ts";
+import { isOverlayElement } from "./lib/overlay-dom.ts";
 import { effectiveBackgroundColor } from "./lib/screenshot.ts";
 import { withCtrl } from "./shortcut-hint.tsx";
 
@@ -92,20 +93,6 @@ export function CommentComposer({
       return;
     }
 
-    const isOverlayChrome = (el: Element | null): boolean => {
-      let cur: Element | null = el;
-      while (cur) {
-        if (
-          cur instanceof HTMLElement &&
-          cur.dataset.commentOverlay === "true"
-        ) {
-          return true;
-        }
-        cur = cur.parentElement;
-      }
-      return false;
-    };
-
     const highlight = (el: HTMLElement | null) => {
       const node = highlightRef.current;
       if (!node) {
@@ -125,7 +112,7 @@ export function CommentComposer({
 
     const onMove = (e: MouseEvent) => {
       const el = pickTarget(e.clientX, e.clientY);
-      if (el && !isOverlayChrome(el)) {
+      if (el && !isOverlayElement(el)) {
         highlight(el);
       } else {
         highlight(null);
@@ -141,7 +128,7 @@ export function CommentComposer({
         e instanceof MouseEvent
           ? pickTarget(e.clientX, e.clientY)
           : (e.target as HTMLElement | null);
-      if (!target || isOverlayChrome(target)) {
+      if (!target || isOverlayElement(target)) {
         return false;
       }
       e.preventDefault();
@@ -459,23 +446,12 @@ function pickTarget(x: number, y: number): HTMLElement | null {
     if (!(node instanceof HTMLElement)) {
       continue;
     }
-    if (isOverlayNode(node)) {
+    if (isOverlayElement(node)) {
       continue;
     }
     return node;
   }
   return null;
-}
-
-function isOverlayNode(el: HTMLElement): boolean {
-  let cur: HTMLElement | null = el;
-  while (cur) {
-    if (cur.dataset.commentOverlay === "true") {
-      return true;
-    }
-    cur = cur.parentElement;
-  }
-  return false;
 }
 
 /**
@@ -521,15 +497,8 @@ async function captureElementScreenshot(
       backgroundColor: effectiveBackgroundColor(el),
       // Drop the overlay's own chrome from the capture in case it overlaps
       // the target (the highlight + dot live on data-comment-overlay nodes).
-      filter: (node) => {
-        if (
-          node instanceof HTMLElement &&
-          node.dataset.commentOverlay === "true"
-        ) {
-          return false;
-        }
-        return true;
-      },
+      filter: (node) =>
+        !isOverlayElement(node instanceof Element ? node : null),
       cacheBust: true,
     });
     if (typeof dataUrl !== "string" || !dataUrl.startsWith("data:image/png")) {

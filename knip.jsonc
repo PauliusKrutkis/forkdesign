@@ -1,6 +1,9 @@
 {
   "$schema": "https://unpkg.com/knip@6/schema.json",
-  "entry": ["src/index.ts", "src/plugin/index.ts"],
+  "entry": [
+    "src/client/overlay/comment-overlay.tsx",
+    "src/server/plugins/comments.ts"
+  ],
   "project": ["src/**/*.{ts,tsx}", "tailwind.*.js"],
   "ignoreDependencies": ["@biomejs/biome"],
   "ignore": ["src/client/ui/**"],

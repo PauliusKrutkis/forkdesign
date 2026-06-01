@@ -40,10 +40,6 @@ import {
 } from "./writer-directive.ts";
 import { WriteError } from "./writer-errors.ts";
 
-export * from "./writer-ast.ts";
-export * from "./writer-directive.ts";
-export * from "./writer-errors.ts";
-
 const COMMENT_ID_ATTR_RE = /\bid="([^"]+)"/;
 const ANCHOR_ATTR_RE = /\banchor="([^"]+)"/;
 const TRAILING_NEWLINE_INDENT_RE = /\n[ \t]*$/;
@@ -373,6 +369,142 @@ export interface DeleteCommentMarkerResult {
   removedAnchor: boolean;
 }
 
+interface CommentContainerMatch {
+  anchor: string | null;
+  container: t.JSXExpressionContainer;
+  index: number;
+  parent: { children: t.Node[] };
+}
+
+function collectCommentBlocks(node: t.JSXExpressionContainer): t.Comment[] {
+  const blocks: t.Comment[] = [];
+  if (node.expression.type !== "JSXEmptyExpression") {
+    return blocks;
+  }
+  pushComments(node.expression.innerComments, blocks);
+  pushComments(node.expression.leadingComments, blocks);
+  pushComments(node.expression.trailingComments, blocks);
+  return blocks;
+}
+
+/** `undefined` when the block is not a matching `@comment` directive. */
+function anchorFromCommentBlock(
+  block: t.Comment,
+  commentId: string
+): string | null | undefined {
+  if (block.type !== "CommentBlock") {
+    return;
+  }
+  const trimmed = block.value.trim();
+  if (!trimmed.startsWith("@comment")) {
+    return;
+  }
+  const idMatch = block.value.match(COMMENT_ID_ATTR_RE);
+  if (!idMatch || idMatch[1] !== commentId) {
+    return;
+  }
+  const anchorMatch = block.value.match(ANCHOR_ATTR_RE);
+  return anchorMatch ? (anchorMatch[1] ?? null) : null;
+}
+
+interface RecastParentPath {
+  parent?: RecastParentPath;
+  value: unknown;
+}
+
+function locateCommentContainerParent(
+  node: t.JSXExpressionContainer,
+  parentPath: RecastParentPath | null | undefined,
+  anchor: string | null
+): CommentContainerMatch | null {
+  let current = parentPath;
+  while (current) {
+    const v = current.value;
+    if (isJsxParent(v)) {
+      const children = v.children as t.Node[];
+      const idx = children.indexOf(node);
+      if (idx >= 0) {
+        return {
+          container: node,
+          parent: { children },
+          index: idx,
+          anchor,
+        };
+      }
+    }
+    current = current.parent;
+  }
+  return null;
+}
+
+function findCommentContainerById(
+  ast: t.File,
+  commentId: string
+): CommentContainerMatch | null {
+  let match: CommentContainerMatch | null = null;
+
+  recast.visit(ast, {
+    visitJSXExpressionContainer(p) {
+      if (match) {
+        return false;
+      }
+      const node = p.node as t.JSXExpressionContainer;
+      const blocks = collectCommentBlocks(node);
+      let anchor: string | null = null;
+      let matched = false;
+      for (const block of blocks) {
+        const foundAnchor = anchorFromCommentBlock(block, commentId);
+        if (foundAnchor === undefined) {
+          continue;
+        }
+        anchor = foundAnchor;
+        matched = true;
+        break;
+      }
+      if (!matched) {
+        this.traverse(p);
+        return;
+      }
+      match = locateCommentContainerParent(node, p.parent, anchor);
+      return false;
+    },
+  });
+
+  return match;
+}
+
+function isAnchorReferencedInAst(ast: t.File, anchor: string): boolean {
+  let referenced = false;
+
+  recast.visit(ast, {
+    visitJSXExpressionContainer(p) {
+      if (referenced) {
+        return false;
+      }
+      const node = p.node as t.JSXExpressionContainer;
+      const blocks = collectCommentBlocks(node);
+      for (const block of blocks) {
+        if (block.type !== "CommentBlock") {
+          continue;
+        }
+        const trimmed = block.value.trim();
+        if (!trimmed.startsWith("@comment")) {
+          continue;
+        }
+        const anchorMatch = block.value.match(ANCHOR_ATTR_RE);
+        if (anchorMatch && anchorMatch[1] === anchor) {
+          referenced = true;
+          return false;
+        }
+      }
+      this.traverse(p);
+      return;
+    },
+  });
+
+  return referenced;
+}
+
 /**
  * Remove the `{/* @comment id="<commentId>" ... *\/}` JSXExpressionContainer
  * from the file. When the deleted marker was the only one referencing its
@@ -394,81 +526,19 @@ export async function deleteCommentMarker(
   const source = await readFile(input.absolutePath, "utf8");
   const ast = recast.parse(source, { parser: babelTsParser });
 
-  // Locate the JSXExpressionContainer carrying our @comment block. We also
-  // capture the parent (JSXElement / JSXFragment) and the index inside its
-  // `children` array so we can splice the node out.
-  let targetContainer: t.JSXExpressionContainer | null = null;
-  let targetParent: { children: t.Node[] } | null = null;
-  let targetIndex = -1;
-  let targetAnchor: string | null = null;
-
-  recast.visit(ast, {
-    visitJSXExpressionContainer(p) {
-      if (targetContainer) {
-        return false;
-      }
-      const node = p.node as t.JSXExpressionContainer;
-      if (node.expression.type !== "JSXEmptyExpression") {
-        this.traverse(p);
-        return;
-      }
-      const blocks: t.Comment[] = [];
-      pushComments(node.expression.innerComments, blocks);
-      pushComments(node.expression.leadingComments, blocks);
-      pushComments(node.expression.trailingComments, blocks);
-      let matched = false;
-      let anchor: string | null = null;
-      for (const block of blocks) {
-        if (block.type !== "CommentBlock") {
-          continue;
-        }
-        const trimmed = block.value.trim();
-        if (!trimmed.startsWith("@comment")) {
-          continue;
-        }
-        const idMatch = block.value.match(COMMENT_ID_ATTR_RE);
-        if (!idMatch || idMatch[1] !== input.commentId) {
-          continue;
-        }
-        const anchorMatch = block.value.match(ANCHOR_ATTR_RE);
-        anchor = anchorMatch ? (anchorMatch[1] ?? null) : null;
-        matched = true;
-        break;
-      }
-      if (!matched) {
-        this.traverse(p);
-        return;
-      }
-      // Walk up to find the JSX parent and resolve the index in its children.
-      let parentPath = p.parent;
-      while (parentPath) {
-        const v = parentPath.value as unknown;
-        if (isJsxParent(v)) {
-          const children = v.children as t.Node[];
-          const idx = children.indexOf(node);
-          if (idx >= 0) {
-            targetContainer = node;
-            targetParent = { children };
-            targetIndex = idx;
-            targetAnchor = anchor;
-            return false;
-          }
-        }
-        parentPath = parentPath.parent;
-      }
-      // Marker found but no JSX parent (shouldn't happen — markers are always
-      // siblings). Fall through and let the not-found error fire so we never
-      // silently leave a broken state.
-      return false;
-    },
-  });
-
-  if (!(targetContainer && targetParent)) {
+  const located = findCommentContainerById(ast, input.commentId);
+  if (!located) {
     throw new WriteError(
       `comment marker not found in file: id="${input.commentId}"`,
       404
     );
   }
+
+  const {
+    parent: targetParent,
+    index: targetIndex,
+    anchor: targetAnchor,
+  } = located;
 
   // Splice the marker out. If the preceding sibling is JSXText that ends in a
   // newline + whitespace, strip that trailing whitespace too so we don't leave
@@ -505,41 +575,8 @@ export async function deleteCommentMarker(
   // Decide whether to also remove the `data-comment-anchor` attribute.
   // Scan the AST AFTER removal for any other @comment blocks referencing the
   // same anchor. Zero remaining = strip the attribute.
-  let anchorStillReferenced = false;
-  if (targetAnchor !== null) {
-    recast.visit(ast, {
-      visitJSXExpressionContainer(p) {
-        if (anchorStillReferenced) {
-          return false;
-        }
-        const node = p.node as t.JSXExpressionContainer;
-        if (node.expression.type !== "JSXEmptyExpression") {
-          this.traverse(p);
-          return;
-        }
-        const blocks: t.Comment[] = [];
-        pushComments(node.expression.innerComments, blocks);
-        pushComments(node.expression.leadingComments, blocks);
-        pushComments(node.expression.trailingComments, blocks);
-        for (const block of blocks) {
-          if (block.type !== "CommentBlock") {
-            continue;
-          }
-          const trimmed = block.value.trim();
-          if (!trimmed.startsWith("@comment")) {
-            continue;
-          }
-          const anchorMatch = block.value.match(ANCHOR_ATTR_RE);
-          if (anchorMatch && anchorMatch[1] === targetAnchor) {
-            anchorStillReferenced = true;
-            return false;
-          }
-        }
-        this.traverse(p);
-        return;
-      },
-    });
-  }
+  const anchorStillReferenced =
+    targetAnchor !== null && isAnchorReferencedInAst(ast, targetAnchor);
 
   let removedAnchor = false;
   if (targetAnchor !== null && !anchorStillReferenced) {

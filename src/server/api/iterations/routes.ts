@@ -1,53 +1,36 @@
-import { existsSync, statSync } from "node:fs";
-import { copyFile, mkdir, readdir, readFile } from "node:fs/promises";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import path from "node:path";
-import {
-  type FoundComment,
-  findCommentById,
-} from "../../comments/find-comment.ts";
-import { readCommentsFromSource } from "../../comments/reader.ts";
-import {
-  extractDirectiveInner,
-  injectExistingMarkerIntoSource,
-  replaceCommentMarkerInSource,
-  updateCommentActive,
-  WriteError,
-} from "../../comments/writer.ts";
-import { getFixRuntimeConfig } from "../../fix/config.ts";
-import {
-  buildFixModelChain,
-  DEFAULT_FIX_MODEL_PRIORITY,
-  parseFixModel,
-  runFix,
-} from "../../fix/index.ts";
-import type { FixModel } from "../../fix/models.ts";
-
-const VERSION_TSX_FILE_RE = /^v(\d+)\.tsx$/;
-
+import { DEFAULT_FIX_MODEL_PRIORITY, type FixModel } from "../../fix/models.ts";
+import { applyIterationVersionToSource } from "../../iterations/activate-version.ts";
+import { resolveCommentIterationContext } from "../../iterations/context.ts";
 import {
   deleteVersionArtifactsAllRoots,
   enrichVersionMeta,
-  findVersionPngPath,
-  findVersionSnapshotPath,
   iterationPngUrl,
   listCompleteIterationVersionsAllRoots,
-  patchIterationsManifest,
   pngMtimeMs,
   readIterationsManifest,
-  resolveIterationDirRoots,
   tsxMtimeMs,
   versionEntryFromManifest,
 } from "../../iterations/manifest.ts";
 import {
-  atomicWriteBytes,
-  atomicWriteText,
-} from "../../platform/atomic-write.ts";
-import { readJsonBody, sendError } from "../../platform/http.ts";
-import { decodeScreenshotPng } from "../comments/parse-body.ts";
+  createNdjsonStream,
+  openNdjsonResponse,
+  runNewIteration,
+} from "../../iterations/run-iteration.ts";
+import { atomicWriteBytes } from "../../platform/atomic-write.ts";
+import {
+  errorMessage,
+  readAndParse,
+  readJsonBody,
+  sendError,
+  sendJson,
+} from "../../platform/http.ts";
+import { decodeScreenshotPng } from "../../platform/media.ts";
 import {
   parseActivateBody,
   parseDeleteVersionBody,
+  parseNewIterationBody,
   parseScreenshotBody,
 } from "./parse-body.ts";
 
@@ -72,19 +55,17 @@ export async function handleIterationsList(
     return;
   }
 
-  const found = await findCommentById(projectRoot, id, excludeSrcPrefixes);
-  if (!found) {
-    sendError(res, 404, `comment id not found: ${id}`);
+  const ctx = await resolveCommentIterationContext(
+    projectRoot,
+    id,
+    excludeSrcPrefixes
+  );
+  if (!ctx.ok) {
+    sendError(res, ctx.status, ctx.message);
     return;
   }
 
-  const iterationRoots = resolveIterationDirRoots(projectRoot, id);
-  if (iterationRoots.length === 0) {
-    sendError(res, 404, `iterations dir not found: ${id}`);
-    return;
-  }
-
-  const iterDir = iterationRoots[0];
+  const { found, iterationRoots, iterDir } = ctx;
   const manifest = await readIterationsManifest(iterDir);
 
   const versionIndices =
@@ -107,22 +88,13 @@ export async function handleIterationsList(
 
   const active = found.comment.active ?? 0;
 
-  res.statusCode = 200;
-  res.setHeader("content-type", "application/json; charset=utf-8");
-  res.setHeader("cache-control", "no-store");
-  res.end(
-    JSON.stringify({
-      id,
-      file: found.relativePath,
-      active,
-      versions,
-    })
-  );
+  sendJson(res, {
+    id,
+    file: found.relativePath,
+    active,
+    versions,
+  });
 }
-
-type IterationApplyResult =
-  | { ok: true }
-  | { ok: false; status: number; message: string };
 
 /** Normalized path after `/api/iterations` (handles mount-stripped and full URLs). */
 export function iterationsSubpath(reqUrl: string): string {
@@ -138,132 +110,6 @@ export function iterationsSubpath(reqUrl: string): string {
     sub = sub.slice(0, -1);
   }
   return sub;
-}
-
-async function applyIterationVersionToSource(
-  found: FoundComment,
-  iterationRoots: string[],
-  id: string,
-  v: number
-): Promise<IterationApplyResult> {
-  const snapshotPath = findVersionSnapshotPath(iterationRoots, v);
-  if (!snapshotPath) {
-    return {
-      ok: false,
-      status: 400,
-      message: `version snapshot not found: v${v}.tsx`,
-    };
-  }
-
-  if (found.siblingIds.length > 0) {
-    console.warn(
-      `[vite-plugin-comments] activating v${v} for comment ${id} will overwrite ${found.siblingIds.length} other comment(s) in ${found.relativePath}`
-    );
-  }
-
-  let currentSource: string;
-  try {
-    currentSource = await readFile(found.absolutePath, "utf8");
-  } catch (err) {
-    return {
-      ok: false,
-      status: 500,
-      message: err instanceof Error ? err.message : String(err),
-    };
-  }
-  const directiveInner = extractDirectiveInner(currentSource, id);
-  if (directiveInner === null) {
-    return {
-      ok: false,
-      status: 500,
-      message: `could not extract directive for comment ${id} from current source`,
-    };
-  }
-
-  let snapshotSource: string;
-  try {
-    snapshotSource = await readFile(snapshotPath, "utf8");
-  } catch (err) {
-    return {
-      ok: false,
-      status: 500,
-      message: err instanceof Error ? err.message : String(err),
-    };
-  }
-
-  let snapshotHasMarker = false;
-  try {
-    const parsedSnapshot = readCommentsFromSource(snapshotSource);
-    snapshotHasMarker = parsedSnapshot.comments.some((c) => c.id === id);
-  } catch {
-    snapshotHasMarker = false;
-  }
-
-  try {
-    if (snapshotHasMarker) {
-      snapshotSource = replaceCommentMarkerInSource(
-        snapshotSource,
-        id,
-        directiveInner
-      );
-    } else if (
-      snapshotSource.includes(`data-comment-anchor="${found.comment.anchor}"`)
-    ) {
-      snapshotSource = injectExistingMarkerIntoSource(
-        snapshotSource,
-        found.comment.anchor,
-        directiveInner
-      );
-      console.warn(
-        `[vite-plugin-comments] injected marker into v${v} snapshot of comment ${id} before activating (snapshot pre-dated the marker)`
-      );
-    } else {
-      return {
-        ok: false,
-        status: 400,
-        message:
-          "snapshot is too old to safely activate; it pre-dates the anchor attribute.",
-      };
-    }
-  } catch (err) {
-    if (err instanceof WriteError) {
-      return { ok: false, status: err.status, message: err.message };
-    }
-    return {
-      ok: false,
-      status: 500,
-      message: err instanceof Error ? err.message : String(err),
-    };
-  }
-
-  try {
-    await atomicWriteText(found.absolutePath, snapshotSource);
-  } catch (err) {
-    return {
-      ok: false,
-      status: 500,
-      message: err instanceof Error ? err.message : String(err),
-    };
-  }
-
-  try {
-    await updateCommentActive({
-      absolutePath: found.absolutePath,
-      commentId: id,
-      active: v,
-    });
-  } catch (err) {
-    if (err instanceof WriteError) {
-      return { ok: false, status: err.status, message: err.message };
-    }
-    return {
-      ok: false,
-      status: 500,
-      message: err instanceof Error ? err.message : String(err),
-    };
-  }
-
-  return { ok: true };
 }
 
 /**
@@ -293,21 +139,19 @@ export async function handleIterationsActivate(
   }
   const { id, v } = parsed.value;
 
-  const found = await findCommentById(projectRoot, id, excludeSrcPrefixes);
-  if (!found) {
-    sendError(res, 404, `comment id not found: ${id}`);
-    return;
-  }
-
-  const iterationRoots = resolveIterationDirRoots(projectRoot, id);
-  if (iterationRoots.length === 0) {
-    sendError(res, 404, `iterations dir not found: ${id}`);
+  const ctx = await resolveCommentIterationContext(
+    projectRoot,
+    id,
+    excludeSrcPrefixes
+  );
+  if (!ctx.ok) {
+    sendError(res, ctx.status, ctx.message);
     return;
   }
 
   const applied = await applyIterationVersionToSource(
-    found,
-    iterationRoots,
+    ctx.found,
+    ctx.iterationRoots,
     id,
     v
   );
@@ -316,17 +160,12 @@ export async function handleIterationsActivate(
     return;
   }
 
-  res.statusCode = 200;
-  res.setHeader("content-type", "application/json; charset=utf-8");
-  res.setHeader("cache-control", "no-store");
-  res.end(
-    JSON.stringify({
-      ok: true,
-      id,
-      file: found.relativePath,
-      active: v,
-    })
-  );
+  sendJson(res, {
+    ok: true,
+    id,
+    file: ctx.found.relativePath,
+    active: v,
+  });
 }
 
 /**
@@ -354,18 +193,17 @@ export async function handleIterationsDelete(
   }
   const { id, v } = parsed.value;
 
-  const found = await findCommentById(projectRoot, id, excludeSrcPrefixes);
-  if (!found) {
-    sendError(res, 404, `comment id not found: ${id}`);
+  const ctx = await resolveCommentIterationContext(
+    projectRoot,
+    id,
+    excludeSrcPrefixes
+  );
+  if (!ctx.ok) {
+    sendError(res, ctx.status, ctx.message);
     return;
   }
 
-  const iterationRoots = resolveIterationDirRoots(projectRoot, id);
-  if (iterationRoots.length === 0) {
-    sendError(res, 404, `iterations dir not found: ${id}`);
-    return;
-  }
-
+  const { found, iterationRoots } = ctx;
   const versions = await listCompleteIterationVersionsAllRoots(iterationRoots);
   if (!versions.includes(v)) {
     sendError(res, 400, `version v${v} not found`);
@@ -400,22 +238,17 @@ export async function handleIterationsDelete(
   try {
     await deleteVersionArtifactsAllRoots(iterationRoots, v);
   } catch (err) {
-    sendError(res, 500, err instanceof Error ? err.message : String(err));
+    sendError(res, 500, errorMessage(err));
     return;
   }
 
-  res.statusCode = 200;
-  res.setHeader("content-type", "application/json; charset=utf-8");
-  res.setHeader("cache-control", "no-store");
-  res.end(
-    JSON.stringify({
-      ok: true,
-      id,
-      file: found.relativePath,
-      deleted: v,
-      active: targetActive,
-    })
-  );
+  sendJson(res, {
+    ok: true,
+    id,
+    file: found.relativePath,
+    deleted: v,
+    active: targetActive,
+  });
 }
 
 /**
@@ -439,303 +272,32 @@ export async function handleIterationsNew(
   projectRoot: string,
   excludeSrcPrefixes: string[]
 ): Promise<void> {
-  const body = await readJsonBody(req);
-  if (!body.ok) {
-    sendError(res, 400, body.reason);
+  const parsed = await readAndParse(req, parseNewIterationBody);
+  if (!parsed.ok) {
+    sendError(res, parsed.status, parsed.reason);
     return;
   }
-  if (!body.value || typeof body.value !== "object") {
-    sendError(res, 400, "body must be a JSON object");
-    return;
-  }
-  const id = (body.value as Record<string, unknown>).id;
-  if (typeof id !== "string" || id.length === 0) {
-    sendError(res, 400, "field `id` must be a non-empty string");
-    return;
-  }
+  const { id, model: requestedModel } = parsed.value;
+  const model: FixModel = requestedModel ?? DEFAULT_FIX_MODEL_PRIORITY[0];
 
-  let model: FixModel = "composer-2.5-fast";
-  const rawModel = (body.value as Record<string, unknown>).model;
-  if (rawModel !== undefined) {
-    const parsed = parseFixModel(rawModel);
-    if (!parsed) {
-      sendError(res, 400, "field `model` must be a supported fix model id");
-      return;
-    }
-    model = parsed;
-  }
-
-  const found = await findCommentById(projectRoot, id, excludeSrcPrefixes);
-  if (!found) {
-    sendError(res, 404, `comment id not found: ${id}`);
-    return;
-  }
-
-  // ----- Open the NDJSON stream --------------------------------------------
-  // Once headers are flushed we can no longer surface a non-200 to the client
-  // through res.statusCode — every subsequent failure must be reported as a
-  // `done` event with ok:false.
-  res.statusCode = 200;
-  res.setHeader("content-type", "application/x-ndjson; charset=utf-8");
-  res.setHeader("cache-control", "no-store");
-  // Some Connect middleware buffers the first chunk if headers aren't
-  // explicitly flushed — call flushHeaders so consumers see headers
-  // immediately. Optional chaining handles older Node / test mocks.
-  res.flushHeaders?.();
-
-  // Abort plumbing: if the client closes the connection mid-stream, abort
-  // the agent (otherwise we'd keep burning tokens for a dead consumer).
-  const abortController = new AbortController();
-  let clientGone = false;
-  const onClose = () => {
-    if (clientGone) {
-      return;
-    }
-    clientGone = true;
-    abortController.abort();
-  };
-  req.on("close", onClose);
-
-  const writeEvent = (event: object): void => {
-    if (clientGone || res.destroyed) {
-      return;
-    }
-    try {
-      res.write(`${JSON.stringify(event)}\n`);
-    } catch {
-      clientGone = true;
-      abortController.abort();
-    }
-  };
-
-  const endStream = (final: object): void => {
-    writeEvent(final);
-    try {
-      res.end();
-    } catch {
-      /* socket already closed */
-    }
-  };
-
-  // Initial heartbeat so the client sees activity immediately, before the
-  // SDK has emitted anything.
-  writeEvent({ type: "progress", stage: "agent", detail: "dispatching" });
-
-  const fixStartedAt = Date.now();
-  const priority =
-    getFixRuntimeConfig().fixModelPriority ?? DEFAULT_FIX_MODEL_PRIORITY;
-  const modelChain = buildFixModelChain(model, priority);
-
-  // ----- Step 1: snapshot the source BEFORE the agent runs -----------------
-  let beforeSource: string;
-  try {
-    beforeSource = await readFile(found.absolutePath, "utf8");
-  } catch (err) {
-    endStream({
-      type: "done",
-      ok: false,
-      error: err instanceof Error ? err.message : String(err),
-    });
-    return;
-  }
-
-  // ----- Step 2: invoke the fix strategy chain ------------------------------
-  console.info(
-    `[vite-plugin-comments] dispatching fix model=${model} chain=[${modelChain.join(", ")}] comment=${id} file=${found.relativePath}`
-  );
-
-  let lastAgentSummary: string | undefined;
-  const agentResult = await runFix({
+  const ctx = await resolveCommentIterationContext(
     projectRoot,
-    file: found.relativePath,
-    anchor: found.comment.anchor,
-    text: found.comment.text,
-    screenshot: found.comment.screenshot,
-    view: found.comment.view,
-    activeVersion: found.comment.active ?? 0,
-    replies: found.comment.replies,
-    model,
-    signal: abortController.signal,
-    onEvent: (e) => {
-      if (e.kind === "tool_use_summary" && e.detail) {
-        lastAgentSummary = e.detail;
-      } else if (e.detail) {
-        lastAgentSummary = lastAgentSummary ?? e.detail;
-      }
-      writeEvent({
-        type: "progress",
-        stage: "agent",
-        ...(e.tool ? { tool: e.tool } : {}),
-        ...(e.detail ? { detail: e.detail } : {}),
-      });
-    },
-  });
-
-  if (clientGone) {
-    // Client bailed mid-run; nothing more to write.
-    return;
-  }
-
-  if (!agentResult.ok) {
-    endStream({ type: "done", ok: false, error: agentResult.error });
-    return;
-  }
-
-  const durationMs = Date.now() - fixStartedAt;
-  const modelUsed = agentResult.modelUsed;
-
-  // ----- Step 3: read post-edit source --------------------------------------
-  writeEvent({
-    type: "progress",
-    stage: "snapshot",
-    detail: "reading post-edit source",
-  });
-
-  let afterSource: string;
-  try {
-    afterSource = await readFile(found.absolutePath, "utf8");
-  } catch (err) {
-    endStream({
-      type: "done",
-      ok: false,
-      error: err instanceof Error ? err.message : String(err),
-    });
-    return;
-  }
-
-  if (afterSource === beforeSource) {
-    // No-op iteration: agent ran successfully but didn't change the file.
-    // Don't burn a version slot — just report back.
-    endStream({
-      type: "done",
-      ok: true,
-      id,
-      changed: false,
-      modelUsed,
-      durationMs,
-      turnsUsed: agentResult.turnsUsed,
-      toolCalls: agentResult.toolCalls,
-    });
-    return;
-  }
-
-  // ----- Step 4: snapshot the AFTER state as v{N+1}.tsx --------------------
-  const iterDir = path.join(projectRoot, "designs", "iterations", id);
-  let nextV = 1;
-  try {
-    if (existsSync(iterDir) && statSync(iterDir).isDirectory()) {
-      const entries = await readdir(iterDir);
-      let max = -1;
-      for (const name of entries) {
-        const m = name.match(VERSION_TSX_FILE_RE);
-        if (!m) {
-          continue;
-        }
-        const version = m[1];
-        if (version === undefined) {
-          continue;
-        }
-        const n = Number.parseInt(version, 10);
-        if (Number.isFinite(n) && n > max) {
-          max = n;
-        }
-      }
-      nextV = max >= 0 ? max + 1 : 1;
-    } else {
-      await mkdir(iterDir, { recursive: true });
-    }
-  } catch (err) {
-    endStream({
-      type: "done",
-      ok: false,
-      error: err instanceof Error ? err.message : String(err),
-    });
-    return;
-  }
-
-  const nextTsx = path.join(iterDir, `v${nextV}.tsx`);
-  const nextPng = path.join(iterDir, `v${nextV}.png`);
-  const iterationRoots = resolveIterationDirRoots(projectRoot, id);
-
-  writeEvent({
-    type: "progress",
-    stage: "snapshot",
-    detail: `writing v${nextV}.tsx`,
-  });
-
-  try {
-    await atomicWriteText(nextTsx, afterSource);
-  } catch (err) {
-    endStream({
-      type: "done",
-      ok: false,
-      error: err instanceof Error ? err.message : String(err),
-    });
-    return;
-  }
-
-  // Best-effort PNG copy (baseline may live under public/ from comment POST).
-  // Real re-screenshot of the new visual state is a separate client follow-up.
-  try {
-    const v0Png = findVersionPngPath(iterationRoots, 0);
-    if (v0Png) {
-      await copyFile(v0Png, nextPng);
-    }
-  } catch (err) {
-    console.warn(
-      `[vite-plugin-comments] failed to copy v0.png → v${nextV}.png: ${err instanceof Error ? err.message : String(err)}`
-    );
-  }
-
-  writeEvent({
-    type: "progress",
-    stage: "snapshot",
-    detail: `setting active=${nextV}`,
-  });
-
-  try {
-    await updateCommentActive({
-      absolutePath: found.absolutePath,
-      commentId: id,
-      active: nextV,
-    });
-  } catch (err) {
-    let message: string;
-    if (err instanceof WriteError) {
-      message = err.message;
-    } else if (err instanceof Error) {
-      message = err.message;
-    } else {
-      message = String(err);
-    }
-    endStream({ type: "done", ok: false, error: message });
-    return;
-  }
-
-  try {
-    const summary = lastAgentSummary?.trim() || `Fix v${nextV}`;
-    await patchIterationsManifest(iterDir, nextV, {
-      summary,
-      createdAt: new Date().toISOString(),
-    });
-  } catch (manifestErr) {
-    console.warn(
-      `[vite-plugin-comments] failed to write iteration manifest: ${manifestErr instanceof Error ? manifestErr.message : String(manifestErr)}`
-    );
-  }
-
-  endStream({
-    type: "done",
-    ok: true,
     id,
-    changed: true,
-    v: nextV,
-    tsx: `/designs/iterations/${id}/v${nextV}.tsx`,
-    png: iterationPngUrl(id, nextV, pngMtimeMs(iterationRoots, nextV)),
-    modelUsed,
-    durationMs,
-    turnsUsed: agentResult.turnsUsed,
-    toolCalls: agentResult.toolCalls,
+    excludeSrcPrefixes
+  );
+  if (!ctx.ok) {
+    sendError(res, ctx.status, ctx.message);
+    return;
+  }
+
+  openNdjsonResponse(res);
+  const stream = createNdjsonStream(req, res);
+  await runNewIteration({
+    projectRoot,
+    found: ctx.found,
+    id,
+    model,
+    stream,
   });
 }
 
@@ -769,15 +331,13 @@ export async function handleIterationsScreenshot(
   }
   const { id, v, screenshotPng } = parsed.value;
 
-  const found = await findCommentById(projectRoot, id, excludeSrcPrefixes);
-  if (!found) {
-    sendError(res, 404, `comment id not found: ${id}`);
-    return;
-  }
-
-  const iterDir = path.join(projectRoot, "designs", "iterations", id);
-  if (!(existsSync(iterDir) && statSync(iterDir).isDirectory())) {
-    sendError(res, 404, `iterations dir not found: ${id}`);
+  const ctx = await resolveCommentIterationContext(
+    projectRoot,
+    id,
+    excludeSrcPrefixes
+  );
+  if (!ctx.ok) {
+    sendError(res, ctx.status, ctx.message);
     return;
   }
 
@@ -787,25 +347,20 @@ export async function handleIterationsScreenshot(
     return;
   }
 
-  const pngPath = path.join(iterDir, `v${v}.png`);
+  const pngPath = path.join(ctx.iterDir, `v${v}.png`);
   try {
     await atomicWriteBytes(pngPath, bytes);
   } catch (err) {
-    sendError(res, 500, err instanceof Error ? err.message : String(err));
+    sendError(res, 500, errorMessage(err));
     return;
   }
 
-  const mtimeMs = pngMtimeMs([iterDir], v);
+  const mtimeMs = pngMtimeMs(ctx.iterationRoots, v);
 
-  res.statusCode = 200;
-  res.setHeader("content-type", "application/json; charset=utf-8");
-  res.setHeader("cache-control", "no-store");
-  res.end(
-    JSON.stringify({
-      ok: true,
-      id,
-      v,
-      png: iterationPngUrl(id, v, mtimeMs),
-    })
-  );
+  sendJson(res, {
+    ok: true,
+    id,
+    v,
+    png: iterationPngUrl(id, v, mtimeMs),
+  });
 }

@@ -1,4 +1,21 @@
-import * as t from "@babel/types";
+import type {
+  Comment,
+  File,
+  JSXElement,
+  JSXExpressionContainer,
+  JSXFragment,
+  JSXOpeningElement,
+  Node,
+} from "@babel/types";
+import {
+  jsxAttribute,
+  jsxClosingFragment,
+  jsxFragment,
+  jsxIdentifier,
+  jsxOpeningFragment,
+  jsxText,
+  stringLiteral,
+} from "@babel/types";
 import recast from "recast";
 import babelTsParser from "recast/parsers/babel-ts.js";
 import { WriteError } from "./writer-errors.ts";
@@ -6,8 +23,8 @@ import { WriteError } from "./writer-errors.ts";
 const INDENT_ONLY_RE = /^[ \t]*$/;
 
 export function pushComments(
-  list: readonly t.Comment[] | null | undefined,
-  out: t.Comment[]
+  list: readonly Comment[] | null | undefined,
+  out: Comment[]
 ): void {
   if (!list) {
     return;
@@ -27,17 +44,17 @@ export function pushComments(
  * direction (e.g. a caller that already converted).
  */
 export function findJsxElementAt(
-  ast: t.File,
+  ast: File,
   line: number,
   column: number
-): t.JSXElement | null {
+): JSXElement | null {
   const targetCol = column - 1;
-  let exact: t.JSXElement | null = null;
-  let bestFallback: { node: t.JSXElement; delta: number } | null = null;
+  let exact: JSXElement | null = null;
+  let bestFallback: { node: JSXElement; delta: number } | null = null;
 
   recast.visit(ast, {
     visitJSXElement(jsxPath) {
-      const node = jsxPath.node as t.JSXElement;
+      const node = jsxPath.node as JSXElement;
       const loc = node.loc;
       if (loc && loc.start.line === line) {
         if (loc.start.column === targetCol) {
@@ -60,7 +77,7 @@ export function findJsxElementAt(
   // Only accept a fallback if it's within 1 column — protects against
   // matching a totally unrelated element on the same line.
   if (bestFallback !== null) {
-    const fb = bestFallback as { node: t.JSXElement; delta: number };
+    const fb = bestFallback as { node: JSXElement; delta: number };
     if (fb.delta <= 1) {
       return fb.node;
     }
@@ -73,16 +90,16 @@ export function findJsxElementAt(
  * `findJsxElementAt` but matches on attribute value instead of source loc.
  */
 export function findJsxElementByAnchor(
-  ast: t.File,
+  ast: File,
   anchorUuid: string
-): t.JSXElement | null {
-  let found: t.JSXElement | null = null;
+): JSXElement | null {
+  let found: JSXElement | null = null;
   recast.visit(ast, {
     visitJSXElement(jsxPath) {
       if (found) {
         return false;
       }
-      const node = jsxPath.node as t.JSXElement;
+      const node = jsxPath.node as JSXElement;
       const v = readAttrValue(node.openingElement, "data-comment-anchor");
       if (v === anchorUuid) {
         found = node;
@@ -96,7 +113,7 @@ export function findJsxElementByAnchor(
 }
 
 export function readAttrValue(
-  opening: t.JSXOpeningElement,
+  opening: JSXOpeningElement,
   name: string
 ): string | null {
   for (const attr of opening.attributes) {
@@ -128,12 +145,12 @@ export function readAttrValue(
 }
 
 export function addAttribute(
-  opening: t.JSXOpeningElement,
+  opening: JSXOpeningElement,
   name: string,
   value: string
 ): void {
   opening.attributes.push(
-    t.jsxAttribute(t.jsxIdentifier(name), t.stringLiteral(value))
+    jsxAttribute(jsxIdentifier(name), stringLiteral(value))
   );
 }
 
@@ -174,7 +191,7 @@ interface MarkerArgs {
  * then extract the recast-blessed node from that AST. Recast attaches all the
  * formatting hints it needs during parse, so the node prints faithfully.
  */
-export function buildCommentMarker(args: MarkerArgs): t.JSXExpressionContainer {
+export function buildCommentMarker(args: MarkerArgs): JSXExpressionContainer {
   const directive =
     `@comment id="${args.id}" anchor="${args.anchor}"` +
     ` text=${JSON.stringify(args.text)} author=${JSON.stringify(args.author)}` +
@@ -185,12 +202,12 @@ export function buildCommentMarker(args: MarkerArgs): t.JSXExpressionContainer {
   // Wrap in a JSX fragment so the parser accepts the bare comment-block
   // expression. We don't render the fragment; we only steal the inner node.
   const wrap = `<>{/* ${directive} */}</>;`;
-  const wrapped = recast.parse(wrap, { parser: babelTsParser }) as t.File;
+  const wrapped = recast.parse(wrap, { parser: babelTsParser }) as File;
 
-  let found: t.JSXExpressionContainer | null = null;
+  let found: JSXExpressionContainer | null = null;
   recast.visit(wrapped, {
     visitJSXExpressionContainer(p) {
-      found = p.node as t.JSXExpressionContainer;
+      found = p.node as JSXExpressionContainer;
       return false;
     },
   });
@@ -213,7 +230,7 @@ export function buildCommentMarker(args: MarkerArgs): t.JSXExpressionContainer {
  */
 export function buildMarkerFromInner(
   directiveInner: string
-): t.JSXExpressionContainer {
+): JSXExpressionContainer {
   // The directive must not contain "*/" (would close the block early). If it
   // does, the original source was malformed — bail rather than emit broken JS.
   if (directiveInner.includes("*/")) {
@@ -223,11 +240,11 @@ export function buildMarkerFromInner(
     );
   }
   const wrap = `<>{/*${directiveInner}*/}</>;`;
-  const wrapped = recast.parse(wrap, { parser: babelTsParser }) as t.File;
-  let found: t.JSXExpressionContainer | null = null;
+  const wrapped = recast.parse(wrap, { parser: babelTsParser }) as File;
+  let found: JSXExpressionContainer | null = null;
   recast.visit(wrapped, {
     visitJSXExpressionContainer(p) {
-      found = p.node as t.JSXExpressionContainer;
+      found = p.node as JSXExpressionContainer;
       return false;
     },
   });
@@ -251,9 +268,9 @@ export function buildMarkerFromInner(
  * the previous element's closing tag.
  */
 export function insertAfterSibling(
-  ast: t.File,
-  target: t.JSXElement,
-  marker: t.JSXExpressionContainer
+  ast: File,
+  target: JSXElement,
+  marker: JSXExpressionContainer
 ): void {
   let inserted = false;
 
@@ -262,7 +279,7 @@ export function insertAfterSibling(
       if (inserted) {
         return false;
       }
-      const node = jsxPath.node as t.JSXElement;
+      const node = jsxPath.node as JSXElement;
       if (node === target) {
         let p = jsxPath.parent;
         while (p) {
@@ -272,7 +289,7 @@ export function insertAfterSibling(
             const idx = children.indexOf(target);
             if (idx >= 0) {
               const indent = inferSiblingIndent(parentNode, children, idx);
-              const whitespace = t.jsxText(`\n${indent}`);
+              const whitespace = jsxText(`\n${indent}`);
               children.splice(idx + 1, 0, whitespace, marker);
               inserted = true;
               return false;
@@ -301,7 +318,7 @@ export function insertAfterSibling(
       if (inserted) {
         return false;
       }
-      const node = jsxPath.node as t.JSXElement;
+      const node = jsxPath.node as JSXElement;
       if (node !== target) {
         this.traverse(jsxPath);
         return;
@@ -320,17 +337,13 @@ export function insertAfterSibling(
         targetExtra.parenthesized = false;
         targetExtra.parenStart = undefined;
       }
-      const fragment = t.jsxFragment(
-        t.jsxOpeningFragment(),
-        t.jsxClosingFragment(),
-        [
-          t.jsxText(`\n${indent}`),
-          target,
-          t.jsxText(`\n${indent}`),
-          marker,
-          t.jsxText(`\n${outerIndent}`),
-        ]
-      );
+      const fragment = jsxFragment(jsxOpeningFragment(), jsxClosingFragment(), [
+        jsxText(`\n${indent}`),
+        target,
+        jsxText(`\n${indent}`),
+        marker,
+        jsxText(`\n${outerIndent}`),
+      ]);
       jsxPath.replace(fragment);
       inserted = true;
       return false;
@@ -351,14 +364,14 @@ export function insertAfterSibling(
  * stripped. Used by deleteCommentMarker after confirming the anchor has no
  * remaining references.
  */
-export function stripAnchorAttribute(ast: t.File, anchorUuid: string): boolean {
+export function stripAnchorAttribute(ast: File, anchorUuid: string): boolean {
   let stripped = false;
   recast.visit(ast, {
     visitJSXOpeningElement(p) {
       if (stripped) {
         return false;
       }
-      const opening = p.node as t.JSXOpeningElement;
+      const opening = p.node as JSXOpeningElement;
       const idx = opening.attributes.findIndex((attr) => {
         if (attr.type !== "JSXAttribute") {
           return false;
@@ -403,8 +416,8 @@ export function stripAnchorAttribute(ast: t.File, anchorUuid: string): boolean {
  * new sibling at the same column.
  */
 function inferSiblingIndent(
-  parent: t.JSXElement | t.JSXFragment,
-  children: readonly t.Node[],
+  parent: JSXElement | JSXFragment,
+  children: readonly Node[],
   targetIdx: number
 ): string {
   for (let i = targetIdx - 1; i >= 0; i--) {
@@ -426,7 +439,7 @@ function inferSiblingIndent(
 
 export function isJsxParent(
   v: unknown
-): v is { children: t.Node[] } & (t.JSXElement | t.JSXFragment) {
+): v is { children: Node[] } & (JSXElement | JSXFragment) {
   if (!v || typeof v !== "object") {
     return false;
   }

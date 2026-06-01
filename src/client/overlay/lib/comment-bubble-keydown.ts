@@ -1,6 +1,7 @@
 import type { Dispatch, SetStateAction } from "react";
 import type { CommentData } from "../../types.ts";
 import type { BubbleMode } from "../hooks/use-iterate-fix.ts";
+import { isInTextInput } from "./hotkeys.ts";
 import { ignorePromiseRejection } from "./ignore-promise-rejection.ts";
 
 export interface CommentBubbleKeydownContext {
@@ -25,15 +26,6 @@ export interface CommentBubbleKeydownContext {
   setLightboxSrc: (src: string | null) => void;
   setMode: Dispatch<SetStateAction<BubbleMode>>;
   startEditing: () => void;
-}
-
-function isTypingInField(active: Element | null): boolean {
-  return (
-    active !== null &&
-    (active.tagName === "INPUT" ||
-      active.tagName === "TEXTAREA" ||
-      (active instanceof HTMLElement && active.isContentEditable))
-  );
 }
 
 function handleEscapeKey(
@@ -167,7 +159,7 @@ export function handleCommentBubbleKeydown(
   if (handleEscapeKey(e, ctx)) {
     return;
   }
-  if (isTypingInField(document.activeElement)) {
+  if (isInTextInput(document.activeElement)) {
     return;
   }
   if (handleDeleteConfirmKeys(e, ctx)) {

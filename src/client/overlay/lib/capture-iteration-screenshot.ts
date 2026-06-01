@@ -1,6 +1,7 @@
 import { toPng } from "html-to-image";
 import { cssEscape } from "./css-escape.ts";
 import { ignorePromiseRejection } from "./ignore-promise-rejection.ts";
+import { isOverlayElement } from "./overlay-dom.ts";
 import { effectiveBackgroundColor } from "./screenshot.ts";
 
 /** Post-edit screenshot capture after HMR settles; failures degrade silently. */
@@ -80,15 +81,8 @@ export function captureAndUploadV(args: {
         pixelRatio,
         cacheBust: true,
         backgroundColor: effectiveBackgroundColor(el),
-        filter: (node) => {
-          if (
-            node instanceof HTMLElement &&
-            node.dataset.commentOverlay === "true"
-          ) {
-            return false;
-          }
-          return true;
-        },
+        filter: (node) =>
+          !isOverlayElement(node instanceof Element ? node : null),
       });
     } catch (err) {
       console.warn(
