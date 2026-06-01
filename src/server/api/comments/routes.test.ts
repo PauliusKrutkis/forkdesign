@@ -10,7 +10,10 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { readCommentsFromFile } from "../../comments/reader.ts";
-import { writeCommentToFile } from "../../comments/writer.ts";
+import {
+  updateCommentActive,
+  writeCommentToFile,
+} from "../../comments/writer.ts";
 import {
   createJsonRequest,
   createMockResponse,
@@ -50,6 +53,37 @@ function seedComment() {
     text: "seed comment",
     author: "dev@local",
   });
+}
+
+async function seedCommentWithActiveV1() {
+  const mock = createMockResponse();
+  const req = createJsonRequest({
+    file: relativeFile,
+    line: 4,
+    column: 7,
+    text: "seed comment",
+    author: "dev@local",
+  });
+  await handlePost(req, mock.res, projectRoot, []);
+  const body = mock.getJson() as { id: string };
+  const iterDir = path.join(
+    projectRoot,
+    "public",
+    "designs",
+    "iterations",
+    body.id
+  );
+  const v0Source = readFileSync(path.join(iterDir, "v0.tsx"), "utf8");
+  const current = readFileSync(absoluteFile, "utf8");
+  const v1Source = current.replace("</div>", "{/* v1-edit */}</div>");
+  writeFileSync(absoluteFile, v1Source, "utf8");
+  writeFileSync(path.join(iterDir, "v1.tsx"), v1Source, "utf8");
+  await updateCommentActive({
+    absolutePath: absoluteFile,
+    commentId: body.id,
+    active: 1,
+  });
+  return { id: body.id, v0Source, v1Source };
 }
 
 describe("handlePost", () => {
@@ -201,6 +235,27 @@ describe("handlePatch", () => {
     expect(comment?.replies).toHaveLength(1);
     expect(comment?.replies?.[0]?.text).toBe("please tweak");
   });
+
+  it("toggles resolved by id", async () => {
+    const created = await seedComment();
+    const mock = createMockResponse();
+    const req = createJsonRequest(
+      { resolved: true },
+      { method: "PATCH", url: `/${created.id}` }
+    );
+
+    await handlePatch(req, mock.res, projectRoot, []);
+
+    expect(mock.getStatus()).toBe(200);
+    expect(mock.getJson()).toMatchObject({
+      ok: true,
+      id: created.id,
+      resolved: true,
+    });
+
+    const { comments } = await readCommentsFromFile(absoluteFile);
+    expect(comments.find((c) => c.id === created.id)?.resolved).toBe(true);
+  });
 });
 
 describe("handleDelete", () => {
@@ -224,6 +279,56 @@ describe("handleDelete", () => {
 
     const { comments } = await readCommentsFromFile(absoluteFile);
     expect(comments.some((c) => c.id === created.id)).toBe(false);
+  });
+
+  it("delete without revert keeps active source edits", async () => {
+    const { id } = await seedCommentWithActiveV1();
+    const mock = createMockResponse();
+    const req = createJsonRequest(undefined, {
+      method: "DELETE",
+      url: `/${id}`,
+    });
+    req.headers = {};
+
+    await handleDelete(req, mock.res, projectRoot, []);
+
+    expect(mock.getStatus()).toBe(200);
+    expect(mock.getJson()).toMatchObject({ ok: true, reverted: false });
+    const source = readFileSync(absoluteFile, "utf8");
+    expect(source).toContain("v1-edit");
+    expect(source).not.toContain("@comment");
+  });
+
+  it("delete with revert=baseline restores v0 before removing marker", async () => {
+    const { id } = await seedCommentWithActiveV1();
+    const mock = createMockResponse();
+    const req = createJsonRequest(undefined, {
+      method: "DELETE",
+      url: `/${id}?revert=baseline`,
+    });
+    req.headers = {};
+
+    await handleDelete(req, mock.res, projectRoot, []);
+
+    expect(mock.getStatus()).toBe(200);
+    expect(mock.getJson()).toMatchObject({ ok: true, reverted: true });
+    const source = readFileSync(absoluteFile, "utf8");
+    expect(source).not.toContain("v1-edit");
+    expect(source).not.toContain("@comment");
+  });
+
+  it("rejects invalid revert query param", async () => {
+    const created = await seedComment();
+    const mock = createMockResponse();
+    const req = createJsonRequest(undefined, {
+      method: "DELETE",
+      url: `/${created.id}?revert=invalid`,
+    });
+    req.headers = {};
+
+    await handleDelete(req, mock.res, projectRoot, []);
+
+    expect(mock.getStatus()).toBe(400);
   });
 
   it("returns 404 for unknown id", async () => {

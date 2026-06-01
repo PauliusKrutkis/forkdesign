@@ -21,8 +21,12 @@ export async function patchComment(
   await assertOk(res);
 }
 
-export async function deleteComment(id: string): Promise<void> {
-  const res = await fetch(`/api/comments/${encodeURIComponent(id)}`, {
+export async function deleteComment(
+  id: string,
+  options?: { revertBaseline?: boolean }
+): Promise<void> {
+  const query = options?.revertBaseline === true ? "?revert=baseline" : "";
+  const res = await fetch(`/api/comments/${encodeURIComponent(id)}${query}`, {
     method: "DELETE",
   });
   await assertOk(res);

@@ -17,11 +17,14 @@ export interface FixRunInput {
   file: string;
   model: FixModel;
   onEvent?: (event: FixProgress) => void;
+  priorVariantApproaches?: string[];
   projectRoot: string;
   replies?: PromptReply[];
   screenshot?: string;
   signal?: AbortSignal;
   text: string;
+  variantCount?: number;
+  variantIndex?: number;
   view?: string;
 }
 
@@ -31,9 +34,27 @@ export type FixAttemptResult =
   | { ok: true; turnsUsed: number; toolCalls: number }
   | { ok: false; error: string };
 
+/** Per-model timing for one attempt in the fallback chain. */
+export interface FixAttemptTiming {
+  model: FixModel;
+  ms: number;
+  ok: boolean;
+}
+
 export type FixResult =
-  | { ok: true; modelUsed: FixModel; turnsUsed: number; toolCalls: number }
-  | { ok: false; error: string; modelsTried?: FixModel[] };
+  | {
+      ok: true;
+      modelUsed: FixModel;
+      turnsUsed: number;
+      toolCalls: number;
+      attempts: FixAttemptTiming[];
+    }
+  | {
+      ok: false;
+      error: string;
+      modelsTried?: FixModel[];
+      attempts: FixAttemptTiming[];
+    };
 
 export interface FixStrategy {
   readonly id: string;

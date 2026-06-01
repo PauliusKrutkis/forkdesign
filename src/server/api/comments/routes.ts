@@ -5,6 +5,7 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import path from "node:path";
 import {
   collectAllowedTsxFiles,
+  type FoundComment,
   findCommentById,
 } from "../../comments/find-comment.ts";
 import { readCommentsFromFile } from "../../comments/reader.ts";
@@ -13,12 +14,15 @@ import {
   deleteCommentMarker,
   deleteCommentReply,
   updateCommentReply,
+  updateCommentResolved,
   updateCommentText,
   type WriteCommentResult,
   writeCommentToFile,
 } from "../../comments/writer.ts";
 import { WriteError } from "../../comments/writer-errors.ts";
+import { applyIterationVersionToSource } from "../../iterations/activate-version.ts";
 import { seedBaselineIteration } from "../../iterations/baseline.ts";
+import { resolveCommentIterationContext } from "../../iterations/context.ts";
 import { readJsonBody, sendError, sendJson } from "../../platform/http.ts";
 import { decodeScreenshotPng } from "../../platform/media.ts";
 import { resolveSafePagePath } from "../../platform/path-safety.ts";
@@ -347,6 +351,26 @@ export async function handlePatch(
       return;
     }
 
+    if (parsed.value.kind === "resolved") {
+      await updateCommentResolved({
+        absolutePath: resolved.absolutePath,
+        commentId: id,
+        resolved: parsed.value.resolved,
+      });
+      res.statusCode = 200;
+      res.setHeader("content-type", "application/json; charset=utf-8");
+      res.setHeader("cache-control", "no-store");
+      res.end(
+        JSON.stringify({
+          ok: true,
+          id,
+          file: resolved.relativePath,
+          resolved: parsed.value.resolved,
+        })
+      );
+      return;
+    }
+
     await deleteCommentReply({
       absolutePath: resolved.absolutePath,
       commentId: id,
@@ -371,6 +395,45 @@ export async function handlePatch(
     sendError(res, 500, err instanceof Error ? err.message : String(err));
   }
 }
+
+type RevertBeforeDeleteResult =
+  | { ok: true; reverted: boolean }
+  | { ok: false; status: number; message: string };
+
+async function maybeRevertBeforeDelete(
+  projectRoot: string,
+  id: string,
+  excludeSrcPrefixes: string[],
+  found: FoundComment,
+  revertParam: string | null
+): Promise<RevertBeforeDeleteResult> {
+  const currentActive = found.comment.active ?? 0;
+  if (revertParam !== "baseline" || currentActive <= 0) {
+    return { ok: true, reverted: false };
+  }
+
+  const ctx = await resolveCommentIterationContext(
+    projectRoot,
+    id,
+    excludeSrcPrefixes
+  );
+  if (!ctx.ok) {
+    return { ok: false, status: ctx.status, message: ctx.message };
+  }
+
+  const applied = await applyIterationVersionToSource(
+    ctx.found,
+    ctx.iterationRoots,
+    id,
+    0
+  );
+  if (!applied.ok) {
+    return { ok: false, status: applied.status, message: applied.message };
+  }
+
+  return { ok: true, reverted: true };
+}
+
 export async function handleDelete(
   req: IncomingMessage,
   res: ServerResponse,
@@ -404,6 +467,30 @@ export async function handleDelete(
     sendError(res, 400, resolved.reason);
     return;
   }
+
+  const revertParam = url.searchParams.get("revert");
+  if (revertParam !== null && revertParam !== "baseline") {
+    sendError(
+      res,
+      400,
+      'query param `revert` must be "baseline" when provided'
+    );
+    return;
+  }
+
+  let reverted = false;
+  const revertResult = await maybeRevertBeforeDelete(
+    projectRoot,
+    id,
+    excludeSrcPrefixes,
+    found,
+    revertParam
+  );
+  if (!revertResult.ok) {
+    sendError(res, revertResult.status, revertResult.message);
+    return;
+  }
+  reverted = revertResult.reverted;
 
   let removedAnchor = false;
   try {
@@ -445,6 +532,7 @@ export async function handleDelete(
       id,
       file: resolved.relativePath,
       removedAnchor,
+      reverted,
     })
   );
 }

@@ -14,6 +14,7 @@ import { claudeStrategy } from "./strategies/claude.ts";
 import { cursorCliStrategy } from "./strategies/cursor-cli.ts";
 import type {
   FixAttemptResult,
+  FixAttemptTiming,
   FixInput,
   FixResult,
   FixRunInput,
@@ -43,6 +44,7 @@ export async function runFix(input: FixRunInput): Promise<FixResult> {
   const availableCursorModels = await listAvailableCursorModels(agentPath);
 
   const modelsTried: FixModel[] = [];
+  const attempts: FixAttemptTiming[] = [];
   let lastError = "No fix models available";
 
   for (const model of chain) {
@@ -63,22 +65,25 @@ export async function runFix(input: FixRunInput): Promise<FixResult> {
     const startedAt = Date.now();
 
     const result = await runFixAttempt({ ...input, model });
+    const elapsedMs = Date.now() - startedAt;
+    attempts.push({ model, ms: elapsedMs, ok: result.ok });
 
     if (result.ok) {
-      const elapsedMs = Date.now() - startedAt;
       // eslint-disable-next-line no-console
       console.info(
         `[fix] success model=${model} turns=${result.turnsUsed} tools=${result.toolCalls} ${elapsedMs}ms`
       );
-      return { ...result, modelUsed: model };
+      return { ...result, modelUsed: model, attempts };
     }
 
     // eslint-disable-next-line no-console
-    console.warn(`[fix] failed model=${model}: ${result.error}`);
+    console.warn(
+      `[fix] failed model=${model}: ${result.error} (${elapsedMs}ms)`
+    );
     lastError = result.error;
 
     if (!shouldFallbackFix(result.error)) {
-      return { ok: false, error: result.error, modelsTried };
+      return { ok: false, error: result.error, modelsTried, attempts };
     }
   }
 
@@ -87,6 +92,7 @@ export async function runFix(input: FixRunInput): Promise<FixResult> {
       ok: false,
       error:
         "No fix models available for this environment (Cursor CLI models probe empty)",
+      attempts,
     };
   }
 
@@ -94,6 +100,7 @@ export async function runFix(input: FixRunInput): Promise<FixResult> {
     ok: false,
     error: `All fix models failed (tried: ${modelsTried.join(", ")}). Last error: ${lastError}`,
     modelsTried,
+    attempts,
   };
 }
 

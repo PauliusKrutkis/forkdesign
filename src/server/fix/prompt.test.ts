@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   buildIteratePrompt,
   shouldIncludeScreenshotInPrompt,
+  summarizeFixSourceDiff,
 } from "./prompt.ts";
 
 describe("buildIteratePrompt", () => {
@@ -93,6 +94,37 @@ describe("buildIteratePrompt", () => {
     });
     expect(prompt).toContain("## Unversioned feedback");
     expect(prompt).toContain('"General note" — alice@co');
+  });
+
+  it("adds multi-variant diversity instructions when count > 1", () => {
+    const prompt = buildIteratePrompt({
+      ...base,
+      variantIndex: 2,
+      variantCount: 3,
+      priorVariantApproaches: ["Variant 1: added text-blue-500"],
+    });
+    expect(prompt).toContain("variant **2 of 3**");
+    expect(prompt).toContain("visually distinct");
+    expect(prompt).toContain("Variant 1: added text-blue-500");
+    expect(prompt).toContain("Do **not** repeat those approaches");
+    expect(prompt).toContain("distinct valid interpretation");
+    expect(prompt).not.toContain("Make the smallest possible edit");
+  });
+
+  it("keeps single-variant smallest-edit guidance", () => {
+    const prompt = buildIteratePrompt(base);
+    expect(prompt).not.toContain("Multi-variant run");
+    expect(prompt).toContain("Make the smallest possible edit");
+  });
+});
+
+describe("summarizeFixSourceDiff", () => {
+  it("describes changed lines", () => {
+    const summary = summarizeFixSourceDiff(
+      '<div className="text-sm">',
+      '<div className="text-sm text-blue-500">'
+    );
+    expect(summary).toContain("text-blue-500");
   });
 });
 

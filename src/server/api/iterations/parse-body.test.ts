@@ -54,11 +54,39 @@ describe("parseDeleteVersionBody", () => {
 });
 
 describe("parseNewIterationBody", () => {
-  it("omits model when not provided", () => {
+  it("defaults count to 1 when not provided", () => {
     const parsed = parseNewIterationBody({ id: "abc" });
     expect(parsed).toEqual({
       ok: true,
-      value: { id: "abc" },
+      value: { id: "abc", count: 1 },
+    });
+  });
+
+  it("accepts count within range", () => {
+    expect(parseNewIterationBody({ id: "abc", count: 3 })).toEqual({
+      ok: true,
+      value: { id: "abc", count: 3 },
+    });
+  });
+
+  it("rejects count below 1", () => {
+    expect(parseNewIterationBody({ id: "abc", count: 0 })).toEqual({
+      ok: false,
+      reason: "field `count` must be an integer >= 1",
+    });
+  });
+
+  it("rejects count above max", () => {
+    expect(parseNewIterationBody({ id: "abc", count: 6 })).toEqual({
+      ok: false,
+      reason: "field `count` must be an integer <= 5",
+    });
+  });
+
+  it("rejects non-integer count", () => {
+    expect(parseNewIterationBody({ id: "abc", count: 1.5 })).toEqual({
+      ok: false,
+      reason: "field `count` must be an integer",
     });
   });
 

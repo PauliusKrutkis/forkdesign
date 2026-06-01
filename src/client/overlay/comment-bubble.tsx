@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { DEFAULT_FIX_VERSION_COUNT } from "../../shared/fix-version-count.ts";
 import type { OverlayModel } from "../settings.ts";
 import type { CommentData } from "../types.ts";
 import { CommentBubbleBody } from "./comment-bubble-body.tsx";
@@ -88,6 +89,9 @@ export function CommentBubble({
    * watch progress stream — but never auto-collapses (jarring).
    */
   const [mode, setMode] = useState<BubbleMode>("compact");
+  const [fixVersionCount, setFixVersionCount] = useState(
+    DEFAULT_FIX_VERSION_COUNT
+  );
   const {
     iterating,
     iterateError,
@@ -98,6 +102,7 @@ export function CommentBubble({
   } = useIterateFix({
     lead,
     fixModel,
+    fixVersionCount,
     reloadIterations,
     setMode,
   });
@@ -111,6 +116,7 @@ export function CommentBubble({
     skipDeleteConfirmation,
   });
   const {
+    activeVersion,
     cancelDeleteConfirm,
     cancelEditing,
     cancelReply,
@@ -131,10 +137,13 @@ export function CommentBubble({
     replyTextareaRef,
     requestDelete,
     resetInlineFlows,
+    revertBaseline,
     saveEdit,
     saveReply,
     setEditDraft,
     setReplyDraft,
+    setRevertBaseline,
+    showRevertOption,
     startEditing,
   } = leadActions;
 
@@ -314,9 +323,11 @@ export function CommentBubble({
       />
 
       <CommentBubbleFooter
+        activeVersion={activeVersion}
         deleteBusy={deleteBusy}
         deleteConfirming={deleteConfirming}
         deleteError={deleteError}
+        fixVersionCount={fixVersionCount}
         handleIterate={handleIterate}
         iterateError={iterateError}
         iterateNow={iterateNow}
@@ -329,10 +340,14 @@ export function CommentBubble({
         onCancelDelete={cancelDeleteConfirm}
         onConfirmDelete={confirmDelete}
         onDelete={onDelete}
+        onFixVersionCountChange={setFixVersionCount}
         onOpenReply={openReplyComposer}
         onRequestDelete={requestDelete}
         onResolve={onResolve}
+        onRevertBaselineChange={setRevertBaseline}
         onSetLightboxSrc={setLightboxSrc}
+        revertBaseline={revertBaseline}
+        showRevertOption={showRevertOption}
       />
     </div>
   );

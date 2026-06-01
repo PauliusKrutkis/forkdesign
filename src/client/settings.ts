@@ -29,6 +29,8 @@ export interface OverlaySettings {
   author: string;
   /** false = system fully muted (no dots/bubbles/panel, only settings access). */
   enabled: boolean;
+  /** When true, resolved pins and list rows are hidden from the overlay. */
+  hideResolved: boolean;
   /** Fix model — tried first, then the server fallback chain. */
   model: OverlayModel;
   /** Which corner the dock pill anchors to. */
@@ -46,6 +48,7 @@ const DEFAULT_SETTINGS: OverlaySettings = {
   author: "",
   model: "composer-2.5-fast",
   skipDeleteConfirmation: false,
+  hideResolved: false,
 };
 
 const STORAGE_KEY = "redline.overlay.settings";
@@ -103,6 +106,10 @@ export function loadSettings(): OverlaySettings {
     typeof obj.skipDeleteConfirmation === "boolean"
       ? obj.skipDeleteConfirmation
       : DEFAULT_SETTINGS.skipDeleteConfirmation;
+  const hideResolved =
+    typeof obj.hideResolved === "boolean"
+      ? obj.hideResolved
+      : DEFAULT_SETTINGS.hideResolved;
   const model =
     typeof obj.model === "string" &&
     VALID_OVERLAY_MODELS.has(obj.model as FixModel)
@@ -116,6 +123,7 @@ export function loadSettings(): OverlaySettings {
     author,
     model,
     skipDeleteConfirmation,
+    hideResolved,
   };
 }
 

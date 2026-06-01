@@ -35,6 +35,7 @@ import {
   mutateCommentDirectiveById,
   readActiveFromDirective,
   setActiveOnDirective,
+  setResolvedOnDirective,
   setTextOnDirective,
   updateReplyOnDirective,
 } from "./writer-directive.ts";
@@ -237,6 +238,28 @@ export async function updateCommentText(
     input.commentId,
     (raw) => setTextOnDirective(raw, text),
     "updateCommentText"
+  );
+}
+
+export interface UpdateCommentResolvedInput {
+  /** Absolute path to the .tsx file containing the marker. */
+  absolutePath: string;
+  /** uuid that matches the `id` attribute on the `@comment` directive. */
+  commentId: string;
+  resolved: boolean;
+}
+
+/**
+ * Toggle the bare `resolved` flag on the `@comment` marker.
+ */
+export async function updateCommentResolved(
+  input: UpdateCommentResolvedInput
+): Promise<void> {
+  await mutateCommentDirectiveById(
+    input.absolutePath,
+    input.commentId,
+    (raw) => setResolvedOnDirective(raw, input.resolved),
+    "updateCommentResolved"
   );
 }
 

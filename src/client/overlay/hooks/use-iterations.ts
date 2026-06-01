@@ -66,7 +66,9 @@ export function useIterations(
       if (switching || deleting || data?.active === v) {
         return;
       }
+      const previousActive = data?.active;
       setSwitching(true);
+      setData((prev) => (prev ? { ...prev, active: v } : prev));
       try {
         const res = await fetch("/api/iterations/activate", {
           method: "POST",
@@ -74,11 +76,20 @@ export function useIterations(
           body: JSON.stringify({ id: commentId, v }),
         });
         if (!res.ok) {
-          setSwitching(false);
+          if (typeof previousActive === "number") {
+            setData((prev) =>
+              prev ? { ...prev, active: previousActive } : prev
+            );
+          }
           return;
         }
-        setData((prev) => (prev ? { ...prev, active: v } : prev));
       } catch {
+        if (typeof previousActive === "number") {
+          setData((prev) =>
+            prev ? { ...prev, active: previousActive } : prev
+          );
+        }
+      } finally {
         setSwitching(false);
       }
     },
@@ -116,18 +127,6 @@ export function useIterations(
     },
     [commentId, switching, deleting, reload]
   );
-
-  useEffect(() => {
-    if (switching && data) {
-      setSwitching(false);
-    }
-  }, [data, switching]);
-
-  useEffect(() => {
-    if (deleting && data) {
-      setDeleting(false);
-    }
-  }, [data, deleting]);
 
   useEffect(() => {
     if (!(enableKeyboard && data && data.versions.length > 1)) {

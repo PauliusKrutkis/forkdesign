@@ -5,9 +5,11 @@ import type { BubbleMode } from "./hooks/use-iterate-fix.ts";
 import { formatElapsed } from "./lib/bubble-formatters.ts";
 
 interface CommentBubbleFooterProps {
+  activeVersion?: number;
   deleteBusy: boolean;
   deleteConfirming: boolean;
   deleteError: string | null;
+  fixVersionCount: number;
   handleIterate: () => Promise<void>;
   iterateError: string | null;
   iterateNow: number;
@@ -20,10 +22,14 @@ interface CommentBubbleFooterProps {
   onCancelDelete: () => void;
   onConfirmDelete: () => Promise<void>;
   onDelete?: (id: string) => Promise<void>;
+  onFixVersionCountChange: (count: number) => void;
   onOpenReply: () => void;
   onRequestDelete: () => void;
   onResolve?: (id: string) => void;
+  onRevertBaselineChange?: (value: boolean) => void;
   onSetLightboxSrc: (src: string | null) => void;
+  revertBaseline?: boolean;
+  showRevertOption?: boolean;
 }
 
 export function CommentBubbleFooter({
@@ -34,6 +40,8 @@ export function CommentBubbleFooter({
   iterateNow,
   iterateError,
   lead,
+  fixVersionCount,
+  onFixVersionCountChange,
   onOpenReply,
   onResolve,
   onDelete,
@@ -46,6 +54,10 @@ export function CommentBubbleFooter({
   deleteError,
   lightboxSrc,
   onSetLightboxSrc,
+  activeVersion,
+  revertBaseline,
+  onRevertBaselineChange,
+  showRevertOption,
 }: CommentBubbleFooterProps) {
   if (mode !== "detailed") {
     return null;
@@ -81,17 +93,23 @@ export function CommentBubbleFooter({
       ) : null}
 
       <CommentBubbleActionBar
+        activeVersion={activeVersion}
         deleteBusy={deleteBusy}
         deleteConfirming={deleteConfirming}
+        fixVersionCount={fixVersionCount}
         iterating={iterating}
         lead={lead}
         onCancelDelete={onCancelDelete}
         onConfirmDelete={onConfirmDelete}
         onDelete={onDelete}
+        onFixVersionCountChange={onFixVersionCountChange}
         onIterate={handleIterate}
         onOpenReply={onOpenReply}
         onRequestDelete={onRequestDelete}
         onResolve={onResolve}
+        onRevertBaselineChange={onRevertBaselineChange}
+        revertBaseline={revertBaseline}
+        showRevertOption={showRevertOption}
       />
 
       {deleteError ? (

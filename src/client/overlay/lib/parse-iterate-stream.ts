@@ -53,6 +53,9 @@ export function formatIterateSuccess(
   done: Extract<IterateDoneEvent, { ok: true }>
 ): string {
   const parts: string[] = [];
+  if (done.versions && done.versions.length > 1) {
+    parts.push(`${done.versions.length} versions`);
+  }
   if (done.modelUsed) {
     parts.push(done.modelUsed);
   }

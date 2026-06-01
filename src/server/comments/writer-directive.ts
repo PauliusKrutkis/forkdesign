@@ -22,6 +22,8 @@ const TRAILING_WHITESPACE_RE = /^([\s\S]*?)(\s*)$/;
 const TRAILING_SPACE_RE = /\s$/;
 const TEXT_ATTR_RE = /\btext=(?:"(?:\\.|[^"\\])*")/;
 const REPLIES_ATTR_RE = /\breplies=/;
+const RESOLVED_ATTR_RE = /\bresolved\b/;
+const RESOLVED_STRIP_RE = /\s*resolved\b/;
 
 export interface StoredCommentReply {
   author: string;
@@ -161,6 +163,26 @@ export function setActiveOnDirective(raw: string, active: number): string {
   // Add a single space between the last attr and our addition.
   const sep = content.length > 0 && !TRAILING_SPACE_RE.test(content) ? " " : "";
   return `${content}${sep}active=${active}${trail}`;
+}
+
+/** Toggle the bare `resolved` flag on a directive (reader parses as boolean). */
+export function setResolvedOnDirective(raw: string, resolved: boolean): string {
+  const hasResolved = RESOLVED_ATTR_RE.test(raw);
+  if (resolved) {
+    if (hasResolved) {
+      return raw;
+    }
+    const m = raw.match(TRAILING_WHITESPACE_RE);
+    const content = m ? m[1] : raw;
+    const trail = m ? m[2] : "";
+    const sep =
+      content.length > 0 && !TRAILING_SPACE_RE.test(content) ? " " : "";
+    return `${content}${sep}resolved${trail}`;
+  }
+  if (!hasResolved) {
+    return raw;
+  }
+  return raw.replace(RESOLVED_STRIP_RE, "");
 }
 
 /**

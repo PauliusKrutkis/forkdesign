@@ -13,6 +13,7 @@ export type IterateDoneEvent =
       id?: string;
       changed?: boolean;
       v?: number;
+      versions?: number[];
       tsx?: string;
       png?: string;
       modelUsed?: string;

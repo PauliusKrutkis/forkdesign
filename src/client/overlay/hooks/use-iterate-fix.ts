@@ -16,10 +16,11 @@ export type BubbleMode = "compact" | "detailed";
 export function useIterateFix(args: {
   lead: CommentData | undefined;
   fixModel: OverlayModel;
+  fixVersionCount: number;
   reloadIterations: () => void | Promise<void>;
   setMode: (mode: BubbleMode | ((prev: BubbleMode) => BubbleMode)) => void;
 }) {
-  const { lead, fixModel, reloadIterations, setMode } = args;
+  const { lead, fixModel, fixVersionCount, reloadIterations, setMode } = args;
   const [iterating, setIterating] = useState(false);
   const [iterateError, setIterateError] = useState<string | null>(null);
   const [iterateStatus, setIterateStatus] = useState<string | null>(null);
@@ -48,7 +49,11 @@ export function useIterateFix(args: {
       const res = await fetch("/api/iterations/new", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ id: lead.id, model: fixModel }),
+        body: JSON.stringify({
+          id: lead.id,
+          model: fixModel,
+          count: fixVersionCount,
+        }),
       });
       if (!(res.ok && res.body)) {
         setIterateError(await readApiError(res));
@@ -84,7 +89,7 @@ export function useIterateFix(args: {
       setIterating(false);
       setIterateStartedAt(null);
     }
-  }, [lead, iterating, fixModel, reloadIterations, setMode]);
+  }, [lead, iterating, fixModel, fixVersionCount, reloadIterations, setMode]);
 
   return {
     iterating,

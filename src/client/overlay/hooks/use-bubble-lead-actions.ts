@@ -8,7 +8,10 @@ import { useTextEditAction } from "./use-text-edit-action.ts";
 interface UseBubbleLeadActionsArgs {
   iterations: IterationsData | null;
   lead: CommentData | undefined;
-  onDelete?: (id: string) => Promise<void>;
+  onDelete?: (
+    id: string,
+    options?: { revertBaseline?: boolean }
+  ) => Promise<void>;
   onEdit?: (id: string, text: string) => Promise<void>;
   onSubmitReply?: (id: string, text: string, v?: number) => Promise<void>;
   setMode: (mode: BubbleMode | ((prev: BubbleMode) => BubbleMode)) => void;
@@ -34,15 +37,23 @@ export function useBubbleLeadActions({
   const [replyError, setReplyError] = useState<string | null>(null);
   const editTextareaRef = useRef<HTMLTextAreaElement | null>(null);
   const replyTextareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const [revertBaseline, setRevertBaseline] = useState(false);
+
+  const activeVersion = iterations?.active ?? lead?.active ?? 0;
+  const showRevertOption =
+    activeVersion > 0 && !skipDeleteConfirmation && Boolean(onDelete);
 
   const performDelete = useCallback(async () => {
     if (!(lead && onDelete)) {
       return;
     }
-    await onDelete(lead.id);
-  }, [lead, onDelete]);
+    await onDelete(lead.id, {
+      revertBaseline: showRevertOption ? revertBaseline : false,
+    });
+  }, [lead, onDelete, revertBaseline, showRevertOption]);
 
   const { save: runTextSave } = useTextEditAction({
+    closeBeforePersist: true,
     emptyMessage: "Comment cannot be empty",
     onSubmit: async (trimmed) => {
       if (!(lead && onEdit)) {
@@ -53,6 +64,7 @@ export function useBubbleLeadActions({
   });
 
   const { save: runReplySave } = useTextEditAction({
+    closeBeforePersist: true,
     emptyMessage: "Reply cannot be empty",
     onSubmit: async (trimmed) => {
       if (!(lead && onSubmitReply)) {
@@ -115,6 +127,7 @@ export function useBubbleLeadActions({
     if (!(lead && onEdit)) {
       return;
     }
+    const draftSnapshot = editDraft;
     await runTextSave({
       draft: editDraft,
       busy: editBusy,
@@ -123,6 +136,11 @@ export function useBubbleLeadActions({
       onSuccess: () => {
         setEditing(false);
         setEditDraft("");
+      },
+      onRevert: (message) => {
+        setEditing(true);
+        setEditDraft(draftSnapshot);
+        setEditError(message);
       },
     });
   }, [lead, onEdit, editDraft, editBusy, runTextSave]);
@@ -145,6 +163,7 @@ export function useBubbleLeadActions({
     if (!(lead && onSubmitReply)) {
       return;
     }
+    const draftSnapshot = replyDraft;
     await runReplySave({
       draft: replyDraft,
       busy: replyBusy,
@@ -154,6 +173,11 @@ export function useBubbleLeadActions({
         setReplyOpen(false);
         setReplyDraft("");
       },
+      onRevert: (message) => {
+        setReplyOpen(true);
+        setReplyDraft(draftSnapshot);
+        setReplyError(message);
+      },
     });
   }, [lead, onSubmitReply, replyDraft, replyBusy, runReplySave]);
 
@@ -161,11 +185,18 @@ export function useBubbleLeadActions({
     if (!(lead && onDelete)) {
       return;
     }
+    setRevertBaseline(false);
     requestDeleteBase();
   }, [lead, onDelete, requestDeleteBase]);
 
+  const cancelDeleteWithReset = useCallback(() => {
+    setRevertBaseline(false);
+    cancelDeleteConfirm();
+  }, [cancelDeleteConfirm]);
+
   return {
-    cancelDeleteConfirm,
+    activeVersion,
+    cancelDeleteConfirm: cancelDeleteWithReset,
     cancelEditing,
     cancelReply,
     confirmDelete,
@@ -185,10 +216,13 @@ export function useBubbleLeadActions({
     replyTextareaRef,
     requestDelete,
     resetInlineFlows,
+    revertBaseline,
     saveEdit,
     saveReply,
     setEditDraft,
     setReplyDraft,
+    setRevertBaseline,
+    showRevertOption,
     startEditing,
   };
 }

@@ -126,8 +126,8 @@ Comment markers in source look like:
 | `GET` | `/api/comments` | — | List all comment markers |
 | `GET` | `/api/comments?file=src/…/Page.tsx` | — | Comments in one file |
 | `POST` | `/api/comments` | `{ file, line, column, text, author, … }` | Create marker |
-| `PATCH` | `/api/comments/:id` | `{ text }` or `{ reply: { text, author } }` | Edit body or append reply |
-| `DELETE` | `/api/comments/:id` | — | Remove marker |
+| `PATCH` | `/api/comments/:id` | `{ text }`, `{ reply: { text, author } }`, or `{ resolved: true \| false }` | Edit body, append reply, or toggle resolved |
+| `DELETE` | `/api/comments/:id` | — | Remove marker; optional `?revert=baseline` restores v0 before delete |
 
 ## Plugin options
 

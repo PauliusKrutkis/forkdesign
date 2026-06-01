@@ -9,6 +9,7 @@ import {
   deleteCommentReply,
   updateCommentActive,
   updateCommentReply,
+  updateCommentResolved,
   updateCommentText,
   writeCommentToFile,
 } from "./writer.ts";
@@ -27,6 +28,7 @@ const OUT_OF_RANGE_RE = /out of range/;
 const DATA_COMMENT_ANCHOR_RE = /data-comment-anchor/;
 const TRIPLE_BLANK_LINE_RE = /\n\s*\n\s*\n/;
 const NOT_FOUND_RE = /not found/;
+const RESOLVED_MARKER_RE = /\bresolved\b/;
 
 const dir = mkdtempSync(path.join(tmpdir(), "babel-writer-test-"));
 
@@ -369,6 +371,35 @@ describe("updateCommentText", () => {
         text: "nope",
       })
     ).rejects.toThrow(MISSING_ID_RE);
+  });
+});
+
+describe("updateCommentResolved", () => {
+  it("sets and clears the resolved flag on an existing marker", async () => {
+    const result = await writeCommentToFile({
+      absolutePath: file,
+      line: 4,
+      column: 7,
+      text: "fix me",
+      author: "dev@local",
+    });
+    await updateCommentResolved({
+      absolutePath: file,
+      commentId: result.id,
+      resolved: true,
+    });
+    let { comments } = readCommentsFromSource(readFileSync(file, "utf8"));
+    expect(comments[0]?.resolved).toBe(true);
+    expect(readFileSync(file, "utf8")).toMatch(RESOLVED_MARKER_RE);
+
+    await updateCommentResolved({
+      absolutePath: file,
+      commentId: result.id,
+      resolved: false,
+    });
+    ({ comments } = readCommentsFromSource(readFileSync(file, "utf8")));
+    expect(comments[0]?.resolved).toBe(false);
+    expect(readFileSync(file, "utf8")).not.toMatch(RESOLVED_MARKER_RE);
   });
 });
 

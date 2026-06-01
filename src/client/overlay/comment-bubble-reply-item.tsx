@@ -34,6 +34,7 @@ export function CommentBubbleReplyItem({
   const editTextareaRef = useRef<HTMLTextAreaElement | null>(null);
 
   const { save: saveEditAction } = useTextEditAction({
+    closeBeforePersist: true,
     emptyMessage: "Reply cannot be empty",
     onSubmit: async (trimmed) => {
       if (!onEdit) {
@@ -87,7 +88,8 @@ export function CommentBubbleReplyItem({
     setEditError(null);
   };
 
-  const saveEdit = () =>
+  const saveEdit = () => {
+    const draftSnapshot = editDraft;
     saveEditAction({
       draft: editDraft,
       busy: editBusy,
@@ -97,7 +99,13 @@ export function CommentBubbleReplyItem({
         setEditing(false);
         setEditDraft("");
       },
+      onRevert: (message) => {
+        setEditing(true);
+        setEditDraft(draftSnapshot);
+        setEditError(message);
+      },
     });
+  };
 
   const handleRequestDelete = () => {
     if (!onDelete) {

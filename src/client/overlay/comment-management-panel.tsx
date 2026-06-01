@@ -13,8 +13,12 @@ type CommentWithFile = CommentData & { file?: string };
 export interface CommentManagementPanelProps {
   comments: CommentData[];
   fileToRoute?: (file: string, ctx: { view?: string | null }) => string | null;
+  hideResolved?: boolean;
   inDomAnchors: Set<string>;
-  onDelete: (id: string) => Promise<void>;
+  onDelete: (
+    id: string,
+    options?: { revertBaseline?: boolean }
+  ) => Promise<void>;
   onGoToPage: (comment: CommentWithFile) => void;
   onJump: (target: { anchor: string; instance: number }) => void;
 }
@@ -26,13 +30,20 @@ export function CommentManagementPanel({
   onGoToPage,
   fileToRoute,
   onDelete,
+  hideResolved = false,
 }: CommentManagementPanelProps) {
   const withFile = comments as CommentWithFile[];
+  const visibleComments = useMemo(() => {
+    if (!hideResolved) {
+      return withFile;
+    }
+    return withFile.filter((c) => !c.resolved);
+  }, [withFile, hideResolved]);
 
   const { onPage, offPage } = useMemo(() => {
     const on: CommentWithFile[] = [];
     const off: CommentWithFile[] = [];
-    for (const c of withFile) {
+    for (const c of visibleComments) {
       if (inDomAnchors.has(c.anchor)) {
         on.push(c);
       } else {
@@ -44,7 +55,7 @@ export function CommentManagementPanel({
     on.sort(byDate);
     off.sort(byDate);
     return { onPage: on, offPage: off };
-  }, [withFile, inDomAnchors]);
+  }, [visibleComments, inDomAnchors]);
 
   const grouped = useMemo(() => {
     const map = new Map<string, CommentWithFile[]>();
@@ -58,11 +69,20 @@ export function CommentManagementPanel({
   }, [onPage]);
 
   const total = withFile.length;
+  const visibleTotal = visibleComments.length;
 
   if (total === 0) {
     return (
       <div className="grid min-h-[200px] place-items-center px-6 py-12 text-center text-muted-foreground text-sm">
         No comments yet
+      </div>
+    );
+  }
+
+  if (visibleTotal === 0) {
+    return (
+      <div className="grid min-h-[200px] place-items-center px-6 py-12 text-center text-muted-foreground text-sm">
+        All comments resolved — disable Hide resolved in settings to review.
       </div>
     );
   }
@@ -181,6 +201,10 @@ function CommentRow({
   onGoToPage: (comment: CommentWithFile) => void;
   onDelete: CommentManagementPanelProps["onDelete"];
 }) {
+  const [revertBaseline, setRevertBaseline] = useState(false);
+  const activeVersion = comment.active ?? 0;
+  const showRevertOption = activeVersion > 0;
+
   const {
     confirming,
     busy,
@@ -190,9 +214,21 @@ function CommentRow({
     cancelDelete,
   } = useDeleteConfirm({
     onDelete: async () => {
-      await onDelete(comment.id);
+      await onDelete(comment.id, {
+        revertBaseline: showRevertOption ? revertBaseline : false,
+      });
     },
   });
+
+  const handleRequestDelete = () => {
+    setRevertBaseline(false);
+    requestDelete();
+  };
+
+  const handleCancelDelete = () => {
+    setRevertBaseline(false);
+    cancelDelete();
+  };
 
   const handleRowActivate = () => {
     if (jumpable) {
@@ -255,7 +291,7 @@ function CommentRow({
           className="h-7 w-7 text-muted-foreground opacity-0 transition-opacity hover:text-destructive focus-visible:opacity-100 group-hover:opacity-100"
           onClick={(e) => {
             e.stopPropagation();
-            requestDelete();
+            handleRequestDelete();
           }}
           size="icon"
           type="button"
@@ -267,12 +303,16 @@ function CommentRow({
 
       {confirming ? (
         <DeleteConfirmOverlay
+          activeVersion={activeVersion}
           busy={busy}
           layout="panel"
-          onCancel={cancelDelete}
+          onCancel={handleCancelDelete}
           onConfirm={async () => {
             await confirmDelete();
           }}
+          onRevertBaselineChange={setRevertBaseline}
+          revertBaseline={revertBaseline}
+          showRevertOption={showRevertOption}
         />
       ) : null}
     </>

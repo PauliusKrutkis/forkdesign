@@ -25,6 +25,14 @@ import { useViewport } from "./hooks/use-viewport.ts";
 import { useViteHmrReload } from "./hooks/use-vite-hmr-reload.ts";
 import { deleteComment, patchComment } from "./lib/api.ts";
 import { currentAppRoute, getCommentAuthor } from "./lib/comment-author.ts";
+import {
+  appendReply,
+  removeComment,
+  removeReply,
+  toggleCommentResolved,
+  updateCommentText,
+  updateReply,
+} from "./lib/comment-mutations.ts";
 import { ignorePromiseRejection } from "./lib/ignore-promise-rejection.ts";
 import { isOverlayElement } from "./lib/overlay-dom.ts";
 import { handleOverlayGlobalKeydown } from "./lib/overlay-global-keydown.ts";
@@ -297,40 +305,98 @@ export function CommentOverlay({
   );
 
   const handleEdit = useCallback(async (id: string, text: string) => {
-    await patchComment(id, { text });
+    let snapshot: CommentData[] = [];
+    setComments((prev) => {
+      snapshot = prev;
+      return updateCommentText(prev, id, text);
+    });
+    try {
+      await patchComment(id, { text });
+    } catch (err) {
+      setComments(snapshot);
+      throw err;
+    }
   }, []);
 
   const handleSubmitReply = useCallback(
     async (id: string, text: string, v?: number) => {
-      await patchComment(id, {
-        reply: {
-          text,
-          author: getCommentAuthor(),
-          ...(v === undefined ? {} : { v }),
-        },
+      const author = getCommentAuthor();
+      const optimisticReply = {
+        text,
+        author,
+        date: new Date().toISOString(),
+        ...(v === undefined ? {} : { v }),
+      };
+      let snapshot: CommentData[] = [];
+      setComments((prev) => {
+        snapshot = prev;
+        return appendReply(prev, id, optimisticReply);
       });
+      try {
+        await patchComment(id, {
+          reply: {
+            text,
+            author,
+            ...(v === undefined ? {} : { v }),
+          },
+        });
+      } catch (err) {
+        setComments(snapshot);
+        throw err;
+      }
     },
     []
   );
 
   const handleEditReply = useCallback(
     async (id: string, replyIndex: number, text: string) => {
-      await patchComment(id, { editReply: { index: replyIndex, text } });
+      let snapshot: CommentData[] = [];
+      setComments((prev) => {
+        snapshot = prev;
+        return updateReply(prev, id, replyIndex, text);
+      });
+      try {
+        await patchComment(id, { editReply: { index: replyIndex, text } });
+      } catch (err) {
+        setComments(snapshot);
+        throw err;
+      }
     },
     []
   );
 
   const handleDeleteReply = useCallback(
     async (id: string, replyIndex: number) => {
-      await patchComment(id, { deleteReply: { index: replyIndex } });
+      let snapshot: CommentData[] = [];
+      setComments((prev) => {
+        snapshot = prev;
+        return removeReply(prev, id, replyIndex);
+      });
+      try {
+        await patchComment(id, { deleteReply: { index: replyIndex } });
+      } catch (err) {
+        setComments(snapshot);
+        throw err;
+      }
     },
     []
   );
 
-  const handleResolve = useCallback((id: string) => {
-    // Resolve toggling lives on disk in a future task; for now this is a
-    // no-op stub so the bubble UI stays clickable.
-    console.info("[CommentOverlay] resolve (stub)", id);
+  const handleResolve = useCallback(async (id: string) => {
+    let snapshot: CommentData[] = [];
+    let nextResolved = false;
+    setComments((prev) => {
+      snapshot = prev;
+      const current = prev.find((c) => c.id === id);
+      nextResolved = !(current?.resolved ?? false);
+      return toggleCommentResolved(prev, id, nextResolved);
+    });
+    try {
+      await patchComment(id, { resolved: nextResolved });
+    } catch (err) {
+      setComments(snapshot);
+      throw err;
+    }
   }, []);
 
   const navigateTo = useCallback(
@@ -401,25 +467,50 @@ export function CommentOverlay({
   );
 
   const handleDelete = useCallback(
-    async (id: string) => {
-      // Optimistic: the row will disappear on the next HMR-triggered refetch.
-      // Errors propagate to the panel row so the user gets inline feedback
-      // instead of a swallowed failure.
-      await deleteComment(id);
-      // If the open bubble was anchored on the deleted comment's anchor, close
-      // it. The HMR refetch will reconcile the rest.
+    async (id: string, options?: { revertBaseline?: boolean }) => {
+      let snapshot: CommentData[] = [];
+      setComments((prev) => {
+        snapshot = prev;
+        return removeComment(prev, id);
+      });
       setOpenTarget((prev) => {
         if (!prev) {
           return prev;
         }
-        const stillThere = comments.some(
+        const stillThere = snapshot.some(
           (c) => c.id !== id && c.anchor === prev.anchor
         );
         return stillThere ? prev : null;
       });
+      try {
+        await deleteComment(id, options);
+      } catch (err) {
+        setComments(snapshot);
+        throw err;
+      }
     },
-    [comments]
+    []
   );
+
+  const visibleAnchors = useMemo(() => {
+    if (!settings.hideResolved) {
+      return anchors;
+    }
+    return anchors.filter((anchor) => {
+      const group = grouped.get(anchor) ?? [];
+      return !group.every((c) => c.resolved);
+    });
+  }, [anchors, grouped, settings.hideResolved]);
+
+  useEffect(() => {
+    if (!(settings.hideResolved && openTarget)) {
+      return;
+    }
+    const group = grouped.get(openTarget.anchor) ?? [];
+    if (group.length > 0 && group.every((c) => c.resolved)) {
+      setOpenTarget(null);
+    }
+  }, [settings.hideResolved, openTarget, grouped]);
 
   return (
     <TooltipProvider delayDuration={250} skipDelayDuration={120}>
@@ -430,7 +521,7 @@ export function CommentOverlay({
         data-redline-overlay-root="true"
       >
         {settings.enabled
-          ? anchors.map((anchor) => (
+          ? visibleAnchors.map((anchor) => (
               <CommentDot
                 anchor={anchor}
                 comments={grouped.get(anchor) ?? []}
@@ -524,6 +615,7 @@ export function CommentOverlay({
               <CommentManagementPanel
                 comments={comments}
                 fileToRoute={fileToRoute}
+                hideResolved={settings.hideResolved}
                 inDomAnchors={inDomAnchors}
                 onDelete={handleDelete}
                 onGoToPage={handleGoToPage}
@@ -634,8 +726,11 @@ function OpenBubble({
   fixModel: OverlaySettings["model"];
   skipDeleteConfirmation: boolean;
   onClose: () => void;
-  onResolve: (id: string) => void;
-  onDelete: (id: string) => Promise<void>;
+  onResolve: (id: string) => void | Promise<void>;
+  onDelete: (
+    id: string,
+    options?: { revertBaseline?: boolean }
+  ) => Promise<void>;
   onEdit: (id: string, text: string) => Promise<void>;
   onSubmitReply: (id: string, text: string, v?: number) => Promise<void>;
   onEditReply: (id: string, replyIndex: number, text: string) => Promise<void>;

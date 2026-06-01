@@ -45,6 +45,15 @@ export function CommentSettingsPanel({ settings, onChange }: Props) {
             onChange={(v) => onChange({ skipDeleteConfirmation: v })}
           />
         </div>
+        <div className="mt-3">
+          <SwitchRow
+            checked={settings.hideResolved}
+            hint="Resolved pins and list rows are hidden until you turn this off."
+            id="hide-resolved"
+            label="Hide resolved"
+            onChange={(v) => onChange({ hideResolved: v })}
+          />
+        </div>
       </Section>
 
       {settings.showFloatingControls ? (

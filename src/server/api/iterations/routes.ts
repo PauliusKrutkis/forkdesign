@@ -277,7 +277,7 @@ export async function handleIterationsNew(
     sendError(res, parsed.status, parsed.reason);
     return;
   }
-  const { id, model: requestedModel } = parsed.value;
+  const { id, count, model: requestedModel } = parsed.value;
   const model: FixModel = requestedModel ?? DEFAULT_FIX_MODEL_PRIORITY[0];
 
   const ctx = await resolveCommentIterationContext(
@@ -296,6 +296,7 @@ export async function handleIterationsNew(
     projectRoot,
     found: ctx.found,
     id,
+    count,
     model,
     stream,
   });

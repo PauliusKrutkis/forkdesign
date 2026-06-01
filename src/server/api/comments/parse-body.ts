@@ -30,7 +30,8 @@ export type PatchBody =
   | { kind: "text"; text: string }
   | { kind: "reply"; reply: { author: string; text: string; v?: number } }
   | { kind: "editReply"; replyIndex: number; text: string }
-  | { kind: "deleteReply"; replyIndex: number };
+  | { kind: "deleteReply"; replyIndex: number }
+  | { kind: "resolved"; resolved: boolean };
 
 function parsePatchTextField(
   obj: Record<string, unknown>
@@ -85,6 +86,16 @@ function parsePatchDeleteReplyField(
     };
   }
   return { ok: true, value: { kind: "deleteReply", replyIndex: index } };
+}
+
+function parsePatchResolvedField(
+  obj: Record<string, unknown>
+): ParsePatchBodyResult {
+  const resolved = obj.resolved;
+  if (typeof resolved !== "boolean") {
+    return { ok: false, reason: "field `resolved` must be a boolean" };
+  }
+  return { ok: true, value: { kind: "resolved", resolved } };
 }
 
 function parsePatchReplyField(
@@ -142,15 +153,20 @@ export function parsePatchBody(value: unknown): ParsePatchBodyResult {
   const hasReply = "reply" in obj;
   const hasEditReply = "editReply" in obj;
   const hasDeleteReply = "deleteReply" in obj;
-  const fieldCount = [hasText, hasReply, hasEditReply, hasDeleteReply].filter(
-    Boolean
-  ).length;
+  const hasResolved = "resolved" in obj;
+  const fieldCount = [
+    hasText,
+    hasReply,
+    hasEditReply,
+    hasDeleteReply,
+    hasResolved,
+  ].filter(Boolean).length;
 
   if (fieldCount !== 1) {
     return {
       ok: false,
       reason:
-        "body must include exactly one of `text`, `reply`, `editReply`, or `deleteReply`",
+        "body must include exactly one of `text`, `reply`, `editReply`, `deleteReply`, or `resolved`",
     };
   }
 
@@ -162,6 +178,9 @@ export function parsePatchBody(value: unknown): ParsePatchBodyResult {
   }
   if (hasDeleteReply) {
     return parsePatchDeleteReplyField(obj);
+  }
+  if (hasResolved) {
+    return parsePatchResolvedField(obj);
   }
   return parsePatchReplyField(obj);
 }

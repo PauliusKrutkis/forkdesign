@@ -142,11 +142,22 @@ describe("parsePatchBody", () => {
     });
   });
 
+  it("parses resolved patch", () => {
+    expect(parsePatchBody({ resolved: true })).toEqual({
+      ok: true,
+      value: { kind: "resolved", resolved: true },
+    });
+    expect(parsePatchBody({ resolved: false })).toEqual({
+      ok: true,
+      value: { kind: "resolved", resolved: false },
+    });
+  });
+
   it("rejects bodies with no mutation field", () => {
     expect(parsePatchBody({})).toEqual({
       ok: false,
       reason:
-        "body must include exactly one of `text`, `reply`, `editReply`, or `deleteReply`",
+        "body must include exactly one of `text`, `reply`, `editReply`, `deleteReply`, or `resolved`",
     });
   });
 
@@ -169,6 +180,13 @@ describe("parsePatchBody", () => {
     expect(parsePatchBody({ reply: { author: "", text: "hi" } })).toEqual({
       ok: false,
       reason: "field `reply.author` must be a non-empty string",
+    });
+  });
+
+  it("rejects non-boolean resolved", () => {
+    expect(parsePatchBody({ resolved: "yes" })).toEqual({
+      ok: false,
+      reason: "field `resolved` must be a boolean",
     });
   });
 });

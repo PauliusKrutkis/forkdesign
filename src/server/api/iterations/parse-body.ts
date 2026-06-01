@@ -1,3 +1,7 @@
+import {
+  DEFAULT_FIX_VERSION_COUNT,
+  MAX_FIX_VERSION_COUNT,
+} from "../../../shared/fix-version-count.ts";
 import { type FixModel, parseFixModel } from "../../fix/models.ts";
 import {
   type ParseResult,
@@ -18,6 +22,7 @@ export interface ActivateBody {
 }
 
 export interface NewIterationBody {
+  count: number;
   id: string;
   model?: FixModel;
 }
@@ -104,9 +109,22 @@ export function parseNewIterationBody(
   if (!id.ok) {
     return id;
   }
+  const countRaw = obj.count;
+  let count = DEFAULT_FIX_VERSION_COUNT;
+  if (countRaw !== undefined) {
+    const parsedCount = requireInt(obj, "count", {
+      min: DEFAULT_FIX_VERSION_COUNT,
+      max: MAX_FIX_VERSION_COUNT,
+    });
+    if (!parsedCount.ok) {
+      return parsedCount;
+    }
+    count = parsedCount.value;
+  }
+
   const modelRaw = obj.model;
   if (modelRaw === undefined) {
-    return { ok: true, value: { id: id.value } };
+    return { ok: true, value: { id: id.value, count } };
   }
   if (typeof modelRaw !== "string") {
     return { ok: false, reason: "field `model` must be a string" };
@@ -115,5 +133,5 @@ export function parseNewIterationBody(
   if (!model) {
     return { ok: false, reason: `unknown fix model: ${modelRaw}` };
   }
-  return { ok: true, value: { id: id.value, model } };
+  return { ok: true, value: { id: id.value, count, model } };
 }
