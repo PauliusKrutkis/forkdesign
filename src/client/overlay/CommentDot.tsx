@@ -1,6 +1,6 @@
 import { Check, Pencil } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import type { RegisteredComment } from "../types.ts";
+import type { CommentData } from "../types.ts";
 import { cn } from "../ui/cn.ts";
 import { useAnchorRects } from "./hooks/useAnchorElement.ts";
 import { dotRect } from "./lib/placement.ts";
@@ -12,7 +12,7 @@ export interface DotInstanceTarget {
 
 interface CommentDotProps {
   anchor: string;
-  comments: RegisteredComment[];
+  comments: CommentData[];
   onHover: (target: DotInstanceTarget | null) => void;
   onOpen: (target: DotInstanceTarget) => void;
   openTarget: DotInstanceTarget | null;
@@ -37,7 +37,7 @@ function readViewport() {
 type PinState = "recent" | "default" | "resolved";
 
 function pinState(
-  comments: RegisteredComment[],
+  comments: CommentData[],
   unresolvedRecent: boolean
 ): PinState {
   const allResolved = comments.every((c) => c.resolved);

@@ -1,12 +1,7 @@
 import { cn } from "../ui/cn.ts";
 import { Kbd } from "../ui/kbd.tsx";
 
-/**
- * Trailing shortcut chip inside a Button. Reserved for the one primary action
- * per surface (Save, the More/Less toggle); every other button surfaces its
- * shortcut through `HotkeyTip` instead. Renders the shared `Kbd` so the chip
- * matches the tooltip and cheat-sheet styling exactly.
- */
+/** Inline shortcut chip for primary actions inside a Button. */
 export function ShortcutHint({
   children,
   className,
@@ -30,8 +25,7 @@ export function ShortcutHint({
 const ctrlKey: string = detectCtrlKey();
 
 /**
- * Format a Ctrl/Cmd combo for display: `⌘R` on mac, `Ctrl+R` elsewhere. The
- * single place combo strings are built so inline chips and tooltips agree.
+ * Format a Ctrl/Cmd combo for display (`⌘R` on Mac, `Ctrl+R` elsewhere).
  */
 export function withCtrl(key: string): string {
   return ctrlKey === "⌘" ? `⌘${key}` : `Ctrl+${key}`;

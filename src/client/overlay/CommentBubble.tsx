@@ -1,4 +1,3 @@
-import { toPng } from "html-to-image";
 import {
   CheckCircle2,
   GripVertical,
@@ -9,13 +8,19 @@ import {
   X,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { createPortal } from "react-dom";
 import type { OverlayModel } from "../settings.ts";
-import type { CommentReply, RegisteredComment } from "../types.ts";
-import { Badge } from "../ui/badge.tsx";
+import type { CommentData } from "../types.ts";
 import { Button } from "../ui/button.tsx";
 import { cn } from "../ui/cn.ts";
 import { Textarea } from "../ui/textarea.tsx";
+import {
+  ActionIconButton,
+  ModeToggleButton,
+} from "./CommentBubbleActionButtons.tsx";
+import { CommentBubbleAttribution } from "./CommentBubbleAttribution.tsx";
+import { CommentBubbleLightbox } from "./CommentBubbleLightbox.tsx";
+import { CommentBubblePointer } from "./CommentBubblePointer.tsx";
+import { CommentBubbleReplyItem } from "./CommentBubbleReplyItem.tsx";
 import { AdaptiveThumb } from "./CommentThumb.tsx";
 import {
   CommentVersionHistory,
@@ -25,13 +30,14 @@ import {
 } from "./CommentVersionHistory";
 import { CommentVersionPicker } from "./CommentVersionPicker";
 import { HotkeyTip } from "./HotkeyTip";
+import { type BubbleMode, useIterateFix } from "./hooks/useIterateFix.ts";
 import { useIterations } from "./hooks/useIterations.ts";
-import { dotRect, type FloaterSide, placeFloater } from "./lib/placement.ts";
-import { effectiveBackgroundColor } from "./lib/screenshot.ts";
+import { formatElapsed, readViewport } from "./lib/bubbleFormatters.ts";
+import { dotRect, placeFloater } from "./lib/placement.ts";
 import { ShortcutHint, withCtrl } from "./ShortcutHint";
 
 interface CommentBubbleProps {
-  comments: RegisteredComment[];
+  comments: CommentData[];
   fixModel?: OverlayModel;
   onClose: () => void;
   onDelete?: (id: string) => Promise<void>;
@@ -44,41 +50,12 @@ interface CommentBubbleProps {
   skipDeleteConfirmation?: boolean;
 }
 
-/** NDJSON event shapes streamed from `POST /api/iterations/new`. */
-interface IterateProgressEvent {
-  /** Short detail (file path, command, or status string). */
-  detail?: string;
-  /** Where in the pipeline the event was emitted from. */
-  stage?: "agent" | "snapshot";
-  /** Tool name when the agent invoked one (Read/Edit/Glob/Grep). */
-  tool?: string;
-  type: "progress";
-}
-type IterateDoneEvent =
-  | {
-      type: "done";
-      ok: true;
-      id?: string;
-      changed?: boolean;
-      v?: number;
-      tsx?: string;
-      png?: string;
-      modelUsed?: string;
-      durationMs?: number;
-      turnsUsed?: number;
-      toolCalls?: number;
-    }
-  | { type: "done"; ok: false; error?: string };
-type IterateStreamEvent = IterateProgressEvent | IterateDoneEvent;
-
 const BUBBLE_WIDTH_DETAILED = 320;
 const BUBBLE_WIDTH_COMPACT = 280;
 const BUBBLE_HEADER_HEIGHT = 36;
 const VIEWPORT_PADDING = 12;
 /** Conservative estimate for first render; updated by ResizeObserver. */
 const INITIAL_BUBBLE_HEIGHT = 280;
-
-type BubbleMode = "compact" | "detailed";
 
 /**
  * Open comment panel. Anchored to the dot (the visual handle on the element),
@@ -131,14 +108,19 @@ export function CommentBubble({
    * watch progress stream — but never auto-collapses (jarring).
    */
   const [mode, setMode] = useState<BubbleMode>("compact");
-  const [iterating, setIterating] = useState(false);
-  const [iterateError, setIterateError] = useState<string | null>(null);
-  /** Most recent progress detail line shown below the action row. */
-  const [iterateStatus, setIterateStatus] = useState<string | null>(null);
-  /** Run start timestamp (ms) — drives the live elapsed-time counter. */
-  const [iterateStartedAt, setIterateStartedAt] = useState<number | null>(null);
-  /** Re-renders the elapsed counter once per second while iterating. */
-  const [iterateNow, setIterateNow] = useState<number>(() => Date.now());
+  const {
+    iterating,
+    iterateError,
+    iterateStatus,
+    iterateStartedAt,
+    iterateNow,
+    handleIterate,
+  } = useIterateFix({
+    lead,
+    fixModel,
+    reloadIterations,
+    setMode,
+  });
   const [editing, setEditing] = useState(false);
   const [editDraft, setEditDraft] = useState("");
   const [editBusy, setEditBusy] = useState(false);
@@ -152,16 +134,6 @@ export function CommentBubble({
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const editTextareaRef = useRef<HTMLTextAreaElement | null>(null);
   const replyTextareaRef = useRef<HTMLTextAreaElement | null>(null);
-
-  // 1Hz tick while iterating so the elapsed counter updates without
-  // requiring an external state push for every second.
-  useEffect(() => {
-    if (!iterating) {
-      return;
-    }
-    const t = window.setInterval(() => setIterateNow(Date.now()), 1000);
-    return () => window.clearInterval(t);
-  }, [iterating]);
 
   useEffect(() => {
     if (editing) {
@@ -281,131 +253,6 @@ export function CommentBubble({
 
   const cancelDeleteConfirm = () => {
     setDeleteConfirming(false);
-  };
-
-  // Fires the selected fix strategy server-side via POST /api/iterations/new.
-  // The agent reads the file, locates the anchored element, applies the
-  // change, and the server snapshots the post-edit source as the next
-  // version. Round-trip is typically 20-90s; the response is NDJSON
-  // streamed event-by-event and we surface the latest event as a status line
-  // below the action row. HMR fires once the source is rewritten and the
-  // switcher refetches to surface the new version.
-  const handleIterate = async () => {
-    if (!lead || iterating) {
-      return;
-    }
-    // Auto-expand to detailed before kicking off the run so the iterate
-    // status row + version switcher have room to surface progress.
-    setMode("detailed");
-    setIterating(true);
-    setIterateError(null);
-    setIterateStatus(null);
-    setIterateStartedAt(Date.now());
-    setIterateNow(Date.now());
-    try {
-      const res = await fetch("/api/iterations/new", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ id: lead.id, model: fixModel }),
-      });
-      if (!(res.ok && res.body)) {
-        // Validation errors (400/404) still come back as plain JSON.
-        const body = (await res.json().catch(() => ({}))) as { error?: string };
-        setIterateError(body.error ?? `request failed (${res.status})`);
-        return;
-      }
-
-      const reader = res.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = "";
-      let done: IterateDoneEvent | null = null;
-
-      // Stream loop: read chunks, split on newlines, parse each line as
-      // JSON, dispatch on `type`. We tolerate empty lines and malformed
-      // lines (skip), but a missing `done` event at stream-close is treated
-      // as an error so the UI never gets stuck spinning.
-      streamLoop: while (true) {
-        const { done: streamDone, value } = await reader.read();
-        if (streamDone) {
-          break;
-        }
-        buffer += decoder.decode(value, { stream: true });
-        let nl: number;
-        while ((nl = buffer.indexOf("\n")) >= 0) {
-          const line = buffer.slice(0, nl).trim();
-          buffer = buffer.slice(nl + 1);
-          if (!line) {
-            continue;
-          }
-          let event: IterateStreamEvent;
-          try {
-            event = JSON.parse(line) as IterateStreamEvent;
-          } catch {
-            continue;
-          }
-          if (event.type === "progress") {
-            setIterateStatus(formatProgress(event));
-          } else if (event.type === "done") {
-            done = event;
-            // Drain any remaining buffered bytes in case the server
-            // flushed trailing data, then exit.
-            break streamLoop;
-          }
-        }
-      }
-
-      if (!done) {
-        setIterateError("stream closed without a result");
-        return;
-      }
-      if (!done.ok) {
-        setIterateError(done.error ?? "agent failed");
-        return;
-      }
-      if (done.changed === false) {
-        setIterateError("AI made no changes — try a more specific instruction");
-        return;
-      }
-      // Success: briefly show which model ran and how long it took.
-      const parts: string[] = [];
-      if (done.modelUsed) {
-        parts.push(done.modelUsed);
-      }
-      if (typeof done.durationMs === "number") {
-        parts.push(`${Math.round(done.durationMs / 1000)}s`);
-      }
-      if (typeof done.turnsUsed === "number") {
-        parts.push(`${done.turnsUsed} turns`);
-      }
-      const successStatus = parts.length > 0 ? parts.join(" · ") : "Done";
-      setIterateStatus(successStatus);
-      window.setTimeout(() => setIterateStatus(null), 3000);
-
-      // Best-effort post-edit screenshot capture. The agent just rewrote the
-      // source file, so HMR is about to fire and the DOM will re-render with
-      // the new design. We hook `vite:afterUpdate`, wait for updates to
-      // settle, re-capture the anchored element, and POST it to the screenshot
-      // endpoint to replace the placeholder copy. Failures here are silent —
-      // the placeholder PNG on disk is good enough to fall back to.
-      //
-      // PNG URLs include an mtime cache-buster so a reload after upload fetches
-      // the fresh capture instead of a cached placeholder thumbnail.
-      void reloadIterations();
-      if (done.v !== undefined && done.ok === true && done.changed === true) {
-        captureAndUploadV({
-          id: lead.id,
-          anchor: lead.anchor,
-          v: done.v,
-          onUploaded: () => void reloadIterations(),
-        });
-      }
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      setIterateError(`network error: ${message}`);
-    } finally {
-      setIterating(false);
-      setIterateStartedAt(null);
-    }
   };
 
   useEffect(() => {
@@ -601,7 +448,10 @@ export function CommentBubble({
       }}
     >
       {userPosition === null ? (
-        <Pointer offset={placement.arrowOffset} side={placement.side} />
+        <CommentBubblePointer
+          offset={placement.arrowOffset}
+          side={placement.side}
+        />
       ) : null}
 
       {/* Header bar — dedicated drag handle. Three regions: grip glyph (left),
@@ -741,7 +591,7 @@ export function CommentBubble({
 
         {/* Attribution (left) · edit + expand toggle (right) */}
         <div className="mt-2.5 flex items-center justify-between gap-2">
-          <Attribution author={lead.author} date={lead.date} />
+          <CommentBubbleAttribution author={lead.author} date={lead.date} />
           <div className="flex shrink-0 items-center gap-0.5">
             {onEdit && !editing ? (
               <HotkeyTip keys="E" label="Edit">
@@ -772,7 +622,7 @@ export function CommentBubble({
                 <p className="m-0 text-muted-foreground text-sm leading-snug">
                   {extra.text}
                 </p>
-                <Attribution
+                <CommentBubbleAttribution
                   author={extra.author}
                   className="mt-1"
                   date={extra.date}
@@ -793,7 +643,7 @@ export function CommentBubble({
             onDeleteVersion={(v) => removeIterationVersion(v)}
             onThumbClick={(src) => setLightboxSrc(src)}
             renderReply={(reply, i) => (
-              <ReplyItem
+              <CommentBubbleReplyItem
                 commentId={lead.id}
                 onDelete={onDeleteReply}
                 onEdit={onEditReply}
@@ -820,7 +670,7 @@ export function CommentBubble({
         lead.replies.length > 0 ? (
           <ul className="m-0 mt-3 list-none space-y-2.5 border-t p-0 pt-3">
             {[...lead.replies.entries()].reverse().map(([i, reply]) => (
-              <ReplyItem
+              <CommentBubbleReplyItem
                 commentId={lead.id}
                 key={`${reply.author}-${reply.date}-${i}`}
                 onDelete={onDeleteReply}
@@ -1006,705 +856,11 @@ export function CommentBubble({
       ) : null}
 
       {mode === "detailed" && lightboxSrc ? (
-        <Lightbox onClose={() => setLightboxSrc(null)} src={lightboxSrc} />
+        <CommentBubbleLightbox
+          onClose={() => setLightboxSrc(null)}
+          src={lightboxSrc}
+        />
       ) : null}
     </div>
   );
-}
-
-/**
- * Click-to-enlarge view for the comment's screenshot. Portaled to the overlay
- * root (not `document.body`) so it shares the host overlay's stacking context
- * and can sit above the dock (9400). Styles come from `redline-lightbox-*`
- * in styles.css so z-index doesn't depend on host Tailwind scanning. Closes
- * on backdrop click or Escape.
- */
-function Lightbox({ src, onClose }: { src: string; onClose: () => void }) {
-  const [portalRoot, setPortalRoot] = useState<HTMLElement | null>(null);
-
-  useEffect(() => {
-    setPortalRoot(
-      document.querySelector<HTMLElement>("[data-redline-overlay-root]") ??
-        document.body
-    );
-  }, []);
-
-  useEffect(() => {
-    document.body.dataset.redlineLightbox = "open";
-    return () => {
-      delete document.body.dataset.redlineLightbox;
-    };
-  }, []);
-
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        e.preventDefault();
-        e.stopImmediatePropagation();
-        onClose();
-      }
-    };
-    document.addEventListener("keydown", onKey, true);
-    return () => document.removeEventListener("keydown", onKey, true);
-  }, [onClose]);
-
-  if (typeof document === "undefined" || !portalRoot) {
-    return null;
-  }
-
-  return createPortal(
-    <div
-      aria-label="Comment screenshot"
-      className="redline-lightbox-backdrop"
-      data-comment-overlay="true"
-      onClick={onClose}
-      role="dialog"
-    >
-      <img
-        alt=""
-        className="redline-lightbox-image"
-        onClick={(e) => e.stopPropagation()}
-        src={src}
-      />
-      <Button
-        aria-label="Close screenshot"
-        className="absolute top-6 right-6"
-        onClick={onClose}
-        size="icon"
-        type="button"
-        variant="secondary"
-      >
-        <X className="h-4 w-4" />
-      </Button>
-    </div>,
-    portalRoot
-  );
-}
-
-/**
- * Small triangle that points from the bubble back at the anchor. Rendered as
- * a rotated square that's half-clipped by the bubble's `overflow-hidden`, so
- * the visible silhouette is a 6×6 triangle. Borders pick the two outer edges
- * for the chosen side.
- */
-function Pointer({ side, offset }: { side: FloaterSide; offset: number }) {
-  // Each side: { position style, visible-edge border classes }
-  if (side === "bottom") {
-    return (
-      <span
-        aria-hidden
-        className="absolute -top-[7px] block h-3 w-3 rotate-45 border-border border-t border-l bg-background"
-        style={{ left: offset - 6 }}
-      />
-    );
-  }
-  if (side === "top") {
-    return (
-      <span
-        aria-hidden
-        className="absolute -bottom-[7px] block h-3 w-3 rotate-45 border-border border-r border-b bg-background"
-        style={{ left: offset - 6 }}
-      />
-    );
-  }
-  if (side === "right") {
-    return (
-      <span
-        aria-hidden
-        className="absolute -left-[7px] block h-3 w-3 rotate-45 border-border border-b border-l bg-background"
-        style={{ top: offset - 6 }}
-      />
-    );
-  }
-  return (
-    <span
-      aria-hidden
-      className="absolute -right-[7px] block h-3 w-3 rotate-45 border-border border-t border-r bg-background"
-      style={{ top: offset - 6 }}
-    />
-  );
-}
-
-function readViewport() {
-  if (typeof window === "undefined") {
-    return { width: 1024, height: 768 };
-  }
-  return { width: window.innerWidth, height: window.innerHeight };
-}
-
-/**
- * One-line attribution: `author · date`. Used for the lead comment and every
- * extra/reply so the metadata reads identically everywhere. The author
- * truncates; the dot and date never shrink so the timestamp stays legible.
- */
-function Attribution({
-  author,
-  date,
-  className,
-}: {
-  author: string;
-  date: string;
-  className?: string;
-}) {
-  return (
-    <div
-      className={cn(
-        "flex min-w-0 items-center gap-1.5 text-muted-foreground text-xs",
-        className
-      )}
-    >
-      <span className="truncate">{author}</span>
-      <span aria-hidden className="text-muted-foreground/40">
-        ·
-      </span>
-      <span className="shrink-0 font-mono text-[10px] tabular-nums">
-        {formatDate(date)}
-      </span>
-    </div>
-  );
-}
-
-function ReplyVersionBadge({ v }: { v?: number }) {
-  if (v === undefined) {
-    return (
-      <Badge
-        className="h-5 shrink-0 px-1.5 font-normal text-[10px] text-muted-foreground"
-        variant="outline"
-      >
-        Unversioned
-      </Badge>
-    );
-  }
-  return (
-    <Badge
-      className="h-5 shrink-0 px-1.5 font-normal text-[10px]"
-      variant="outline"
-    >
-      Re: {formatVersionDisplay(v)}
-    </Badge>
-  );
-}
-
-function ReplyItem({
-  reply,
-  replyIndex,
-  commentId,
-  skipDeleteConfirmation,
-  onEdit,
-  onDelete,
-  onInteraction,
-}: {
-  reply: CommentReply;
-  replyIndex: number;
-  commentId: string;
-  skipDeleteConfirmation: boolean;
-  onEdit?: (id: string, replyIndex: number, text: string) => Promise<void>;
-  onDelete?: (id: string, replyIndex: number) => Promise<void>;
-  onInteraction?: () => void;
-}) {
-  const [editing, setEditing] = useState(false);
-  const [editDraft, setEditDraft] = useState("");
-  const [editBusy, setEditBusy] = useState(false);
-  const [editError, setEditError] = useState<string | null>(null);
-  const [deleteConfirming, setDeleteConfirming] = useState(false);
-  const [deleteBusy, setDeleteBusy] = useState(false);
-  const [deleteError, setDeleteError] = useState<string | null>(null);
-  const editTextareaRef = useRef<HTMLTextAreaElement | null>(null);
-
-  useEffect(() => {
-    if (editing) {
-      editTextareaRef.current?.focus();
-    }
-  }, [editing]);
-
-  const startEditing = () => {
-    if (!onEdit) {
-      return;
-    }
-    onInteraction?.();
-    setEditing(true);
-    setEditDraft(reply.text);
-    setEditError(null);
-    setDeleteConfirming(false);
-    setDeleteError(null);
-  };
-
-  const cancelEditing = () => {
-    setEditing(false);
-    setEditDraft("");
-    setEditError(null);
-  };
-
-  const saveEdit = async () => {
-    if (!onEdit || editBusy) {
-      return;
-    }
-    const trimmed = editDraft.trim();
-    if (!trimmed) {
-      setEditError("Reply cannot be empty");
-      return;
-    }
-    setEditBusy(true);
-    setEditError(null);
-    try {
-      await onEdit(commentId, replyIndex, trimmed);
-      setEditing(false);
-      setEditDraft("");
-    } catch (err) {
-      setEditError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setEditBusy(false);
-    }
-  };
-
-  const confirmDelete = async () => {
-    if (!onDelete || deleteBusy) {
-      return;
-    }
-    setDeleteBusy(true);
-    setDeleteError(null);
-    try {
-      await onDelete(commentId, replyIndex);
-    } catch (err) {
-      setDeleteError(err instanceof Error ? err.message : String(err));
-      setDeleteBusy(false);
-      setDeleteConfirming(false);
-    }
-  };
-
-  const requestDelete = () => {
-    if (!onDelete || deleteBusy) {
-      return;
-    }
-    onInteraction?.();
-    setDeleteError(null);
-    setEditing(false);
-    if (skipDeleteConfirmation) {
-      void confirmDelete();
-      return;
-    }
-    setDeleteConfirming(true);
-  };
-
-  const cancelDeleteConfirm = () => {
-    setDeleteConfirming(false);
-  };
-
-  return (
-    <li>
-      {editing ? (
-        <div className="space-y-2">
-          <Textarea
-            aria-label="Edit reply"
-            className="min-h-[64px] resize-none text-sm leading-relaxed"
-            disabled={editBusy}
-            onChange={(e) => setEditDraft(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
-                e.preventDefault();
-                void saveEdit();
-              }
-            }}
-            ref={editTextareaRef}
-            value={editDraft}
-          />
-          <div className="flex items-center justify-end gap-1.5">
-            <Button
-              className="h-7 px-2 text-xs"
-              disabled={editBusy}
-              onClick={cancelEditing}
-              size="sm"
-              type="button"
-              variant="ghost"
-            >
-              Cancel
-            </Button>
-            <Button
-              className="h-7 px-2 text-xs"
-              disabled={editBusy}
-              onClick={() => void saveEdit()}
-              size="sm"
-              type="button"
-            >
-              {editBusy ? (
-                "Saving…"
-              ) : (
-                <>
-                  Save
-                  <ShortcutHint onPrimary>{withCtrl("⏎")}</ShortcutHint>
-                </>
-              )}
-            </Button>
-          </div>
-          {editError ? (
-            <p className="m-0 text-destructive text-xs">{editError}</p>
-          ) : null}
-        </div>
-      ) : (
-        <p className="m-0 text-muted-foreground text-sm leading-snug">
-          {reply.text}
-        </p>
-      )}
-
-      <div className="relative mt-1 flex items-center justify-between gap-2">
-        {editing ? (
-          <span />
-        ) : (
-          <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5">
-            <ReplyVersionBadge v={reply.v} />
-            <Attribution author={reply.author} date={reply.date} />
-          </div>
-        )}
-        {!editing && (onEdit || onDelete) ? (
-          <div className="flex shrink-0 items-center gap-0.5">
-            {onEdit && !deleteConfirming ? (
-              <Button
-                className="h-auto px-1.5 py-1 text-xs"
-                onClick={startEditing}
-                size="sm"
-                type="button"
-                variant="ghost"
-              >
-                Edit
-              </Button>
-            ) : null}
-            {onDelete && !deleteConfirming ? (
-              <Button
-                className="h-auto px-1.5 py-1 text-xs hover:bg-destructive/10 hover:text-destructive"
-                disabled={deleteBusy}
-                onClick={requestDelete}
-                size="sm"
-                type="button"
-                variant="ghost"
-              >
-                Delete
-              </Button>
-            ) : null}
-          </div>
-        ) : null}
-
-        {deleteConfirming ? (
-          <div
-            className="absolute inset-y-0 right-0 flex items-center justify-end gap-1.5 bg-gradient-to-l from-55% from-background to-transparent pl-8"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <span className="mr-0.5 font-medium text-foreground text-xs">
-              Delete?
-            </span>
-            <Button
-              className="h-7 px-2 text-xs"
-              disabled={deleteBusy}
-              onClick={cancelDeleteConfirm}
-              size="sm"
-              type="button"
-              variant="ghost"
-            >
-              Cancel
-            </Button>
-            <Button
-              className="h-7 px-2 text-xs"
-              disabled={deleteBusy}
-              onClick={() => void confirmDelete()}
-              size="sm"
-              type="button"
-              variant="destructive"
-            >
-              {deleteBusy ? "Deleting…" : "Delete"}
-            </Button>
-          </div>
-        ) : null}
-      </div>
-
-      {deleteError ? (
-        <p className="m-0 mt-1 text-destructive text-xs">{deleteError}</p>
-      ) : null}
-    </li>
-  );
-}
-
-/**
- * Expand/collapse chevron for the bubble's mode toggle. Lives at the right
- * edge of the metadata row in both compact and detailed mode so the user
- * has a consistent affordance. The icon flips (⌄ → ⌃) based on the current
- * mode. Includes a Tab kbd hint inline — Tab is the global toggle hotkey
- * when no input is focused.
- */
-function ModeToggleButton({
-  mode,
-  onToggle,
-}: {
-  mode: BubbleMode;
-  onToggle: () => void;
-}) {
-  const isCompact = mode === "compact";
-  return (
-    <Button
-      aria-expanded={!isCompact}
-      aria-label={isCompact ? "Expand bubble" : "Collapse bubble"}
-      className="h-auto shrink-0 px-1.5 py-1 text-xs"
-      onClick={onToggle}
-      size="sm"
-      type="button"
-      variant="ghost"
-    >
-      {isCompact ? "More" : "Less"}
-      <ShortcutHint>Tab</ShortcutHint>
-    </Button>
-  );
-}
-
-function ActionIconButton({
-  label,
-  keys,
-  onClick,
-  disabled,
-  active,
-  destructive,
-  children,
-}: {
-  label: string;
-  /** Hotkey shown in the tooltip; omit for a label-only tip. */
-  keys?: string;
-  onClick?: () => void;
-  disabled?: boolean;
-  active?: boolean;
-  destructive?: boolean;
-  children: React.ReactNode;
-}) {
-  return (
-    <HotkeyTip keys={keys} label={label}>
-      <Button
-        aria-label={label}
-        className={cn(
-          "h-9 min-w-0 flex-1 rounded-none text-muted-foreground hover:bg-muted/60 hover:text-foreground",
-          active && "text-primary hover:text-primary",
-          destructive && "hover:bg-destructive/10 hover:text-destructive"
-        )}
-        disabled={disabled}
-        onClick={onClick}
-        size="icon"
-        type="button"
-        variant="ghost"
-      >
-        {children}
-      </Button>
-    </HotkeyTip>
-  );
-}
-
-/**
- * Best-effort post-edit screenshot capture. After the iteration endpoint
- * succeeds, HMR will fire (Vite picks up the rewritten source file) and the
- * DOM re-renders with the new design. We debounce `vite:afterUpdate` so batched
- * file writes settle, wait for React to commit, locate the anchored element,
- * rasterise it with `html-to-image`, and POST it to the screenshot endpoint
- * to replace the placeholder copy.
- *
- * 5-second timeout: if HMR doesn't fire (file change didn't trigger it, build
- * mode, etc.) we give up. Anchor missing after edit, capture exception, or
- * network failure all degrade silently to a console.warn — the placeholder
- * PNG written server-side is good enough to fall back to.
- */
-function captureAndUploadV(args: {
-  id: string;
-  anchor: string;
-  v: number;
-  onUploaded?: () => void;
-}): void {
-  const { id, anchor, v, onUploaded } = args;
-  if (!import.meta.hot) {
-    return;
-  }
-  const hot = import.meta.hot;
-
-  let done = false;
-  let timeoutId: number | undefined;
-  let debounceId: number | undefined;
-  let fallbackId: number | undefined;
-
-  const cleanup = () => {
-    if (done) {
-      return;
-    }
-    done = true;
-    if (timeoutId !== undefined) {
-      window.clearTimeout(timeoutId);
-    }
-    if (debounceId !== undefined) {
-      window.clearTimeout(debounceId);
-    }
-    if (fallbackId !== undefined) {
-      window.clearTimeout(fallbackId);
-    }
-    hot.off("vite:afterUpdate", handler);
-  };
-
-  const scheduleCapture = () => {
-    if (done) {
-      return;
-    }
-    if (debounceId !== undefined) {
-      window.clearTimeout(debounceId);
-    }
-    // Wait for batched HMR + React commit before measuring the anchor.
-    debounceId = window.setTimeout(() => {
-      window.requestAnimationFrame(() => {
-        window.requestAnimationFrame(() => {
-          void run();
-        });
-      });
-    }, 150);
-  };
-
-  const handler = () => {
-    if (done) {
-      return;
-    }
-    scheduleCapture();
-  };
-
-  const run = async (): Promise<void> => {
-    cleanup();
-    const el = document.querySelector(
-      `[data-comment-anchor="${cssEscape(anchor)}"]`
-    );
-    if (!(el instanceof HTMLElement)) {
-      console.warn(
-        `[CommentBubble] post-iterate capture: anchor ${anchor} not found in DOM; keeping placeholder v${v}.png`
-      );
-      return;
-    }
-    let dataUrl: string;
-    try {
-      const pixelRatio =
-        (typeof window !== "undefined" && window.devicePixelRatio) || 2;
-      dataUrl = await toPng(el, {
-        pixelRatio,
-        cacheBust: true,
-        // Mirror the composer: paint the effective page background so
-        // transparent elements (most) don't capture as see-through.
-        backgroundColor: effectiveBackgroundColor(el),
-        // Match the composer: drop overlay chrome (bubble, dots, highlight)
-        // from the capture so the screenshot reflects only the user-facing
-        // design, not our own UI.
-        filter: (node) => {
-          if (
-            node instanceof HTMLElement &&
-            node.dataset.commentOverlay === "true"
-          ) {
-            return false;
-          }
-          return true;
-        },
-      });
-    } catch (err) {
-      console.warn(
-        "[CommentBubble] post-iterate screenshot capture failed; keeping placeholder",
-        err
-      );
-      return;
-    }
-    if (typeof dataUrl !== "string" || !dataUrl.startsWith("data:image/png")) {
-      console.warn(
-        "[CommentBubble] post-iterate capture produced no PNG; keeping placeholder"
-      );
-      return;
-    }
-    try {
-      const res = await fetch("/api/iterations/screenshot", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ id, v, screenshotPng: dataUrl }),
-      });
-      if (res.ok) {
-        onUploaded?.();
-      } else {
-        console.warn(
-          `[CommentBubble] /api/iterations/screenshot returned ${res.status}; keeping placeholder`
-        );
-      }
-    } catch (err) {
-      console.warn(
-        "[CommentBubble] post-iterate screenshot upload failed; keeping placeholder",
-        err
-      );
-    }
-  };
-
-  hot.on("vite:afterUpdate", handler);
-  // HMR may have already completed before we registered; try once after settle.
-  fallbackId = window.setTimeout(() => {
-    if (done) {
-      return;
-    }
-    scheduleCapture();
-  }, 400);
-  timeoutId = window.setTimeout(() => {
-    if (done) {
-      return;
-    }
-    cleanup();
-    console.warn(
-      `[CommentBubble] post-iterate capture: HMR did not fire within 5s; keeping placeholder v${v}.png`
-    );
-  }, 5000);
-}
-
-/** CSS.escape polyfill-safe wrapper for `data-comment-anchor` selectors. */
-function cssEscape(value: string): string {
-  if (typeof CSS !== "undefined" && typeof CSS.escape === "function") {
-    return CSS.escape(value);
-  }
-  return value.replace(/["\\]/g, "\\$&");
-}
-
-/**
- * Format an NDJSON progress event into a short user-readable status string.
- * Examples: "Read src/pages/Foo.tsx", "Edit src/Bar.tsx:42", "thinking",
- * "writing v2.tsx". Falls back to "Working..." when the event carries no
- * useful detail (e.g. an `assistant` turn with no tool call).
- */
-function formatProgress(event: IterateProgressEvent): string {
-  const { tool, detail } = event;
-  if (tool && detail) {
-    return `${tool} ${detail}`;
-  }
-  if (tool) {
-    return tool;
-  }
-  if (detail) {
-    return detail;
-  }
-  return "Working...";
-}
-
-/** "0:23" / "1:04" style elapsed-time formatter. */
-function formatElapsed(ms: number): string {
-  const totalSec = Math.max(0, Math.floor(ms / 1000));
-  const m = Math.floor(totalSec / 60);
-  const s = totalSec % 60;
-  return `${m}:${s.toString().padStart(2, "0")}`;
-}
-
-function formatDate(iso: string): string {
-  const ts = Date.parse(iso);
-  if (Number.isNaN(ts)) {
-    return iso;
-  }
-  const d = new Date(ts);
-  const today = new Date();
-  const sameDay =
-    d.getFullYear() === today.getFullYear() &&
-    d.getMonth() === today.getMonth() &&
-    d.getDate() === today.getDate();
-  if (sameDay) {
-    return d.toLocaleTimeString(undefined, {
-      hour: "2-digit",
-      minute: "2-digit",
-    });
-  }
-  return d.toLocaleDateString(undefined, {
-    month: "short",
-    day: "numeric",
-  });
 }

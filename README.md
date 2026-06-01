@@ -134,7 +134,7 @@ Comment markers in source look like:
 ```ts
 comments({
   // Skip comment read/write under these project-relative prefixes:
-  excludeSrcPrefixes: ["src/dev/", "src/components/comments/"],
+  excludeSrcPrefixes: ["src/dev/"],
   // Optional: path to Cursor CLI when `agent` is not on PATH
   cursorAgentPath: "/usr/local/bin/agent",
   // Optional: override Fix fallback order (preferred model still goes first)
@@ -143,7 +143,7 @@ comments({
 
 sourceLoc({
   projectRoot,
-  excludeSrcPrefixes: ["src/components/comments/"],
+  excludeSrcPrefixes: ["src/dev/"],
 });
 ```
 

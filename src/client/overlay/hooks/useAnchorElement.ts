@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { cssEscape } from "../lib/cssEscape.ts";
 
 /**
  * Tracks the live DOMRects of ALL elements carrying
@@ -87,16 +88,4 @@ export function useAnchorRects(anchorId: string): DOMRect[] {
   }, [anchorId]);
 
   return rects;
-}
-
-/**
- * Minimal CSS.escape fallback. `data-comment-anchor` values are uuids,
- * so this is defensive — we just guard against odd characters in case
- * the seed data drifts.
- */
-function cssEscape(value: string): string {
-  if (typeof CSS !== "undefined" && typeof CSS.escape === "function") {
-    return CSS.escape(value);
-  }
-  return value.replace(/["\\]/g, "\\$&");
 }

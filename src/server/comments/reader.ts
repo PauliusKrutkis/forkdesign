@@ -1,7 +1,7 @@
 /**
  * AST reader for `{/* @comment ... *\/}` markers inside a `.tsx` page file.
  *
- * Used by the dev-only Vite plugin (`vite-plugin-comments.ts`) to serve
+ * Used by the dev-only Vite plugin (`server/plugins/comments.ts`) to serve
  * `GET /api/comments`. Read path only — no writes, no caching.
  *
  * Scope (W4 read path):

@@ -1,15 +1,7 @@
 import { cn } from "./cn.ts";
 
 /**
- * A single keyboard-shortcut chip. The one place hotkey keys are styled, so a
- * shortcut reads identically whether it sits inline inside a button
- * (`ShortcutHint`), in a hover/focus tooltip (`HotkeyTip`), or in the settings
- * cheat sheet. Keeping the chip identical across those homes is what makes the
- * mixed inline/tooltip strategy feel deliberate rather than scattered.
- *
- * `tone`:
- *   - `default`  — muted chip for ghost/secondary surfaces and tooltips.
- *   - `onPrimary` — translucent chip legible on a filled primary button.
+ * Keyboard shortcut chip — shared styling for inline hints, tooltips, and settings.
  */
 export function Kbd({
   children,

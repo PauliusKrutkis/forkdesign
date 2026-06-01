@@ -333,7 +333,7 @@ export function CommentOverlay({
       }
       // Path validation is delegated to the plugin's POST handler so the
       // policy lives in one place. Anything under src/*.tsx except the
-      // overlay's own infrastructure (src/components/comments/, src/dev/) is
+      // overlay's own infrastructure (e.g. src/dev/) is
       // accepted there.
 
       const existingAnchor =

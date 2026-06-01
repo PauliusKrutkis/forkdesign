@@ -1,55 +1,8 @@
 {
   "$schema": "./node_modules/@biomejs/biome/configuration_schema.json",
-  "extends": ["ultracite/biome/core", "ultracite/biome/react"],
-  "linter": {
-    "rules": {
-      "a11y": {
-        "noLabelWithoutControl": "off",
-        "noNoninteractiveElementInteractions": "off",
-        "noStaticElementInteractions": "off",
-        "noSvgWithoutTitle": "off",
-        "useKeyWithClickEvents": "off",
-        "useSemanticElements": "off"
-      },
-      "complexity": {
-        "noExcessiveCognitiveComplexity": "off",
-        "noForEach": "off",
-        "noVoid": "off"
-      },
-      "correctness": {
-        "useExhaustiveDependencies": "off",
-        "useImageSize": "off"
-      },
-      "performance": {
-        "noBarrelFile": "off",
-        "noNamespaceImport": "off",
-        "useTopLevelRegex": "off"
-      },
-      "style": {
-        "noNestedTernary": "off",
-        "useDefaultSwitchClause": "off",
-        "useFilenamingConvention": "off"
-      },
-      "suspicious": {
-        "noArrayIndexKey": "off",
-        "noAssignInExpressions": "off",
-        "noBitwiseOperators": "off",
-        "noEmptyBlockStatements": "off",
-        "useAwait": "off",
-        "useIterableCallbackReturn": "off"
-      }
-    }
-  },
-  "overrides": [
-    {
-      "includes": ["**/*.test.ts", "**/*.test.tsx"],
-      "linter": {
-        "rules": {
-          "style": {
-            "noNonNullAssertion": "off"
-          }
-        }
-      }
-    }
+  "extends": [
+    "ultracite/biome/core",
+    "ultracite/biome/react",
+    "ultracite/biome/vitest"
   ]
 }
