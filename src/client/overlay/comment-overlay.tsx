@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { DEFAULT_FIX_VERSION_COUNT } from "../../shared/fix-version-count.ts";
 import {
   loadSettings,
   type OverlaySettings,
@@ -103,6 +104,15 @@ export function CommentOverlay({
    * a mouse trip to click the newly-appeared dot.
    */
   const [pendingOpenId, setPendingOpenId] = useState<string | null>(null);
+  /**
+   * Set when a comment is created in Agent mode: once its bubble auto-opens
+   * (via `pendingOpenId`), the bubble runs the agent once with `count`
+   * variants. Cleared as soon as the bubble fires the run.
+   */
+  const [pendingFix, setPendingFix] = useState<{
+    id: string;
+    count: number;
+  } | null>(null);
   /** After navigation, open the bubble once the anchor appears in the DOM. */
   const [pendingOpen, setPendingOpen] = useState<{
     anchor: string;
@@ -295,6 +305,12 @@ export function CommentOverlay({
       }
       if (result.id) {
         setPendingOpenId(result.id);
+        if (entry.runAgent) {
+          setPendingFix({
+            id: result.id,
+            count: entry.versionCount ?? DEFAULT_FIX_VERSION_COUNT,
+          });
+        }
       }
       window.setTimeout(() => {
         setComposerActive(false);
@@ -556,8 +572,10 @@ export function CommentOverlay({
         {/* Open bubble. */}
         {settings.enabled && openTarget ? (
           <OpenBubble
+            autoFix={pendingFix}
             comments={grouped.get(openTarget.anchor) ?? []}
             fixModel={settings.model}
+            onAutoFixStarted={() => setPendingFix(null)}
             onClose={() => setOpenTarget(null)}
             onDelete={handleDelete}
             onDeleteReply={handleDeleteReply}
@@ -713,6 +731,8 @@ function OpenBubble({
   comments,
   fixModel,
   skipDeleteConfirmation,
+  autoFix,
+  onAutoFixStarted,
   onClose,
   onResolve,
   onDelete,
@@ -725,6 +745,8 @@ function OpenBubble({
   comments: CommentData[];
   fixModel: OverlaySettings["model"];
   skipDeleteConfirmation: boolean;
+  autoFix: { id: string; count: number } | null;
+  onAutoFixStarted: () => void;
   onClose: () => void;
   onResolve: (id: string) => void | Promise<void>;
   onDelete: (
@@ -742,10 +764,16 @@ function OpenBubble({
     // Anchor not in DOM — future: render a "removed in v<n>" floater.
     return null;
   }
+  // Only auto-run the agent when the pending fix matches the open comment.
+  const lead = comments[0];
+  const autoFixCount =
+    autoFix && lead?.id === autoFix.id ? autoFix.count : null;
   return (
     <CommentBubble
+      autoFixCount={autoFixCount}
       comments={comments}
       fixModel={fixModel}
+      onAutoFixStarted={onAutoFixStarted}
       onClose={onClose}
       onDelete={onDelete}
       onDeleteReply={onDeleteReply}

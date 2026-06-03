@@ -22,8 +22,15 @@ import { ignorePromiseRejection } from "./lib/ignore-promise-rejection.ts";
 import { dotRect, placeFloater } from "./lib/placement.ts";
 
 interface CommentBubbleProps {
+  /**
+   * When set, the bubble runs the agent once on mount with this many variants.
+   * Used by "create comment in Agent mode" so the fix kicks off as the bubble
+   * auto-opens. `null`/undefined = no auto-run.
+   */
+  autoFixCount?: number | null;
   comments: CommentData[];
   fixModel?: OverlayModel;
+  onAutoFixStarted?: () => void;
   onClose: () => void;
   onDelete?: (
     id: string,
@@ -55,6 +62,8 @@ export function CommentBubble({
   rect,
   fixModel = "composer-2.5-fast",
   skipDeleteConfirmation = false,
+  autoFixCount = null,
+  onAutoFixStarted,
   onClose,
   onResolve,
   onDelete,
@@ -88,9 +97,9 @@ export function CommentBubble({
   } | null>(null);
   const [lightboxSrc, setLightboxSrc] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
-  const [mode, setMode] = useState<ComposerMode>("fix");
+  const [mode, setMode] = useState<ComposerMode>("agent");
   const [fixVersionCount, setFixVersionCount] = useState(
-    DEFAULT_FIX_VERSION_COUNT
+    autoFixCount ?? DEFAULT_FIX_VERSION_COUNT
   );
   const [replyBusy, setReplyBusy] = useState(false);
   const [composerError, setComposerError] = useState<string | null>(null);
@@ -128,6 +137,19 @@ export function CommentBubble({
   useEffect(() => {
     textareaRef.current?.focus();
   }, []);
+
+  // "Create comment in Agent mode" auto-runs the agent once as the bubble
+  // opens. fixVersionCount is already seeded from autoFixCount, so handleIterate
+  // picks up the right count.
+  const autoFiredRef = useRef(false);
+  useEffect(() => {
+    if (autoFixCount == null || autoFiredRef.current || !lead) {
+      return;
+    }
+    autoFiredRef.current = true;
+    onAutoFixStarted?.();
+    handleIterate().catch(ignorePromiseRejection);
+  }, [autoFixCount, lead, onAutoFixStarted, handleIterate]);
 
   useEffect(() => {
     const el = containerRef.current;

@@ -1,20 +1,25 @@
 import { toPng } from "html-to-image";
-import { Check, SquareDashedMousePointer } from "lucide-react";
-import { type ReactNode, useEffect, useRef, useState } from "react";
+import { SquareDashedMousePointer, X } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { DEFAULT_FIX_VERSION_COUNT } from "../../shared/fix-version-count.ts";
 import { Button } from "../ui/button.tsx";
-import { Kbd } from "../ui/kbd.tsx";
-import { Textarea } from "../ui/textarea.tsx";
+import {
+  CommentComposerBar,
+  type ComposerMode,
+} from "./comment-composer-bar.tsx";
 import { HotkeyTip } from "./hotkey-tip.tsx";
+import { toErrorMessage } from "./lib/errors.ts";
 import { ignorePromiseRejection } from "./lib/ignore-promise-rejection.ts";
 import { isOverlayElement } from "./lib/overlay-dom.ts";
 import { effectiveBackgroundColor } from "./lib/screenshot.ts";
-import { withCtrl } from "./shortcut-hint.tsx";
 
 export interface ComposerSubmission {
   /** anchor uuid assigned to the targeted element */
   anchor: string;
   /** anchor point (page x/y of the click) for positioning the panel */
   clickPoint: { x: number; y: number };
+  /** submitted in Agent mode — create the comment, then run the agent on it */
+  runAgent?: boolean;
   /**
    * Optional `data:image/png;base64,...` capture of the targeted element's
    * bounding box. Undefined when the client-side capture failed (cross-origin
@@ -26,6 +31,8 @@ export interface ComposerSubmission {
   target: HTMLElement;
   /** the typed body */
   text: string;
+  /** variant count to generate when `runAgent` is set */
+  versionCount?: number;
   /** the slug of the nearest data-view ancestor, if any */
   view: string | undefined;
 }
@@ -51,7 +58,7 @@ interface CommentComposerProps {
   onSubmit: (entry: ComposerSubmission) => Promise<ComposerSubmitResult>;
 }
 
-const PANEL_WIDTH = 320;
+const PANEL_WIDTH = 360;
 const VIEWPORT_PADDING = 12;
 
 /**
@@ -213,7 +220,7 @@ export function CommentComposer({
               setText("");
             }, 600);
           }}
-          onSubmit={async () => {
+          onSubmit={async ({ runAgent, versionCount }) => {
             const trimmed = text.trim();
             if (!trimmed) {
               return { ok: false, error: "empty body" };
@@ -229,6 +236,8 @@ export function CommentComposer({
               clickPoint: target.clickPoint,
               view,
               text: trimmed,
+              runAgent,
+              versionCount,
               ...(screenshotPng ? { screenshotPng } : {}),
             });
             return result;
@@ -265,18 +274,23 @@ function ComposerPanel({
   textareaRef: React.RefObject<HTMLTextAreaElement | null>;
   onTextChange: (v: string) => void;
   onCancel: () => void;
-  onSubmit: () => Promise<ComposerSubmitResult>;
+  onSubmit: (opts: {
+    runAgent: boolean;
+    versionCount: number;
+  }) => Promise<ComposerSubmitResult>;
   onSaved: () => void;
 }) {
   const [status, setStatus] = useState<ComposerPanelStatus>({ kind: "idle" });
+  const [mode, setMode] = useState<ComposerMode>("agent");
+  const [versionCount, setVersionCount] = useState(DEFAULT_FIX_VERSION_COUNT);
 
   // Anchor the composer panel to the user's click point, not to the target
   // element's bounding box — for page-wide elements whose `bottom` is below
   // the viewport, anchoring to the element would push the panel off-screen.
-  // Estimated panel height covers header + textarea + action row.
+  // Estimated panel height covers header + composer.
   const viewportW = typeof window === "undefined" ? 1024 : window.innerWidth;
   const viewportH = typeof window === "undefined" ? 768 : window.innerHeight;
-  const ESTIMATED_PANEL_HEIGHT = 200;
+  const ESTIMATED_PANEL_HEIGHT = 220;
   const desiredLeft = clickPoint.x - PANEL_WIDTH / 2;
   const left = Math.max(
     VIEWPORT_PADDING,
@@ -291,33 +305,31 @@ function ComposerPanel({
       : desiredTop;
 
   const submitting = status.kind === "saving";
-  const saved = status.kind === "saved";
 
-  // Auto-grow the textarea with its content (up to a cap, then scroll), so the
-  // panel reads as one writing surface rather than a fixed box you type into.
+  // Escape cancels the panel. Registered on the document because the global
+  // overlay keydown ignores keys while a text input is focused, and the
+  // composer textarea holds focus here.
   useEffect(() => {
-    const ta = textareaRef.current;
-    if (!ta) {
-      return;
-    }
-    ta.style.height = "auto";
-    ta.style.height = `${Math.min(ta.scrollHeight, 168)}px`;
-  }, [textareaRef]);
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        onCancel();
+      }
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [onCancel]);
 
   const submit = async () => {
-    if (submitting || saved) {
-      return;
-    }
-    if (!text.trim()) {
+    if (submitting || status.kind === "saved" || !text.trim()) {
       return;
     }
     setStatus({ kind: "saving" });
     let result: ComposerSubmitResult;
     try {
-      result = await onSubmit();
+      result = await onSubmit({ runAgent: mode === "agent", versionCount });
     } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      setStatus({ kind: "error", message });
+      setStatus({ kind: "error", message: toErrorMessage(err) });
       return;
     }
     if (result.ok) {
@@ -335,10 +347,9 @@ function ComposerPanel({
       onPointerDown={(e) => e.stopPropagation()}
       style={{ left, top, width: PANEL_WIDTH }}
     >
-      {/* Header — orients the user: what they're doing (left) and which element
-          the note is anchored to (right). The dashed-cursor glyph echoes the
-          composer's own dashed selection outline. */}
-      <div className="flex h-9 shrink-0 items-center justify-between gap-2 border-b px-3.5">
+      {/* Header — orients the user: what they're doing (left), which element
+          the note is anchored to (middle), and a way out (right). */}
+      <div className="flex h-9 shrink-0 items-center justify-between gap-2 border-b pr-1 pl-3.5">
         <div className="flex min-w-0 items-center gap-1.5">
           <SquareDashedMousePointer
             aria-hidden
@@ -348,77 +359,45 @@ function ComposerPanel({
             New comment
           </span>
         </div>
-        <span
-          className="max-w-[150px] shrink-0 truncate rounded bg-muted px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground leading-none"
-          title={describeElement(target)}
-        >
-          {describeElement(target)}
-        </span>
-      </div>
-
-      {/* Writing surface — the textarea is flush inside the panel (no inner
-          border/shadow) and auto-grows, so the whole panel reads as one input
-          rather than a box-in-a-box. */}
-      <div className="px-3.5 py-3">
-        <Textarea
-          className="min-h-[66px] resize-none border-0 bg-transparent p-0 text-sm shadow-none focus-visible:ring-0"
-          disabled={submitting || saved}
-          onChange={(e) => onTextChange(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
-              e.preventDefault();
-              submit().catch(ignorePromiseRejection);
-            }
-            if (e.key === "Escape") {
-              e.preventDefault();
-              onCancel();
-            }
-          }}
-          placeholder="Describe the change you want…"
-          ref={textareaRef}
-          rows={3}
-          value={text}
-        />
-        {status.kind === "error" ? (
-          <p className="m-0 mt-2 text-destructive text-xs" role="alert">
-            {status.message}
-          </p>
-        ) : null}
-      </div>
-
-      {/* Footer — resting keyboard hint (left) · actions (right). With the
-          templates feature gone the footer's left slot is no longer a button;
-          it's a quiet line of guidance, so the panel reads as a focused
-          writing surface rather than a tool with chrome to discover. */}
-      <div className="flex shrink-0 items-center justify-between gap-2 border-t px-3 py-2">
-        <span className="hidden items-center gap-1.5 text-[11px] text-muted-foreground sm:flex">
-          <Kbd>{withCtrl("⏎")}</Kbd>
-          <span>to save</span>
-        </span>
-        <div className="flex items-center gap-2">
+        <div className="flex min-w-0 items-center gap-1">
+          <span
+            className="max-w-[150px] shrink-0 truncate rounded bg-muted px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground leading-none"
+            title={describeElement(target)}
+          >
+            {describeElement(target)}
+          </span>
           <HotkeyTip keys="Esc" label="Cancel">
             <Button
+              aria-label="Cancel"
+              className="h-7 w-7 shrink-0"
               disabled={submitting}
               onClick={onCancel}
-              size="sm"
+              size="icon"
               type="button"
               variant="ghost"
             >
-              Cancel
+              <X className="h-4 w-4" />
             </Button>
           </HotkeyTip>
-          <Button
-            disabled={!text.trim() || submitting || saved}
-            onClick={() => {
-              submit().catch(ignorePromiseRejection);
-            }}
-            size="sm"
-            type="button"
-          >
-            {saveButtonLabel(submitting, saved)}
-          </Button>
         </div>
       </div>
+
+      <CommentComposerBar
+        busy={submitting}
+        error={status.kind === "error" ? status.message : null}
+        fixVersionCount={versionCount}
+        iterating={false}
+        mode={mode}
+        onChange={onTextChange}
+        onFixVersionCountChange={setVersionCount}
+        onModeChange={setMode}
+        onSubmit={() => {
+          submit().catch(ignorePromiseRejection);
+        }}
+        placeholder="Describe the change you want…"
+        textareaRef={textareaRef}
+        value={text}
+      />
     </div>
   );
 }
@@ -512,21 +491,6 @@ async function captureElementScreenshot(
     );
     return;
   }
-}
-
-function saveButtonLabel(submitting: boolean, saved: boolean): ReactNode {
-  if (submitting) {
-    return "Saving…";
-  }
-  if (saved) {
-    return (
-      <>
-        <Check aria-hidden />
-        Saved
-      </>
-    );
-  }
-  return "Save";
 }
 
 function randomUuid(): string {
