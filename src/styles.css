@@ -93,11 +93,33 @@
   animation: tooltip-in 0.12s ease-out;
 }
 
+/* Streaming fix skeletons — a quiet sweep while the agent produces variants. */
+@keyframes redline-shimmer {
+  from {
+    background-position: 200% 0;
+  }
+  to {
+    background-position: -40% 0;
+  }
+}
+
+.redline-shimmer {
+  background-image: linear-gradient(
+    100deg,
+    var(--muted) 30%,
+    color-mix(in oklch, var(--muted) 50%, var(--background)) 50%,
+    var(--muted) 70%
+  );
+  background-size: 220% 100%;
+  animation: redline-shimmer 1.3s ease-in-out infinite;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .animate-pin-pulse,
   .animate-dock-in,
   .animate-dock-row-in,
-  .animate-tooltip-in {
+  .animate-tooltip-in,
+  .redline-shimmer {
     animation: none;
   }
 }

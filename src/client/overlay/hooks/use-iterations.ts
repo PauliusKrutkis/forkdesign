@@ -2,7 +2,6 @@ import { useCallback, useEffect, useState } from "react";
 import { readApiError } from "../lib/api.ts";
 import { toErrorMessage } from "../lib/errors.ts";
 import { ignorePromiseRejection } from "../lib/ignore-promise-rejection.ts";
-import { handleIterationVersionKeydown } from "../lib/iteration-version-keydown.ts";
 import { useViteHmrReload } from "./use-vite-hmr-reload.ts";
 
 export interface IterationVersion {
@@ -20,16 +19,7 @@ export interface IterationsData {
   versions: IterationVersion[];
 }
 
-export interface UseIterationsOptions {
-  /** When true, ← / → activate previous/next version while the bubble is open. */
-  enableKeyboard?: boolean;
-}
-
-export function useIterations(
-  commentId: string,
-  options: UseIterationsOptions = {}
-) {
-  const { enableKeyboard = false } = options;
+export function useIterations(commentId: string) {
   const [data, setData] = useState<IterationsData | null>(null);
   const [loading, setLoading] = useState(true);
   const [switching, setSwitching] = useState(false);
@@ -127,24 +117,6 @@ export function useIterations(
     },
     [commentId, switching, deleting, reload]
   );
-
-  useEffect(() => {
-    if (!(enableKeyboard && data && data.versions.length > 1)) {
-      return;
-    }
-    const versionIndices = data.versions.map((x) => x.v).sort((a, b) => a - b);
-    const onKey = (e: KeyboardEvent) => {
-      handleIterationVersionKeydown(e, {
-        active: data.active,
-        activate,
-        deleting,
-        switching,
-        versionIndices,
-      });
-    };
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [enableKeyboard, data, switching, deleting, activate]);
 
   return {
     data,

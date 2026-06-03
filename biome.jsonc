@@ -4,5 +4,9 @@
     "ultracite/biome/core",
     "ultracite/biome/react",
     "ultracite/biome/vitest"
-  ]
+  ],
+  "files": {
+    // `design/` holds standalone HTML design explorations, not shipped source.
+    "includes": ["!design"]
+  }
 }

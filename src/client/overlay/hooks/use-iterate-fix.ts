@@ -11,16 +11,13 @@ import {
   validateIterateDone,
 } from "../lib/parse-iterate-stream.ts";
 
-export type BubbleMode = "compact" | "detailed";
-
 export function useIterateFix(args: {
   lead: CommentData | undefined;
   fixModel: OverlayModel;
   fixVersionCount: number;
   reloadIterations: () => void | Promise<void>;
-  setMode: (mode: BubbleMode | ((prev: BubbleMode) => BubbleMode)) => void;
 }) {
-  const { lead, fixModel, fixVersionCount, reloadIterations, setMode } = args;
+  const { lead, fixModel, fixVersionCount, reloadIterations } = args;
   const [iterating, setIterating] = useState(false);
   const [iterateError, setIterateError] = useState<string | null>(null);
   const [iterateStatus, setIterateStatus] = useState<string | null>(null);
@@ -39,7 +36,6 @@ export function useIterateFix(args: {
     if (!lead || iterating) {
       return;
     }
-    setMode("detailed");
     setIterating(true);
     setIterateError(null);
     setIterateStatus(null);
@@ -89,7 +85,7 @@ export function useIterateFix(args: {
       setIterating(false);
       setIterateStartedAt(null);
     }
-  }, [lead, iterating, fixModel, fixVersionCount, reloadIterations, setMode]);
+  }, [lead, iterating, fixModel, fixVersionCount, reloadIterations]);
 
   return {
     iterating,

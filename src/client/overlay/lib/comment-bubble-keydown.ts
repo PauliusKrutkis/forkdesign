@@ -1,77 +1,49 @@
-import type { Dispatch, SetStateAction } from "react";
 import type { CommentData } from "../../types.ts";
-import type { BubbleMode } from "../hooks/use-iterate-fix.ts";
 import { isInTextInput } from "./hotkeys.ts";
 import { ignorePromiseRejection } from "./ignore-promise-rejection.ts";
 
+/**
+ * Hotkeys for the open bubble. With an always-focused composer, plain
+ * single-key shortcuts are gone — only Escape and Cmd/Ctrl combos remain, so
+ * they coexist with typing. Edit/delete of individual entries are hover
+ * actions; sending is the composer's own Cmd/Ctrl+Enter.
+ */
 export interface CommentBubbleKeydownContext {
   cancelDeleteConfirm: () => void;
-  cancelEditing: () => void;
-  cancelReply: () => void;
   confirmDelete: () => Promise<void>;
   deleteConfirming: boolean;
-  editing: boolean;
-  handleIterate: () => Promise<void>;
-  iterating: boolean;
   lead: CommentData;
   lightboxSrc: string | null;
   onClose: () => void;
-  onDelete?: (id: string) => Promise<void>;
-  onEdit?: (id: string, text: string) => Promise<void>;
+  onDelete?: (
+    id: string,
+    options?: { revertBaseline?: boolean }
+  ) => Promise<void>;
   onResolve?: (id: string) => void;
-  onSubmitReply?: (id: string, text: string, v?: number) => Promise<void>;
-  openReplyComposer: () => void;
-  replyOpen: boolean;
   requestDelete: () => void;
   setLightboxSrc: (src: string | null) => void;
-  setMode: Dispatch<SetStateAction<BubbleMode>>;
-  startEditing: () => void;
 }
 
 function handleEscapeKey(
   e: KeyboardEvent,
   ctx: CommentBubbleKeydownContext
 ): boolean {
-  const {
-    cancelDeleteConfirm,
-    cancelEditing,
-    cancelReply,
-    deleteConfirming,
-    editing,
-    lightboxSrc,
-    onClose,
-    replyOpen,
-    setLightboxSrc,
-  } = ctx;
-
   if (e.key !== "Escape") {
     return false;
   }
-
-  if (lightboxSrc) {
-    setLightboxSrc(null);
+  if (ctx.lightboxSrc) {
+    ctx.setLightboxSrc(null);
     e.preventDefault();
     e.stopImmediatePropagation();
     return true;
   }
-  if (deleteConfirming) {
-    cancelDeleteConfirm();
-    e.preventDefault();
-    return true;
-  }
-  if (replyOpen) {
-    cancelReply();
+  if (ctx.deleteConfirming) {
+    ctx.cancelDeleteConfirm();
     e.preventDefault();
     e.stopImmediatePropagation();
     return true;
   }
-  if (editing) {
-    cancelEditing();
-    e.preventDefault();
-    e.stopImmediatePropagation();
-    return true;
-  }
-  onClose();
+  ctx.onClose();
   e.preventDefault();
   return true;
 }
@@ -84,14 +56,14 @@ function handleDeleteConfirmKeys(
     return false;
   }
   const mod = e.metaKey || e.ctrlKey;
-  const plain = !(e.metaKey || e.ctrlKey || e.altKey || e.shiftKey);
-  const key = e.key.toLowerCase();
-  if (plain && key === "enter") {
+  if (mod && e.key === "Backspace") {
     e.preventDefault();
     ctx.confirmDelete().catch(ignorePromiseRejection);
     return true;
   }
-  if (mod && e.key === "Backspace") {
+  // Plain Enter confirms only when the user isn't typing in the composer.
+  const plain = !(e.metaKey || e.ctrlKey || e.altKey || e.shiftKey);
+  if (plain && e.key === "Enter" && !isInTextInput(document.activeElement)) {
     e.preventDefault();
     ctx.confirmDelete().catch(ignorePromiseRejection);
     return true;
@@ -104,49 +76,18 @@ function handleModifierShortcuts(
   ctx: CommentBubbleKeydownContext
 ): boolean {
   const mod = e.metaKey || e.ctrlKey;
-  const key = e.key.toLowerCase();
-  if (mod && key === "i") {
-    e.preventDefault();
-    if (!ctx.iterating) {
-      ctx.handleIterate().catch(ignorePromiseRejection);
-    }
-    return true;
+  if (!mod) {
+    return false;
   }
-  if (mod && key === "r") {
+  const key = e.key.toLowerCase();
+  if (key === "r") {
     e.preventDefault();
     ctx.onResolve?.(ctx.lead.id);
     return true;
   }
-  if (mod && e.key === "Backspace" && ctx.onDelete) {
+  if (e.key === "Backspace" && ctx.onDelete) {
     e.preventDefault();
     ctx.requestDelete();
-    return true;
-  }
-  return false;
-}
-
-function handlePlainShortcuts(
-  e: KeyboardEvent,
-  ctx: CommentBubbleKeydownContext
-): boolean {
-  const plain = !(e.metaKey || e.ctrlKey || e.altKey || e.shiftKey);
-  const key = e.key.toLowerCase();
-  if (plain && key === "e" && ctx.onEdit) {
-    e.preventDefault();
-    ctx.startEditing();
-    return true;
-  }
-  if (plain && key === "r" && ctx.onSubmitReply) {
-    e.preventDefault();
-    ctx.openReplyComposer();
-    return true;
-  }
-  if (e.key === "Tab") {
-    if (e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) {
-      return false;
-    }
-    e.preventDefault();
-    ctx.setMode((prev) => (prev === "compact" ? "detailed" : "compact"));
     return true;
   }
   return false;
@@ -159,14 +100,8 @@ export function handleCommentBubbleKeydown(
   if (handleEscapeKey(e, ctx)) {
     return;
   }
-  if (isInTextInput(document.activeElement)) {
-    return;
-  }
   if (handleDeleteConfirmKeys(e, ctx)) {
     return;
   }
-  if (handleModifierShortcuts(e, ctx)) {
-    return;
-  }
-  handlePlainShortcuts(e, ctx);
+  handleModifierShortcuts(e, ctx);
 }

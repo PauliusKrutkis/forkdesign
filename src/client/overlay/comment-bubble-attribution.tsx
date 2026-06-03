@@ -1,7 +1,7 @@
 import { Badge } from "../ui/badge.tsx";
 import { cn } from "../ui/cn.ts";
-import { formatVersionDisplay } from "./comment-version-history.tsx";
 import { formatDate } from "./lib/bubble-formatters.ts";
+import { formatVersionDisplay } from "./lib/version-format.ts";
 
 /** One-line `author · date` metadata row. */
 export function CommentBubbleAttribution({
