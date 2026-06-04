@@ -1,6 +1,12 @@
 import path from "node:path";
 import traverseDefault from "@babel/traverse";
-import * as t from "@babel/types";
+import {
+  isJSXAttribute,
+  isJSXIdentifier,
+  jsxAttribute,
+  jsxIdentifier,
+  stringLiteral,
+} from "@babel/types";
 import recast from "recast";
 import babelTsParser from "recast/parsers/babel-ts.js";
 import type { Plugin } from "vite";
@@ -74,7 +80,7 @@ export function sourceLoc({
           }
 
           const name = p.node.name;
-          if (!t.isJSXIdentifier(name)) {
+          if (!isJSXIdentifier(name)) {
             return;
           }
           const tag = name.name;
@@ -84,8 +90,8 @@ export function sourceLoc({
 
           const already = p.node.attributes.some(
             (a) =>
-              t.isJSXAttribute(a) &&
-              t.isJSXIdentifier(a.name) &&
+              isJSXAttribute(a) &&
+              isJSXIdentifier(a.name) &&
               a.name.name === "data-source-loc"
           );
           if (already) {
@@ -94,10 +100,7 @@ export function sourceLoc({
 
           const value = `${rel}:${loc.start.line}:${loc.start.column + 1}`;
           p.node.attributes.push(
-            t.jsxAttribute(
-              t.jsxIdentifier("data-source-loc"),
-              t.stringLiteral(value)
-            )
+            jsxAttribute(jsxIdentifier("data-source-loc"), stringLiteral(value))
           );
           mutated = true;
         },

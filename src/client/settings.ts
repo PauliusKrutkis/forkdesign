@@ -22,6 +22,36 @@ export const OVERLAY_FIX_MODELS = [
 
 export type OverlayModel = (typeof OVERLAY_FIX_MODELS)[number];
 
+/** Labels for settings UI and the inline composer model picker. */
+export const OVERLAY_MODEL_OPTIONS: ReadonlyArray<{
+  value: OverlayModel;
+  /** Full name in the settings panel dropdown. */
+  label: string;
+  /** Compact label in the composer toolbar. */
+  shortLabel: string;
+}> = [
+  {
+    value: "composer-2.5-fast",
+    label: "composer-2.5-fast (Cursor CLI)",
+    shortLabel: "2.5 fast",
+  },
+  {
+    value: "composer-2.5",
+    label: "composer-2.5 (Cursor CLI)",
+    shortLabel: "2.5",
+  },
+  {
+    value: "claude-sonnet-4-6",
+    label: "claude-sonnet-4-6",
+    shortLabel: "sonnet 4.6",
+  },
+  {
+    value: "claude-opus-4-7",
+    label: "claude-opus-4-7",
+    shortLabel: "opus 4.7",
+  },
+];
+
 const VALID_OVERLAY_MODELS: ReadonlySet<FixModel> = new Set(OVERLAY_FIX_MODELS);
 
 export interface OverlaySettings {
@@ -29,6 +59,8 @@ export interface OverlaySettings {
   author: string;
   /** false = system fully muted (no dots/bubbles/panel, only settings access). */
   enabled: boolean;
+  /** When true, resolved pins and list rows are hidden from the overlay. */
+  hideResolved: boolean;
   /** Fix model — tried first, then the server fallback chain. */
   model: OverlayModel;
   /** Which corner the dock pill anchors to. */
@@ -46,6 +78,7 @@ const DEFAULT_SETTINGS: OverlaySettings = {
   author: "",
   model: "composer-2.5-fast",
   skipDeleteConfirmation: false,
+  hideResolved: false,
 };
 
 const STORAGE_KEY = "redline.overlay.settings";
@@ -103,6 +136,10 @@ export function loadSettings(): OverlaySettings {
     typeof obj.skipDeleteConfirmation === "boolean"
       ? obj.skipDeleteConfirmation
       : DEFAULT_SETTINGS.skipDeleteConfirmation;
+  const hideResolved =
+    typeof obj.hideResolved === "boolean"
+      ? obj.hideResolved
+      : DEFAULT_SETTINGS.hideResolved;
   const model =
     typeof obj.model === "string" &&
     VALID_OVERLAY_MODELS.has(obj.model as FixModel)
@@ -116,6 +153,7 @@ export function loadSettings(): OverlaySettings {
     author,
     model,
     skipDeleteConfirmation,
+    hideResolved,
   };
 }
 

@@ -1,7 +1,7 @@
 /**
  * AST reader for `{/* @comment ... *\/}` markers inside a `.tsx` page file.
  *
- * Used by the dev-only Vite plugin (`vite-plugin-comments.ts`) to serve
+ * Used by the dev-only Vite plugin (`server/plugins/comments.ts`) to serve
  * `GET /api/comments`. Read path only — no writes, no caching.
  *
  * Scope (W4 read path):
@@ -27,6 +27,11 @@ import type {
   Node,
 } from "@babel/types";
 import type { CommentProps, CommentReply } from "../../client/types.ts";
+
+const WHITESPACE_CHAR_RE = /\s/;
+const ATTR_KEY_CHAR_RE = /[A-Za-z0-9_-]/;
+const INTEGER_TOKEN_RE = /^-?[0-9]+$/;
+const HEX4_RE = /^[0-9a-fA-F]{4}$/;
 
 // @babel/traverse is published as CJS; under ESM `import x from` may resolve to
 // `{ default: fn }` depending on bundler interop. Normalize both shapes.
@@ -206,6 +211,187 @@ interface ParsedAttrs {
   values: Partial<Record<string, AttrValue>>;
 }
 
+function skipAttrWhitespace(source: string, start: number): number {
+  const len = source.length;
+  let pos = start;
+  while (pos < len && WHITESPACE_CHAR_RE.test(source.charAt(pos))) {
+    pos++;
+  }
+  return pos;
+}
+
+function readAttrKey(
+  source: string,
+  start: number,
+  warnings: string[],
+  line: string | number
+): { key: string; next: number } | null {
+  const len = source.length;
+  const keyStart = start;
+  let pos = start;
+  while (pos < len && ATTR_KEY_CHAR_RE.test(source.charAt(pos))) {
+    pos++;
+  }
+  if (pos === keyStart) {
+    warnings.push(
+      `@comment skipped: unexpected character '${source[pos]}' (line ${line})`
+    );
+    return null;
+  }
+  return { key: source.slice(keyStart, pos), next: pos };
+}
+
+function parseQuotedAttrValue(
+  source: string,
+  i: number,
+  key: string,
+  warnings: string[],
+  line: string | number
+): { value: AttrValue; next: number } | null {
+  const r = readDoubleQuotedString(source, i);
+  if (!r) {
+    warnings.push(
+      `@comment skipped: unterminated string for '${key}' (line ${line})`
+    );
+    return null;
+  }
+  return { value: { kind: "string", value: r.value }, next: r.next };
+}
+
+function parseArrayAttrValue(
+  source: string,
+  i: number,
+  key: string,
+  warnings: string[],
+  line: string | number
+): { value: AttrValue; next: number } | null {
+  const r = readBalanced(source, i, "[", "]");
+  if (!r) {
+    warnings.push(
+      `@comment skipped: unbalanced [] for '${key}' (line ${line})`
+    );
+    return null;
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(r.slice);
+  } catch (err) {
+    warnings.push(
+      `@comment skipped: invalid JSON array for '${key}': ${err instanceof Error ? err.message : String(err)} (line ${line})`
+    );
+    return null;
+  }
+  return { value: { kind: "array", value: parsed }, next: r.next };
+}
+
+function parseBareIntegerAttrValue(
+  source: string,
+  start: number,
+  key: string,
+  warnings: string[],
+  line: string | number,
+  values: Record<string, AttrValue>
+): number | null {
+  const len = source.length;
+  const tokStart = start;
+  let pos = start;
+  while (pos < len && !WHITESPACE_CHAR_RE.test(source.charAt(pos))) {
+    pos++;
+  }
+  const token = source.slice(tokStart, pos);
+  if (token.length === 0) {
+    warnings.push(
+      `@comment skipped: unsupported value for '${key}' (line ${line})`
+    );
+    return null;
+  }
+  if (!INTEGER_TOKEN_RE.test(token)) {
+    warnings.push(
+      `@comment '${key}': expected an integer, got '${token}' — skipping attribute (line ${line})`
+    );
+    return pos;
+  }
+  const n = Number.parseInt(token, 10);
+  if (Number.isNaN(n)) {
+    warnings.push(
+      `@comment '${key}': failed to parse integer '${token}' — skipping attribute (line ${line})`
+    );
+    return pos;
+  }
+  values[key] = { kind: "number", value: n };
+  return pos;
+}
+
+function parseAssignedAttrValue(
+  source: string,
+  i: number,
+  key: string,
+  warnings: string[],
+  line: string | number,
+  values: Record<string, AttrValue>
+): number | null {
+  const len = source.length;
+  if (i >= len) {
+    warnings.push(
+      `@comment skipped: trailing '=' for key '${key}' (line ${line})`
+    );
+    return null;
+  }
+  const ch = source[i];
+  if (ch === '"') {
+    const parsed = parseQuotedAttrValue(source, i, key, warnings, line);
+    if (!parsed) {
+      return null;
+    }
+    values[key] = parsed.value;
+    return parsed.next;
+  }
+  if (ch === "[") {
+    const parsed = parseArrayAttrValue(source, i, key, warnings, line);
+    if (!parsed) {
+      return null;
+    }
+    values[key] = parsed.value;
+    return parsed.next;
+  }
+  if (source.startsWith("true", i)) {
+    values[key] = { kind: "boolean", value: true };
+    return i + 4;
+  }
+  if (source.startsWith("false", i)) {
+    values[key] = { kind: "boolean", value: false };
+    return i + 5;
+  }
+  return parseBareIntegerAttrValue(source, i, key, warnings, line, values);
+}
+
+function parseOneAttribute(
+  source: string,
+  start: number,
+  warnings: string[],
+  line: string | number,
+  values: Record<string, AttrValue>
+): number | null {
+  const len = source.length;
+  let pos = skipAttrWhitespace(source, start);
+  if (pos >= len) {
+    return pos;
+  }
+
+  const keyResult = readAttrKey(source, pos, warnings, line);
+  if (!keyResult) {
+    return null;
+  }
+  const { key } = keyResult;
+  pos = keyResult.next;
+
+  if (pos < len && source[pos] === "=") {
+    return parseAssignedAttrValue(source, pos + 1, key, warnings, line, values);
+  }
+  values[key] = { kind: "boolean", value: true };
+  return pos;
+}
+
 /**
  * Tiny attribute parser. Recognized forms:
  *
@@ -226,112 +412,19 @@ function parseAttributes(
   block: BabelComment
 ): ParsedAttrs | null {
   const values: Record<string, AttrValue> = {};
+  const line = block.loc?.start.line ?? "?";
   let i = 0;
   const len = source.length;
-  const line = block.loc?.start.line ?? "?";
 
   while (i < len) {
-    // Skip whitespace
-    while (i < len && /\s/.test(source.charAt(i))) {
-      i++;
-    }
-    if (i >= len) {
-      break;
-    }
-
-    // Key
-    const keyStart = i;
-    while (i < len && /[A-Za-z0-9_-]/.test(source.charAt(i))) {
-      i++;
-    }
-    if (i === keyStart) {
-      warnings.push(
-        `@comment skipped: unexpected character '${source[i]}' (line ${line})`
-      );
+    const next = parseOneAttribute(source, i, warnings, line, values);
+    if (next === null) {
       return null;
     }
-    const key = source.slice(keyStart, i);
-
-    // Optional `=value`
-    if (i < len && source[i] === "=") {
-      i++;
-      if (i >= len) {
-        warnings.push(
-          `@comment skipped: trailing '=' for key '${key}' (line ${line})`
-        );
-        return null;
-      }
-      const ch = source[i];
-      if (ch === '"') {
-        const r = readDoubleQuotedString(source, i);
-        if (!r) {
-          warnings.push(
-            `@comment skipped: unterminated string for '${key}' (line ${line})`
-          );
-          return null;
-        }
-        values[key] = { kind: "string", value: r.value };
-        i = r.next;
-      } else if (ch === "[") {
-        const r = readBalanced(source, i, "[", "]");
-        if (!r) {
-          warnings.push(
-            `@comment skipped: unbalanced [] for '${key}' (line ${line})`
-          );
-          return null;
-        }
-        let parsed: unknown;
-        try {
-          parsed = JSON.parse(r.slice);
-        } catch (err) {
-          warnings.push(
-            `@comment skipped: invalid JSON array for '${key}': ${err instanceof Error ? err.message : String(err)} (line ${line})`
-          );
-          return null;
-        }
-        values[key] = { kind: "array", value: parsed };
-        i = r.next;
-      } else if (source.startsWith("true", i)) {
-        values[key] = { kind: "boolean", value: true };
-        i += 4;
-      } else if (source.startsWith("false", i)) {
-        values[key] = { kind: "boolean", value: false };
-        i += 5;
-      } else {
-        // Bare (unquoted) value. Read until whitespace, then try to interpret
-        // it as an integer. This is how `active=N` works on the directive.
-        // Anything that isn't a clean integer is soft-skipped: we emit a
-        // warning and drop the attribute, but keep the rest of the comment.
-        const tokStart = i;
-        while (i < len && !/\s/.test(source.charAt(i))) {
-          i++;
-        }
-        const token = source.slice(tokStart, i);
-        if (token.length === 0) {
-          warnings.push(
-            `@comment skipped: unsupported value for '${key}' (line ${line})`
-          );
-          return null;
-        }
-        if (/^-?[0-9]+$/.test(token)) {
-          const n = Number.parseInt(token, 10);
-          if (Number.isNaN(n)) {
-            warnings.push(
-              `@comment '${key}': failed to parse integer '${token}' — skipping attribute (line ${line})`
-            );
-            continue;
-          }
-          values[key] = { kind: "number", value: n };
-        } else {
-          warnings.push(
-            `@comment '${key}': expected an integer, got '${token}' — skipping attribute (line ${line})`
-          );
-        }
-      }
-    } else {
-      // Bare flag.
-      values[key] = { kind: "boolean", value: true };
+    if (next >= len) {
+      break;
     }
+    i = next;
   }
 
   return { values };
@@ -388,7 +481,7 @@ function readDoubleQuotedString(
           break;
         case "u": {
           const hex = source.slice(j + 2, j + 6);
-          if (!/^[0-9a-fA-F]{4}$/.test(hex)) {
+          if (!HEX4_RE.test(hex)) {
             return null;
           }
           out += String.fromCharCode(Number.parseInt(hex, 16));

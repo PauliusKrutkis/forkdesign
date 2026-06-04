@@ -24,6 +24,9 @@
   --border: oklch(0.92 0.004 286.32);
   --input: oklch(0.92 0.004 286.32);
   --ring: oklch(0.705 0.015 286.067);
+  /* Agent / fix accent — matches design explorations */
+  --agent: oklch(0.52 0.2 280);
+  --agent-soft: oklch(0.95 0.03 285);
 }
 
 @keyframes pin-pulse {
@@ -43,6 +46,26 @@
 
 .animate-pin-pulse {
   animation: pin-pulse 2s cubic-bezier(0.22, 1, 0.36, 1) infinite;
+}
+
+/* Expanding ring while the agent rewrites the anchored element */
+@keyframes pin-agent-ping {
+  0% {
+    transform: scale(1);
+    opacity: 0.35;
+  }
+  70% {
+    transform: scale(2.15);
+    opacity: 0;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+.animate-pin-agent-ping {
+  background: var(--agent);
+  animation: pin-agent-ping 1.35s cubic-bezier(0.22, 1, 0.36, 1) infinite;
 }
 
 /* Dock menu reveal — the popover lifts off the pill while each row settles
@@ -93,11 +116,34 @@
   animation: tooltip-in 0.12s ease-out;
 }
 
+/* Streaming fix skeletons — a quiet sweep while the agent produces variants. */
+@keyframes redline-shimmer {
+  from {
+    background-position: 200% 0;
+  }
+  to {
+    background-position: -40% 0;
+  }
+}
+
+.redline-shimmer {
+  background-image: linear-gradient(
+    100deg,
+    var(--muted) 30%,
+    color-mix(in oklch, var(--muted) 50%, var(--background)) 50%,
+    var(--muted) 70%
+  );
+  background-size: 220% 100%;
+  animation: redline-shimmer 1.3s ease-in-out infinite;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .animate-pin-pulse,
+  .animate-pin-agent-ping,
   .animate-dock-in,
   .animate-dock-row-in,
-  .animate-tooltip-in {
+  .animate-tooltip-in,
+  .redline-shimmer {
     animation: none;
   }
 }
@@ -154,23 +200,54 @@
   position: fixed;
   inset: 0;
   z-index: 9700;
+  box-sizing: border-box;
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 2rem;
+  width: 100vw;
+  max-width: 100vw;
+  height: 100vh;
+  max-height: 100vh;
+  padding: 2.5rem clamp(1.5rem, 6vw, 4rem);
+  margin: 0;
   pointer-events: auto;
-  background-color: rgb(0 0 0 / 0.8);
+  background-color: rgb(0 0 0 / 0.92);
+  border: none;
+}
+
+.redline-lightbox-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  padding: 0;
+  margin: 0;
+  cursor: default;
+  background: transparent;
+  border: none;
+}
+
+.redline-lightbox-image-wrap {
+  position: relative;
+  z-index: 1;
+  flex: none;
+  max-width: min(calc(100vw - 8rem), 48rem);
+  max-height: calc(100vh - 5rem);
 }
 
 .redline-lightbox-image {
-  max-width: 80vw;
-  max-height: 80vh;
+  display: block;
+  width: auto;
+  max-width: 100%;
+  height: auto;
+  max-height: calc(100vh - 5rem);
   object-fit: contain;
-  border: 1px solid var(--border);
-  border-radius: calc(var(--radius) - 2px);
-  box-shadow:
-    0 25px 50px -12px rgb(0 0 0 / 0.25),
-    0 0 0 1px rgb(0 0 0 / 0.05);
+}
+
+.redline-lightbox-close {
+  position: fixed;
+  top: 1rem;
+  right: 1rem;
+  z-index: 2;
 }
 
 body[data-redline-lightbox="open"] [data-redline-dock] {

@@ -1,0 +1,1217 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Redline · comment-as-chat exploration</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+      href="https://fonts.googleapis.com/css2?family=Geist+Mono:wght@400;500;600&family=Hanken+Grotesk:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    >
+    <style>
+    /* ───────────────────────────────────────────────────────────────────
+       Concept: the popup is a conversation between a HUMAN (warm grotesk)
+       and the BUILD SYSTEM (mono). Human feedback is set in Hanken Grotesk;
+       every machine surface — labels, timestamps, version ids, the agent's
+       own voice — is set in Geist Mono. The type does the explaining.
+       Palette is the real product's shadcn-zinc tokens, plus one restrained
+       indigo for "agent / fix" and a quiet emerald for "live on page".
+       ─────────────────────────────────────────────────────────────────── */
+    :root {
+      --radius: 0.5rem;
+      --background: oklch(1 0 0);
+      --foreground: oklch(0.141 0.005 285.823);
+      --muted: oklch(0.967 0.001 286.375);
+      --muted-foreground: oklch(0.552 0.016 285.938);
+      --border: oklch(0.92 0.004 286.32);
+      --border-strong: oklch(0.85 0.004 286.32);
+      --primary: oklch(0.21 0.006 285.885);
+      --primary-foreground: oklch(0.985 0 0);
+      --ring: oklch(0.705 0.015 286.067);
+      --destructive: oklch(0.577 0.245 27.325);
+      /* one sharp accent for the agent, used sparingly */
+      --agent: oklch(0.52 0.2 280);
+      --agent-soft: oklch(0.95 0.03 285);
+      --live: oklch(0.6 0.14 155);
+      --live-soft: oklch(0.95 0.05 155);
+      --sans: "Hanken Grotesk", ui-sans-serif, system-ui, sans-serif;
+      --mono: "Geist Mono", ui-monospace, "SF Mono", monospace;
+      --shadow:
+        0 1px 2px rgb(0 0 0 / 0.04), 0 12px 28px -10px rgb(0 0 0 / 0.22),
+        0 0 0 1px rgb(0 0 0 / 0.03);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+    html,
+    body {
+      height: 100%;
+    }
+    body {
+      margin: 0;
+      font-family: var(--sans);
+      -webkit-font-smoothing: antialiased;
+      color: var(--foreground);
+      /* faux "design playground" canvas the overlay floats over */
+      background:
+        radial-gradient(
+          1200px 600px at 78% -10%,
+          oklch(0.97 0.02 280),
+          transparent
+        ),
+        radial-gradient(
+          900px 500px at 0% 110%,
+          oklch(0.97 0.015 200),
+          transparent
+        ),
+        oklch(0.985 0.002 286);
+      background-attachment: fixed;
+      text-rendering: optimizeLegibility;
+    }
+
+    /* ── faux host page behind the overlay, just enough to feel in-context ── */
+    .stage {
+      position: relative;
+      display: grid;
+      grid-template-columns: 1fr;
+      place-items: center;
+      min-height: 100%;
+      padding: 48px 24px 96px;
+    }
+    .ghost-page {
+      position: fixed;
+      inset: 0;
+      z-index: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 28px;
+      padding: 56px 7vw;
+      font-family: var(--sans);
+      pointer-events: none;
+      opacity: 0.5;
+      filter: saturate(0.7);
+    }
+    .ghost-nav {
+      display: flex;
+      gap: 26px;
+      align-items: center;
+      font-size: 13px;
+      color: var(--muted-foreground);
+    }
+    .ghost-logo {
+      width: 22px;
+      height: 22px;
+      background: var(--foreground);
+      border-radius: 6px;
+    }
+    .ghost-hero {
+      max-width: 560px;
+      margin-top: 44px;
+    }
+    .ghost-hero h1 {
+      margin: 0 0 14px;
+      font-size: 52px;
+      line-height: 1.02;
+      color: oklch(0.3 0.01 286);
+      letter-spacing: -0.02em;
+    }
+    .ghost-hero p {
+      max-width: 440px;
+      margin: 0;
+      font-size: 17px;
+      color: var(--muted-foreground);
+    }
+    .ghost-card {
+      position: absolute;
+      top: 180px;
+      right: 7vw;
+      width: 280px;
+      padding: 22px;
+      background: var(--background);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      box-shadow: 0 18px 40px -24px rgb(0 0 0 / 0.3);
+    }
+    .ghost-pill {
+      width: 124px;
+      height: 38px;
+      margin-top: 18px;
+      background: var(--foreground);
+      border-radius: 999px;
+    }
+
+    /* the redline pin/dot the bubble is anchored to */
+    .pin {
+      position: fixed;
+      top: 220px;
+      left: calc(50% - 280px);
+      z-index: 5;
+      display: grid;
+      place-items: center;
+      width: 26px;
+      height: 26px;
+    }
+    .pin::before {
+      position: absolute;
+      inset: 0;
+      content: "";
+      background: var(--agent);
+      border-radius: 999px;
+      opacity: 0.25;
+      animation: ping 2.2s cubic-bezier(0.22, 1, 0.36, 1) infinite;
+    }
+    .pin span {
+      position: relative;
+      width: 18px;
+      height: 18px;
+      font: 600 9px / 18px var(--mono);
+      color: #fff;
+      text-align: center;
+      background: var(--foreground);
+      border-radius: 999px;
+      box-shadow: 0 2px 6px rgb(0 0 0 / 0.35);
+    }
+    @keyframes ping {
+      0% {
+        transform: scale(1);
+        opacity: 0.3;
+      }
+      70% {
+        transform: scale(2.4);
+        opacity: 0;
+      }
+      100% {
+        opacity: 0;
+      }
+    }
+
+    /* ───────────────────────── the popup ───────────────────────── */
+    .bubble {
+      position: relative;
+      z-index: 10;
+      display: flex;
+      flex-direction: column;
+      width: 372px;
+      max-height: min(76vh, 660px);
+      overflow: hidden;
+      background: var(--background);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      box-shadow: var(--shadow);
+      animation: bubble-in 0.34s cubic-bezier(0.22, 1, 0.36, 1) both;
+    }
+    @keyframes bubble-in {
+      from {
+        opacity: 0;
+        transform: translateY(8px) scale(0.985);
+      }
+      to {
+        opacity: 1;
+        transform: none;
+      }
+    }
+
+    /* ── header: element chip + thread-level actions (resolve / close) ── */
+    .head {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      padding: 9px 10px 9px 13px;
+      background: linear-gradient(var(--background), oklch(0.992 0.001 286));
+      border-bottom: 1px solid var(--border);
+    }
+    .anchor-chip {
+      display: inline-flex;
+      gap: 6px;
+      align-items: center;
+      min-width: 0;
+      padding: 4px 8px;
+      font: 500 11px / 1 var(--mono);
+      color: var(--muted-foreground);
+      background: var(--muted);
+      border: 1px solid var(--border);
+      border-radius: 7px;
+    }
+    .anchor-chip svg {
+      flex: none;
+    }
+    .anchor-chip b {
+      font-weight: 600;
+      color: var(--foreground);
+    }
+    .head-spacer {
+      flex: 1;
+    }
+    .icon-btn {
+      display: grid;
+      place-items: center;
+      width: 28px;
+      height: 28px;
+      color: var(--muted-foreground);
+      cursor: pointer;
+      background: transparent;
+      border: 0;
+      border-radius: 7px;
+      transition:
+        background 0.14s,
+        color 0.14s;
+    }
+    .icon-btn:hover {
+      color: var(--foreground);
+      background: var(--muted);
+    }
+    .icon-btn.resolve.is-on {
+      color: var(--live);
+      background: var(--live-soft);
+    }
+
+    /* ── transcript ── */
+    .transcript {
+      display: flex;
+      flex: 1;
+      flex-direction: column;
+      gap: 18px;
+      min-height: 0;
+      padding: 16px 14px 8px;
+      overflow-y: auto;
+      scrollbar-color: var(--border-strong) transparent;
+      scrollbar-width: thin;
+    }
+    .transcript::-webkit-scrollbar {
+      width: 9px;
+    }
+    .transcript::-webkit-scrollbar-thumb {
+      background: var(--border-strong);
+      background-clip: padding-box;
+      border: 3px solid transparent;
+      border-radius: 999px;
+    }
+
+    .entry {
+      display: flex;
+      gap: 10px;
+      animation: rise 0.4s cubic-bezier(0.22, 1, 0.36, 1) both;
+    }
+    @keyframes rise {
+      from {
+        opacity: 0;
+        transform: translateY(7px);
+      }
+      to {
+        opacity: 1;
+        transform: none;
+      }
+    }
+
+    .avatar {
+      display: grid;
+      flex: none;
+      place-items: center;
+      width: 26px;
+      height: 26px;
+      font: 600 10px / 1 var(--mono);
+      border-radius: 999px;
+    }
+    .avatar.human {
+      color: #fff;
+      background: var(--foreground);
+    }
+    .avatar.agent {
+      color: var(--agent);
+      background: var(--agent-soft);
+      border: 1px solid color-mix(in oklch, var(--agent) 25%, transparent);
+    }
+    .entry-main {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .meta {
+      display: flex;
+      gap: 7px;
+      align-items: baseline;
+      margin-bottom: 3px;
+    }
+    .meta .who {
+      font: 600 12px / 1 var(--mono);
+      letter-spacing: -0.01em;
+    }
+    .meta .who.agent {
+      color: var(--agent);
+    }
+    .meta .when {
+      font: 400 10px / 1 var(--mono);
+      color: var(--muted-foreground);
+    }
+    .meta .tag {
+      padding: 3px 5px;
+      font: 500 9px / 1 var(--mono);
+      color: var(--muted-foreground);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      border: 1px solid var(--border);
+      border-radius: 5px;
+    }
+    .meta .tag.fix {
+      color: var(--agent);
+      background: var(--agent-soft);
+      border-color: color-mix(in oklch, var(--agent) 30%, transparent);
+    }
+
+    /* human-written text gets the warm sans; the agent's narration gets mono */
+    .said {
+      margin: 0;
+      font: 400 13.5px / 1.5 var(--sans);
+      white-space: pre-wrap;
+    }
+    .said.agent-voice {
+      font: 400 12px / 1.55 var(--mono);
+      color: var(--muted-foreground);
+    }
+
+    /* ── variant group: the agent's "turn" is 2–4 cards, one is live ── */
+    .variants {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 9px;
+      margin-top: 9px;
+    }
+    .variant {
+      position: relative;
+      padding: 0;
+      overflow: hidden;
+      font-family: inherit;
+      text-align: left;
+      cursor: pointer;
+      background: var(--background);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      transition:
+        transform 0.16s cubic-bezier(0.22, 1, 0.36, 1),
+        box-shadow 0.16s,
+        border-color 0.16s;
+    }
+    .variant:hover {
+      border-color: var(--border-strong);
+      box-shadow: 0 10px 22px -14px rgb(0 0 0 / 0.4);
+      transform: translateY(-2px);
+    }
+    .variant.is-live {
+      border-color: var(--live);
+      box-shadow: 0 0 0 1px var(--live);
+    }
+    .variant-canvas {
+      display: grid;
+      place-items: center;
+      height: 78px;
+      background: linear-gradient(
+        135deg,
+        oklch(0.985 0.004 286),
+        oklch(0.96 0.006 286)
+      );
+      border-bottom: 1px solid var(--border);
+    }
+    /* tiny CSS-drawn mock "screenshots" so the cards read as real renders */
+    .mini-btn {
+      padding: 7px 14px;
+      font: 600 9px / 1 var(--sans);
+      color: #fff;
+      border-radius: 8px;
+    }
+    .variant-foot {
+      display: flex;
+      gap: 6px;
+      align-items: center;
+      justify-content: space-between;
+      padding: 6px 8px;
+    }
+    .variant-id {
+      font: 500 10px / 1 var(--mono);
+      color: var(--muted-foreground);
+    }
+    .live-badge {
+      display: none;
+      gap: 4px;
+      align-items: center;
+      font: 600 9px / 1 var(--mono);
+      color: var(--live);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    .variant.is-live .live-badge {
+      display: inline-flex;
+    }
+    .variant.is-live .use-link {
+      display: none;
+    }
+    .use-link {
+      font: 500 10px / 1 var(--mono);
+      color: var(--agent);
+    }
+    .live-dot {
+      width: 6px;
+      height: 6px;
+      background: var(--live);
+      border-radius: 999px;
+      box-shadow: 0 0 0 3px var(--live-soft);
+    }
+
+    /* pending / streaming variant group */
+    .thinking {
+      display: flex;
+      flex-direction: column;
+      gap: 9px;
+      margin-top: 9px;
+    }
+    .thinking-line {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      font: 400 11px / 1 var(--mono);
+      color: var(--muted-foreground);
+    }
+    .spinner {
+      width: 13px;
+      height: 13px;
+      border: 2px solid var(--border-strong);
+      border-top-color: var(--agent);
+      border-radius: 999px;
+      animation: spin 0.7s linear infinite;
+    }
+    @keyframes spin {
+      to {
+        transform: rotate(360deg);
+      }
+    }
+    .skeletons {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 9px;
+    }
+    .skel {
+      height: 110px;
+      background: linear-gradient(
+        100deg,
+        var(--muted) 30%,
+        oklch(0.985 0.002 286) 50%,
+        var(--muted) 70%
+      );
+      background-size: 220% 100%;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      animation: shimmer 1.3s ease-in-out infinite;
+    }
+    @keyframes shimmer {
+      from {
+        background-position: 200% 0;
+      }
+      to {
+        background-position: -40% 0;
+      }
+    }
+
+    /* ── persistent composer ── */
+    .composer {
+      padding: 9px 10px 10px;
+      background: linear-gradient(oklch(0.992 0.001 286), var(--background));
+      border-top: 1px solid var(--border);
+    }
+    .composer-box {
+      background: var(--background);
+      border: 1px solid var(--border);
+      border-radius: 11px;
+      transition:
+        border-color 0.16s,
+        box-shadow 0.16s;
+    }
+    .composer-box:focus-within {
+      border-color: var(--ring);
+      box-shadow: 0 0 0 3px color-mix(in oklch, var(--ring) 30%, transparent);
+    }
+    .composer-box.mode-fix:focus-within {
+      border-color: var(--agent);
+      box-shadow: 0 0 0 3px color-mix(in oklch, var(--agent) 22%, transparent);
+    }
+    textarea {
+      display: block;
+      width: 100%;
+      max-height: 168px;
+      padding: 11px 12px 4px;
+      overflow-y: auto;
+      font: 400 13.5px / 1.5 var(--sans);
+      color: var(--foreground);
+      resize: none;
+      outline: 0;
+      background: transparent;
+      border: 0;
+    }
+    textarea::placeholder {
+      color: var(--muted-foreground);
+    }
+
+    .composer-tools {
+      display: flex;
+      gap: 6px;
+      align-items: center;
+      padding: 6px 7px 7px;
+    }
+
+    /* the mode pill — the heart of the design: agent is the default verb */
+    .mode-pill {
+      display: inline-flex;
+      gap: 2px;
+      padding: 2px;
+      background: var(--muted);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+    }
+    .mode-opt {
+      display: inline-flex;
+      gap: 5px;
+      align-items: center;
+      padding: 5px 9px;
+      font: 600 11px / 1 var(--mono);
+      color: var(--muted-foreground);
+      cursor: pointer;
+      background: transparent;
+      border: 0;
+      border-radius: 6px;
+      transition: all 0.16s;
+    }
+    .mode-opt[aria-pressed="true"] {
+      color: var(--foreground);
+      background: var(--background);
+      box-shadow: 0 1px 2px rgb(0 0 0 / 0.08);
+    }
+    .mode-opt.fix[aria-pressed="true"] {
+      color: var(--agent);
+    }
+    .mode-opt svg {
+      width: 13px;
+      height: 13px;
+    }
+
+    .count-select {
+      height: 28px;
+      padding: 0 6px;
+      font: 500 11px / 1 var(--mono);
+      color: var(--foreground);
+      cursor: pointer;
+      background: var(--background);
+      border: 1px solid var(--border);
+      border-radius: 7px;
+      transition:
+        opacity 0.16s,
+        width 0.16s;
+    }
+    .count-wrap {
+      display: inline-flex;
+      gap: 5px;
+      align-items: center;
+      font: 400 10px / 1 var(--mono);
+      color: var(--muted-foreground);
+    }
+    .count-wrap.hidden {
+      display: none;
+    }
+
+    .tools-spacer {
+      flex: 1;
+    }
+    .hint {
+      font: 400 10px / 1 var(--mono);
+      color: var(--muted-foreground);
+      white-space: nowrap;
+    }
+    .hint kbd {
+      padding: 2px 4px;
+      font: 500 10px / 1 var(--mono);
+      color: var(--foreground);
+      background: var(--muted);
+      border: 1px solid var(--border);
+      border-bottom-width: 2px;
+      border-radius: 4px;
+    }
+    .send {
+      display: inline-flex;
+      gap: 6px;
+      align-items: center;
+      padding: 8px 11px;
+      font: 600 11.5px / 1 var(--mono);
+      color: #fff;
+      cursor: pointer;
+      background: var(--foreground);
+      border: 0;
+      border-radius: 8px;
+      transition:
+        transform 0.1s,
+        opacity 0.16s,
+        background 0.16s;
+    }
+    .send.fix {
+      background: var(--agent);
+    }
+    .send:active {
+      transform: scale(0.96);
+    }
+    .send:disabled {
+      cursor: not-allowed;
+      opacity: 0.4;
+    }
+    .send svg {
+      width: 14px;
+      height: 14px;
+    }
+
+    /* design-notes rail beside the mock */
+    .notes {
+      position: fixed;
+      top: 22px;
+      right: 22px;
+      bottom: 22px;
+      z-index: 20;
+      width: 280px;
+      padding: 18px 18px 8px;
+      overflow-y: auto;
+      font: 400 12px / 1.55 var(--sans);
+      color: oklch(0.86 0.005 286);
+      background: oklch(0.16 0.005 286);
+      border-radius: 14px;
+      box-shadow: 0 24px 60px -20px rgb(0 0 0 / 0.5);
+    }
+    .notes h2 {
+      margin: 0 0 14px;
+      font: 600 11px / 1 var(--mono);
+      color: oklch(0.62 0.16 285);
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+    }
+    .notes h3 {
+      margin: 16px 0 4px;
+      font: 600 12.5px / 1.3 var(--sans);
+      color: #fff;
+    }
+    .notes p {
+      margin: 0 0 6px;
+      color: oklch(0.78 0.005 286);
+    }
+    .notes .k {
+      font-family: var(--mono);
+      font-size: 11px;
+      color: oklch(0.82 0.06 285);
+    }
+    .notes code {
+      padding: 1px 5px;
+      font: 500 11px var(--mono);
+      color: oklch(0.85 0.04 285);
+      background: oklch(0.22 0.006 286);
+      border-radius: 4px;
+    }
+    .notes-foot {
+      padding-top: 12px;
+      margin-top: 16px;
+      font: 400 10px / 1.4 var(--mono);
+      color: oklch(0.55 0.005 286);
+      border-top: 1px solid oklch(0.26 0.006 286);
+    }
+    @media (max-width: 1100px) {
+      .notes {
+        display: none;
+      }
+    }
+    </style>
+  </head>
+  <body>
+    <!-- faux host page so the overlay reads in-context -->
+    <div class="ghost-page" aria-hidden="true">
+      <nav class="ghost-nav">
+        <div class="ghost-logo"></div>
+        <span>Product</span><span>Pricing</span><span>Docs</span
+        ><span>Changelog</span>
+      </nav>
+      <div class="ghost-hero">
+        <h1>Ship the interface you actually meant.</h1>
+        <p>
+          Leave a note on any element. The agent rewrites the source and hands
+          you a few versions to choose from.
+        </p>
+      </div>
+      <div class="ghost-card">
+        <div
+          style="height:10px;width:60%;background:var(--border-strong);border-radius:4px"
+        ></div>
+        <div
+          style="height:10px;width:90%;background:var(--border);border-radius:4px;margin-top:10px"
+        ></div>
+        <div
+          style="height:10px;width:80%;background:var(--border);border-radius:4px;margin-top:8px"
+        ></div>
+        <div class="ghost-pill"></div>
+      </div>
+    </div>
+
+    <div class="pin"><span>1</span></div>
+
+    <div class="stage">
+      <!-- ─────────────────────────── POPUP ─────────────────────────── -->
+      <div class="bubble" role="dialog" aria-label="Comment thread">
+        <header class="head">
+          <span class="anchor-chip" title="button.cta-primary">
+            <svg
+              width="13"
+              height="13"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+            >
+              <path d="M5 3 19 12 12 14 9 21Z" stroke-linejoin="round" />
+            </svg>
+            <b>button</b>.cta-primary
+          </span>
+          <div class="head-spacer"></div>
+          <button
+            class="icon-btn resolve"
+            id="resolveBtn"
+            title="Resolve thread (⌘R)"
+            aria-label="Resolve thread"
+          >
+            <svg
+              width="16"
+              height="16"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+            >
+              <path d="m9 12 2 2 4-4" />
+              <circle cx="12" cy="12" r="9" />
+            </svg>
+          </button>
+          <button class="icon-btn" title="Close (Esc)" aria-label="Close">
+            <svg
+              width="16"
+              height="16"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+            >
+              <path d="M18 6 6 18M6 6l12 12" />
+            </svg>
+          </button>
+        </header>
+
+        <div class="transcript" id="transcript">
+          <!-- original comment -->
+          <div class="entry" style="animation-delay:0.04s">
+            <div class="avatar human">PK</div>
+            <div class="entry-main">
+              <div class="meta">
+                <span class="who">you</span><span class="when">14:02</span>
+              </div>
+              <p class="said">
+                The primary CTA feels timid. Make it bolder — more contrast, a
+                touch more weight, and round the corners a little more.
+              </p>
+            </div>
+          </div>
+
+          <!-- agent variant group -->
+          <div class="entry" style="animation-delay:0.12s">
+            <div class="avatar agent">✦</div>
+            <div class="entry-main">
+              <div class="meta">
+                <span class="who agent">agent</span
+                ><span class="tag fix">fix · 3 variants</span
+                ><span class="when">14:02</span>
+              </div>
+              <p class="said agent-voice">
+                Rewrote
+                <code style="font-family:var(--mono);font-size:11px"
+                  >button.cta-primary</code
+                >
+                — three takes on “bolder”.
+              </p>
+              <div class="variants">
+                <button class="variant is-live" data-v="v2">
+                  <div class="variant-canvas">
+                    <span
+                      class="mini-btn"
+                      style="background:var(--foreground);border-radius:11px;padding:8px 16px;font-size:10px"
+                      >Get started</span
+                    >
+                  </div>
+                  <div class="variant-foot">
+                    <span class="variant-id">v2</span>
+                    <span class="live-badge"
+                      ><i class="live-dot"></i>
+                      live</span
+                    >
+                    <span class="use-link">use</span>
+                  </div>
+                </button>
+                <button class="variant" data-v="v3">
+                  <div class="variant-canvas">
+                    <span
+                      class="mini-btn"
+                      style="background:var(--agent);border-radius:8px;padding:9px 18px;font-size:11px;font-weight:700"
+                      >Get started →</span
+                    >
+                  </div>
+                  <div class="variant-foot">
+                    <span class="variant-id">v3</span
+                    ><span class="live-badge"
+                      ><i class="live-dot"></i>
+                      live</span
+                    ><span class="use-link">use</span>
+                  </div>
+                </button>
+                <button class="variant" data-v="v4">
+                  <div class="variant-canvas">
+                    <span
+                      class="mini-btn"
+                      style="background:oklch(0.45 0.18 25);border-radius:6px;padding:10px 18px;font-size:11px;text-transform:uppercase;letter-spacing:0.04em"
+                      >Start</span
+                    >
+                  </div>
+                  <div class="variant-foot">
+                    <span class="variant-id">v4</span
+                    ><span class="live-badge"
+                      ><i class="live-dot"></i>
+                      live</span
+                    ><span class="use-link">use</span>
+                  </div>
+                </button>
+                <button class="variant" data-v="v1">
+                  <div class="variant-canvas">
+                    <span
+                      class="mini-btn"
+                      style="background:oklch(0.6 0.01 286);border-radius:6px;padding:7px 13px;font-size:9px"
+                      >Get started</span
+                    >
+                  </div>
+                  <div class="variant-foot">
+                    <span class="variant-id" title="original">baseline</span
+                    ><span class="live-badge"
+                      ><i class="live-dot"></i>
+                      live</span
+                    ><span class="use-link">use</span>
+                  </div>
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- a human reply (comment mode — no agent turn) -->
+          <div class="entry" style="animation-delay:0.2s">
+            <div class="avatar human">PK</div>
+            <div class="entry-main">
+              <div class="meta">
+                <span class="who">you</span><span class="tag">comment</span
+                ><span class="when">14:05</span>
+              </div>
+              <p class="said">
+                v3 is close. Leaving this for Dana to sanity-check the arrow
+                before I push it live.
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <!-- ── persistent composer ── -->
+        <div class="composer">
+          <div class="composer-box mode-fix" id="composerBox">
+            <textarea
+              id="ta"
+              rows="1"
+              placeholder="Tell the agent what to change…"
+            ></textarea>
+            <div class="composer-tools">
+              <div class="mode-pill" role="group" aria-label="Send mode">
+                <button class="mode-opt fix" id="modeFix" aria-pressed="true">
+                  <svg
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                  >
+                    <path
+                      d="m12 3 1.9 4.6L18.5 9.5 14 12l-2 5-2-5L5.5 9.5 10 7.6Z"
+                      stroke-linejoin="round"
+                    />
+                  </svg>
+                  Fix
+                </button>
+                <button
+                  class="mode-opt comment"
+                  id="modeComment"
+                  aria-pressed="false"
+                >
+                  <svg
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="2"
+                  >
+                    <path
+                      d="M21 12a8 8 0 0 1-11.5 7.2L4 20l.9-5.2A8 8 0 1 1 21 12Z"
+                      stroke-linejoin="round"
+                    />
+                  </svg>
+                  Comment
+                </button>
+              </div>
+              <span class="count-wrap" id="countWrap">
+                <select
+                  class="count-select"
+                  id="count"
+                  title="Variants to generate"
+                >
+                  <option>2</option>
+                  <option selected>3</option>
+                  <option>4</option>
+                </select>
+                <span>variants</span>
+              </span>
+              <span class="tools-spacer"></span>
+              <span class="hint" id="hint"><kbd>⌘</kbd><kbd>↵</kbd></span>
+              <button class="send fix" id="send" disabled>
+                <span id="sendLabel">Fix</span>
+                <svg
+                  id="sendIcon"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                >
+                  <path
+                    d="m12 3 1.9 4.6L18.5 9.5 14 12l-2 5-2-5L5.5 9.5 10 7.6Z"
+                    stroke-linejoin="round"
+                  />
+                </svg>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- design rationale rail -->
+    <aside class="notes">
+      <h2>Design notes</h2>
+      <p>
+        The whole popup is one <b>conversation</b>: your note, the agent's
+        variants, and replies share a single transcript with an always-visible
+        composer.
+      </p>
+
+      <h3>Agent is the default verb</h3>
+      <p>
+        The <span class="k">Fix ⇄ Comment</span> pill resolves your "reply vs.
+        instruction" worry without guessing. Fix is lit by default —
+        <span class="k">⌘↵</span>
+        always does the lit action. Try toggling it.
+      </p>
+
+      <h3>A turn = a variant group</h3>
+      <p>
+        One instruction → 2–4 variant cards, one marked
+        <span style="color:var(--live)">live on page</span>. "Use", delete, and
+        live-state live on the cards — so the old bottom action bar is gone.
+      </p>
+
+      <h3>⌘↵ to send, Enter = newline</h3>
+      <p>
+        Your content is considered, multi-line design instruction — not quick
+        chat. So we keep your codebase's existing <code>⌘↵</code> convention
+        rather than ChatGPT's bare Enter.
+      </p>
+
+      <h3>Type does the talking</h3>
+      <p>
+        Human voice is set in a warm grotesque; every machine surface — the
+        agent, ids, timestamps — is mono. You can feel who's speaking.
+      </p>
+
+      <div class="notes-foot">
+        try it → type a note, toggle Fix/Comment, ⌘↵ to send · click a variant
+        to make it live
+      </div>
+    </aside>
+
+    <script>
+    "use strict";
+    const ta = document.getElementById("ta");
+    const send = document.getElementById("send");
+    const sendLabel = document.getElementById("sendLabel");
+    const box = document.getElementById("composerBox");
+    const modeFix = document.getElementById("modeFix");
+    const modeComment = document.getElementById("modeComment");
+    const countWrap = document.getElementById("countWrap");
+    const count = document.getElementById("count");
+    const hint = document.getElementById("hint");
+    const transcript = document.getElementById("transcript");
+    const resolveBtn = document.getElementById("resolveBtn");
+
+    let mode = "fix"; // 'fix' | 'comment'
+
+    function setMode(next) {
+      mode = next;
+      const fix = mode === "fix";
+      modeFix.setAttribute("aria-pressed", String(fix));
+      modeComment.setAttribute("aria-pressed", String(!fix));
+      box.classList.toggle("mode-fix", fix);
+      send.classList.toggle("fix", fix);
+      sendLabel.textContent = fix ? "Fix" : "Comment";
+      countWrap.classList.toggle("hidden", !fix);
+      ta.placeholder = fix
+        ? "Tell the agent what to change…"
+        : "Leave a note for a teammate…";
+      document.getElementById("sendIcon").style.display = fix ? "" : "none";
+    }
+    modeFix.onclick = () => setMode("fix");
+    modeComment.onclick = () => setMode("comment");
+
+    // auto-grow
+    function grow() {
+      ta.style.height = "auto";
+      ta.style.height = Math.min(ta.scrollHeight, 168) + "px";
+      send.disabled = ta.value.trim() === "";
+    }
+    ta.addEventListener("input", grow);
+
+    function now() {
+      const d = new Date();
+      return (
+        String(d.getHours()).padStart(2, "0") +
+        ":" +
+        String(d.getMinutes()).padStart(2, "0")
+      );
+    }
+
+    function appendEntry(node) {
+      transcript.appendChild(node);
+      transcript.scrollTop = transcript.scrollHeight;
+    }
+
+    function humanEntry(text, asComment) {
+      const el = document.createElement("div");
+      el.className = "entry";
+      el.innerHTML = `
+        <div class="avatar human">PK</div>
+        <div class="entry-main">
+          <div class="meta"><span class="who">you</span>${asComment ? '<span class="tag">comment</span>' : ""}<span class="when">${now()}</span></div>
+          <p class="said"></p>
+        </div>`;
+      el.querySelector(".said").textContent = text;
+      return el;
+    }
+
+    function thinkingEntry(n) {
+      const el = document.createElement("div");
+      el.className = "entry";
+      el.innerHTML = `
+        <div class="avatar agent">✦</div>
+        <div class="entry-main">
+          <div class="meta"><span class="who agent">agent</span><span class="tag fix">fix · ${n} variants</span><span class="when">${now()}</span></div>
+          <div class="thinking">
+            <div class="thinking-line"><span class="spinner"></span> rewriting button.cta-primary…</div>
+            <div class="skeletons">${'<div class="skel"></div>'.repeat(Math.min(n, 4))}</div>
+          </div>
+        </div>`;
+      return el;
+    }
+
+    const palettes = [
+      { bg: "var(--foreground)", r: "11px", p: "8px 16px", t: "Get started" },
+      { bg: "var(--agent)", r: "8px", p: "9px 18px", t: "Get started →" },
+      { bg: "oklch(0.45 0.18 25)", r: "6px", p: "10px 18px", t: "START" },
+      { bg: "oklch(0.5 0.13 155)", r: "14px", p: "9px 17px", t: "Get started" },
+    ];
+
+    function resolveThinking(entry, n, baseV) {
+      const main = entry.querySelector(".entry-main");
+      main.querySelector(".thinking").remove();
+      const note = document.createElement("p");
+      note.className = "said agent-voice";
+      note.innerHTML = `Generated ${n} fresh takes from your note.`;
+      main.appendChild(note);
+      const wrap = document.createElement("div");
+      wrap.className = "variants";
+      for (let i = 0; i < n; i++) {
+        const p = palettes[i % palettes.length];
+        const v = document.createElement("button");
+        v.className = "variant";
+        v.dataset.v = "v" + (baseV + i);
+        v.innerHTML = `
+          <div class="variant-canvas"><span class="mini-btn" style="background:${p.bg};border-radius:${p.r};padding:${p.p};font-size:10px">${p.t}</span></div>
+          <div class="variant-foot">
+            <span class="variant-id">v${baseV + i}</span>
+            <span class="live-badge"><i class="live-dot"></i> live</span>
+            <span class="use-link">use</span>
+          </div>`;
+        wrap.appendChild(v);
+      }
+      main.appendChild(wrap);
+      transcript.scrollTop = transcript.scrollHeight;
+    }
+
+    let versionCounter = 4;
+
+    function submit() {
+      const text = ta.value.trim();
+      if (!text) {
+        return;
+      }
+      const asComment = mode === "comment";
+      appendEntry(humanEntry(text, asComment));
+      ta.value = "";
+      grow();
+
+      if (asComment) {
+        return;
+      }
+
+      const n = Number.parseInt(count.value, 10);
+      const t = thinkingEntry(n);
+      appendEntry(t);
+      const base = versionCounter + 1;
+      versionCounter += n;
+      setTimeout(() => resolveThinking(t, n, base), 1700);
+    }
+
+    send.onclick = submit;
+    ta.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+        e.preventDefault();
+        submit();
+      }
+    });
+
+    // clicking a variant makes it live (within its own group)
+    transcript.addEventListener("click", (e) => {
+      const v = e.target.closest(".variant");
+      if (!v) {
+        return;
+      }
+      v.parentElement
+        .querySelectorAll(".variant")
+        .forEach((x) => x.classList.remove("is-live"));
+      v.classList.add("is-live");
+    });
+
+    resolveBtn.onclick = () => resolveBtn.classList.toggle("is-on");
+
+    // platform-aware hint
+    if (!/Mac|iPhone|iPad/.test(navigator.platform)) {
+      hint.innerHTML = "<kbd>Ctrl</kbd><kbd>↵</kbd>";
+    }
+
+    grow();
+    </script>
+  </body>
+</html>

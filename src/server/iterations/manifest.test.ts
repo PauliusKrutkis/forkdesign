@@ -11,6 +11,8 @@ import {
   iterationPngUrl,
   listCompleteIterationVersionsAllRoots,
   mergeVersionEntry,
+  mergeVersionSlotsFromDirEntries,
+  nextIterationVersion,
   parseManifestJson,
   patchIterationsManifest,
   readIterationsManifest,
@@ -161,6 +163,36 @@ describe("listCompleteIterationVersionsAllRoots", () => {
     expect(findVersionSnapshotPath([primary, legacy], 0)).toBe(
       path.join(legacy, "v0.tsx")
     );
+  });
+});
+
+describe("mergeVersionSlotsFromDirEntries", () => {
+  it("merges tsx and png slots from filenames", () => {
+    const present = new Map<number, { tsx: boolean; png: boolean }>();
+    mergeVersionSlotsFromDirEntries(present, [
+      "v0.tsx",
+      "v0.png",
+      "v1.tsx",
+      "manifest.json",
+    ]);
+    expect(present.get(0)).toEqual({ tsx: true, png: true });
+    expect(present.get(1)).toEqual({ tsx: true, png: false });
+  });
+});
+
+describe("nextIterationVersion", () => {
+  it("returns 1 for a new directory", async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), "redline-next-v-"));
+    const result = await nextIterationVersion(dir);
+    expect(result).toEqual({ ok: true, nextV: 1 });
+  });
+
+  it("increments from highest existing v{N}.tsx", async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), "redline-next-v-"));
+    await writeFile(path.join(dir, "v0.tsx"), "baseline", "utf8");
+    await writeFile(path.join(dir, "v2.tsx"), "fix", "utf8");
+    const result = await nextIterationVersion(dir);
+    expect(result).toEqual({ ok: true, nextV: 3 });
   });
 });
 

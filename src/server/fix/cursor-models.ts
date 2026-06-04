@@ -9,6 +9,7 @@ interface CacheEntry {
 }
 
 const cache = new Map<string, CacheEntry>();
+const COMPOSER_MODEL_RE = /\b(composer[\w.-]*)/i;
 
 /** Reset cached probe results (for tests). */
 export function resetCursorModelCache(): void {
@@ -44,7 +45,7 @@ export function isCursorModelAvailable(
   return available.has(modelId);
 }
 
-async function probeCursorModels(agentPath: string): Promise<{
+function probeCursorModels(agentPath: string): Promise<{
   models: Set<string>;
   probeFailed: boolean;
 }> {
@@ -113,7 +114,7 @@ function parseModelsOutput(output: string): Set<string> {
     }
 
     // Plain text line — grab composer-like tokens.
-    const match = trimmed.match(/\b(composer[\w.-]*)/i);
+    const match = trimmed.match(COMPOSER_MODEL_RE);
     if (match?.[1]) {
       models.add(match[1].toLowerCase());
     }

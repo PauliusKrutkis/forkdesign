@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { readCommentsFromSource } from "./reader.ts";
 
+const SKIPPED_TEXT_RE = /skipped.*text/;
+const ACTIVE_ABC_RE = /active.*abc/;
+
 const wrap = (inside: string) => `export function P() {
   return (
     <div>
@@ -84,7 +87,7 @@ describe("readCommentsFromSource", () => {
     const { comments, warnings } = readCommentsFromSource(src);
     expect(comments).toHaveLength(0);
     expect(warnings).toHaveLength(1);
-    expect(warnings[0]).toMatch(/skipped.*text/);
+    expect(warnings[0]).toMatch(SKIPPED_TEXT_RE);
   });
 
   it("ignores non-directive block comments", () => {
@@ -144,7 +147,7 @@ describe("readCommentsFromSource", () => {
     const { comments, warnings } = readCommentsFromSource(src);
     expect(comments).toHaveLength(1);
     expect(comments[0]?.active).toBeUndefined();
-    expect(warnings.some((w) => /active.*abc/.test(w))).toBe(true);
+    expect(warnings.some((w) => ACTIVE_ABC_RE.test(w))).toBe(true);
   });
 
   it("reads replies as a JSON array", () => {

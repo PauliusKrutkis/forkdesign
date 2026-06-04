@@ -1,12 +1,11 @@
 {
   "$schema": "https://unpkg.com/knip@6/schema.json",
-  "entry": ["src/index.ts", "src/plugin/index.ts"],
   "project": ["src/**/*.{ts,tsx}", "tailwind.*.js"],
   "ignoreDependencies": ["@biomejs/biome"],
-  "ignore": ["src/client/ui/**", "src/server/fix/strategies/cursor-sdk.ts"],
+  "ignore": ["src/client/ui/**"],
   "ignoreIssues": {
     "tailwind.content.js": ["duplicates"],
-    "src/client/overlay/CommentThumb.tsx": ["exports"],
+    "src/client/overlay/comment-thumb.tsx": ["exports"],
     "src/client/settings.ts": ["exports"],
     "src/server/fix/index.ts": ["exports", "types"],
     "src/server/fix/config.ts": ["exports"],

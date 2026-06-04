@@ -45,5 +45,5 @@ export type CommentData = CommentProps & {
   view?: string | null;
 };
 
-/** @deprecated Kept as an alias for migration; prefer `CommentData`. */
+/** Alias for `CommentData`; kept for backwards-compatible imports. */
 export type RegisteredComment = CommentData;

@@ -16,9 +16,12 @@ export const cursorCliStrategy: FixStrategy = {
   run: runCursorCliFix,
 };
 
-async function runCursorCliFix(input: FixInput): Promise<FixAttemptResult> {
+function runCursorCliFix(input: FixInput): Promise<FixAttemptResult> {
   if (!isComposerModel(input.model)) {
-    return { ok: false, error: `invalid Cursor CLI model: ${input.model}` };
+    return Promise.resolve({
+      ok: false,
+      error: `invalid Cursor CLI model: ${input.model}`,
+    });
   }
 
   const agentPath =
@@ -84,45 +87,53 @@ async function runCursorCliFix(input: FixInput): Promise<FixAttemptResult> {
       stderr += chunk.toString("utf8");
     });
 
-    child.stdout?.on("data", (chunk: Buffer) => {
-      stdoutBuffer += chunk.toString("utf8");
-      let nl: number;
-      while ((nl = stdoutBuffer.indexOf("\n")) >= 0) {
-        const line = stdoutBuffer.slice(0, nl).trim();
-        stdoutBuffer = stdoutBuffer.slice(nl + 1);
-        if (!line) {
-          continue;
-        }
+    const handleStdoutLine = (line: string): void => {
+      let event: CursorCliStreamEvent;
+      try {
+        event = JSON.parse(line) as CursorCliStreamEvent;
+      } catch {
+        return;
+      }
 
-        let event: CursorCliStreamEvent;
-        try {
-          event = JSON.parse(line) as CursorCliStreamEvent;
-        } catch {
-          continue;
-        }
+      turnsUsed += countCursorCliAssistantTurn(event);
+      toolCalls += countCursorCliToolStart(event);
 
-        turnsUsed += countCursorCliAssistantTurn(event);
-        toolCalls += countCursorCliToolStart(event);
-
-        if (event.type === "result") {
-          sawResult = true;
-          const isError = (event as { is_error?: boolean }).is_error;
-          if (isError === true) {
-            resultOk = false;
-          }
-        }
-
-        if (input.onEvent) {
-          try {
-            const progress = projectCursorCliProgress(event);
-            if (progress) {
-              input.onEvent(progress);
-            }
-          } catch {
-            // best-effort progress
-          }
+      if (event.type === "result") {
+        sawResult = true;
+        const isError = (event as { is_error?: boolean }).is_error;
+        if (isError === true) {
+          resultOk = false;
         }
       }
+
+      if (!input.onEvent) {
+        return;
+      }
+      try {
+        const progress = projectCursorCliProgress(event);
+        if (progress) {
+          input.onEvent(progress);
+        }
+      } catch {
+        // best-effort progress
+      }
+    };
+
+    const drainStdoutBuffer = (): void => {
+      let nl = stdoutBuffer.indexOf("\n");
+      while (nl >= 0) {
+        const line = stdoutBuffer.slice(0, nl).trim();
+        stdoutBuffer = stdoutBuffer.slice(nl + 1);
+        nl = stdoutBuffer.indexOf("\n");
+        if (line) {
+          handleStdoutLine(line);
+        }
+      }
+    };
+
+    child.stdout?.on("data", (chunk: Buffer) => {
+      stdoutBuffer += chunk.toString("utf8");
+      drainStdoutBuffer();
     });
 
     child.on("error", (err) => {

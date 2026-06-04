@@ -41,28 +41,11 @@ async function runClaudeFix(input: FixInput): Promise<FixAttemptResult> {
     options.model = input.model;
   }
 
-  let turnsUsed = 0;
-  let toolCalls = 0;
+  const counters = { turnsUsed: 0, toolCalls: 0 };
 
   try {
     for await (const event of query({ prompt, options })) {
-      const t = (event as { type?: string }).type;
-      if (t === "assistant") {
-        turnsUsed += 1;
-        toolCalls += countClaudeToolUseBlocks(event);
-      }
-      console.info(`[claude-agent] ${t ?? "event"}`);
-
-      if (input.onEvent) {
-        try {
-          const progress = projectClaudeProgress(event);
-          if (progress) {
-            input.onEvent(progress);
-          }
-        } catch {
-          // never let progress reporting derail the loop
-        }
-      }
+      processClaudeEvent(event, input, counters);
     }
   } catch (err) {
     if (err instanceof AbortError) {
@@ -74,5 +57,30 @@ async function runClaudeFix(input: FixInput): Promise<FixAttemptResult> {
     };
   }
 
-  return { ok: true, turnsUsed, toolCalls };
+  return { ok: true, ...counters };
+}
+
+function processClaudeEvent(
+  event: unknown,
+  input: FixInput,
+  counters: { turnsUsed: number; toolCalls: number }
+): void {
+  const t = (event as { type?: string }).type;
+  if (t === "assistant") {
+    counters.turnsUsed += 1;
+    counters.toolCalls += countClaudeToolUseBlocks(event);
+  }
+  console.info(`[claude-agent] ${t ?? "event"}`);
+
+  if (!input.onEvent) {
+    return;
+  }
+  try {
+    const progress = projectClaudeProgress(event);
+    if (progress) {
+      input.onEvent(progress);
+    }
+  } catch {
+    // never let progress reporting derail the loop
+  }
 }
