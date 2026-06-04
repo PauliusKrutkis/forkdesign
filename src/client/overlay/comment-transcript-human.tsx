@@ -1,11 +1,12 @@
 import type { ReactNode } from "react";
-import { useEffect, useRef, useState } from "react";
-import { Button } from "../ui/button.tsx";
+import type { OverlayModel } from "../settings.ts";
+import { cn } from "../ui/cn.ts";
 import { CommentBubbleAttribution } from "./comment-bubble-attribution.tsx";
-import { DeleteConfirmOverlay } from "./delete-confirm-overlay.tsx";
-import { useDeleteConfirm } from "./hooks/use-delete-confirm.ts";
-import { useTextEditAction } from "./hooks/use-text-edit-action.ts";
-import { InlineCommentEditor } from "./inline-comment-editor.tsx";
+import type { ComposerMode } from "./comment-composer-bar.tsx";
+import {
+  type TranscriptEditSubmit,
+  TranscriptEntryComposer,
+} from "./transcript-entry-composer.tsx";
 
 const NAME_SEPARATOR = /[.\-_\s]+/;
 
@@ -31,177 +32,142 @@ function HumanAvatar({ author }: { author: string }) {
   );
 }
 
+const entrySurfaceClass =
+  "block w-full rounded-lg border border-transparent px-2.5 py-2 text-left transition-[background-color,border-color,box-shadow] duration-150 ease-out";
+
+const entryInteractiveClass = cn(
+  entrySurfaceClass,
+  "cursor-pointer text-foreground",
+  "hover:border-border/70 hover:bg-muted/50 hover:shadow-[0_1px_0_rgb(0_0_0/0.03)]",
+  "active:bg-muted/65",
+  "focus-visible:border-ring/40 focus-visible:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+);
+
 interface TranscriptHumanEntryProps {
   ariaLabel: string;
   author: string;
   /** Optional badge shown in the meta row (e.g. `Re: v2` for replies). */
   badge?: ReactNode;
   date: string;
-  /** Empty-state message for the inline editor when the draft is blank. */
-  emptyMessage: string;
-  onDelete?: () => Promise<void>;
-  onEdit?: (text: string) => Promise<void>;
+  defaultEditMode: ComposerMode;
+  editingEntryKey: string | null;
+  entryKey: string;
+  fixModel: OverlayModel;
+  fixVersionCount: number;
+  iterating: boolean;
+  onEditingEntryKeyChange: (key: string | null) => void;
+  onEditSubmit?: (payload: TranscriptEditSubmit) => Promise<void>;
+  onFixModelChange: (model: OverlayModel) => void;
   onInteraction?: () => void;
-  skipDeleteConfirmation: boolean;
   text: string;
 }
 
+function HumanEntryBody({
+  text,
+  badge,
+  author,
+  date,
+}: {
+  text: string;
+  badge?: ReactNode;
+  author: string;
+  date: string;
+}) {
+  return (
+    <>
+      <p className="m-0 whitespace-pre-wrap text-sm leading-relaxed">{text}</p>
+      <div className="mt-1.5 flex min-w-0 flex-wrap items-center gap-1.5">
+        {badge}
+        <CommentBubbleAttribution author={author} date={date} />
+      </div>
+    </>
+  );
+}
+
 /**
- * One human turn in the transcript — the original comment or a reply. Renders
- * as an avatar + content row; edit/delete surface on hover. Editing and
- * delete-confirm reuse the same hooks as the rest of the overlay.
+ * One human turn in the transcript — the original comment or a reply. Click the
+ * whole message block to edit with the same composer UI as the bubble footer;
+ * agent mode re-runs the agent after persisting the updated text.
  */
 export function TranscriptHumanEntry({
   text,
   author,
   date,
   badge,
-  emptyMessage,
   ariaLabel,
-  onEdit,
-  onDelete,
+  entryKey,
+  editingEntryKey,
+  onEditingEntryKeyChange,
+  defaultEditMode,
+  fixModel,
+  fixVersionCount,
+  onFixModelChange,
+  iterating,
+  onEditSubmit,
   onInteraction,
-  skipDeleteConfirmation,
 }: TranscriptHumanEntryProps) {
-  const [editing, setEditing] = useState(false);
-  const [editDraft, setEditDraft] = useState("");
-  const [editBusy, setEditBusy] = useState(false);
-  const [editError, setEditError] = useState<string | null>(null);
-  const editTextareaRef = useRef<HTMLTextAreaElement | null>(null);
-
-  const { save: saveEditAction } = useTextEditAction({
-    closeBeforePersist: true,
-    emptyMessage,
-    onSubmit: async (trimmed) => {
-      await onEdit?.(trimmed);
-    },
-  });
-
-  const {
-    confirming: deleteConfirming,
-    busy: deleteBusy,
-    error: deleteError,
-    requestDelete,
-    confirmDelete,
-    cancelDelete,
-  } = useDeleteConfirm({
-    skipConfirmation: skipDeleteConfirmation,
-    onBeforeConfirm: () => {
-      onInteraction?.();
-      setEditing(false);
-    },
-    onDelete: async () => {
-      await onDelete?.();
-    },
-  });
-
-  useEffect(() => {
-    if (editing) {
-      editTextareaRef.current?.focus();
-    }
-  }, [editing]);
+  const editing = editingEntryKey === entryKey;
+  const canEdit = Boolean(onEditSubmit);
 
   const startEditing = () => {
-    if (!onEdit) {
+    if (!canEdit || iterating) {
       return;
     }
     onInteraction?.();
-    setEditing(true);
-    setEditDraft(text);
-    setEditError(null);
-    cancelDelete();
+    onEditingEntryKeyChange(entryKey);
   };
 
-  const saveEdit = () => {
-    const snapshot = editDraft;
-    saveEditAction({
-      draft: editDraft,
-      busy: editBusy,
-      setBusy: setEditBusy,
-      setError: setEditError,
-      onSuccess: () => {
-        setEditing(false);
-        setEditDraft("");
-      },
-      onRevert: (message) => {
-        setEditing(true);
-        setEditDraft(snapshot);
-        setEditError(message);
-      },
-    });
+  const endEditing = () => {
+    onEditingEntryKeyChange(null);
   };
+
+  let body: ReactNode;
+  if (editing && onEditSubmit) {
+    body = (
+      <TranscriptEntryComposer
+        defaultMode={defaultEditMode}
+        disabled={false}
+        fixModel={fixModel}
+        fixVersionCount={fixVersionCount}
+        initialText={text}
+        iterating={iterating}
+        onCancel={endEditing}
+        onFixModelChange={onFixModelChange}
+        onSubmit={async (payload) => {
+          await onEditSubmit(payload);
+          endEditing();
+        }}
+      />
+    );
+  } else if (canEdit) {
+    body = (
+      <button
+        aria-label={ariaLabel}
+        className={cn(
+          entryInteractiveClass,
+          "-mx-2.5",
+          iterating &&
+            "cursor-not-allowed opacity-60 hover:border-transparent hover:bg-transparent hover:shadow-none"
+        )}
+        disabled={iterating}
+        onClick={startEditing}
+        type="button"
+      >
+        <HumanEntryBody author={author} badge={badge} date={date} text={text} />
+      </button>
+    );
+  } else {
+    body = (
+      <div className={cn(entrySurfaceClass, "-mx-2.5")}>
+        <HumanEntryBody author={author} badge={badge} date={date} text={text} />
+      </div>
+    );
+  }
 
   return (
-    <div className="group/entry flex gap-2.5">
+    <div className="flex gap-2.5">
       <HumanAvatar author={author} />
-      <div className="min-w-0 flex-1">
-        {editing ? (
-          <InlineCommentEditor
-            ariaLabel={ariaLabel}
-            busy={editBusy}
-            error={editError}
-            onCancel={() => {
-              setEditing(false);
-              setEditDraft("");
-              setEditError(null);
-            }}
-            onChange={setEditDraft}
-            onSave={saveEdit}
-            textareaRef={editTextareaRef}
-            value={editDraft}
-          />
-        ) : (
-          <>
-            <p className="m-0 whitespace-pre-wrap text-foreground text-sm leading-relaxed">
-              {text}
-            </p>
-            <div className="relative mt-1 flex items-center justify-between gap-2">
-              <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5">
-                {badge}
-                <CommentBubbleAttribution author={author} date={date} />
-              </div>
-              {(onEdit || onDelete) && !deleteConfirming ? (
-                <div className="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity focus-within:opacity-100 group-hover/entry:opacity-100">
-                  {onEdit ? (
-                    <Button
-                      className="h-auto px-1.5 py-1 text-xs"
-                      onClick={startEditing}
-                      size="sm"
-                      type="button"
-                      variant="ghost"
-                    >
-                      Edit
-                    </Button>
-                  ) : null}
-                  {onDelete ? (
-                    <Button
-                      className="h-auto px-1.5 py-1 text-xs hover:bg-destructive/10 hover:text-destructive"
-                      disabled={deleteBusy}
-                      onClick={requestDelete}
-                      size="sm"
-                      type="button"
-                      variant="ghost"
-                    >
-                      Delete
-                    </Button>
-                  ) : null}
-                </div>
-              ) : null}
-              {deleteConfirming ? (
-                <DeleteConfirmOverlay
-                  busy={deleteBusy}
-                  layout="overlay"
-                  onCancel={cancelDelete}
-                  onConfirm={confirmDelete}
-                />
-              ) : null}
-            </div>
-            {deleteError ? (
-              <p className="m-0 mt-1 text-destructive text-xs">{deleteError}</p>
-            ) : null}
-          </>
-        )}
-      </div>
+      <div className="min-w-0 flex-1">{body}</div>
     </div>
   );
 }

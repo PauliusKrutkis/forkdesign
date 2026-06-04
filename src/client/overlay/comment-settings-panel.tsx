@@ -1,4 +1,4 @@
-import type { OverlayModel, OverlaySettings } from "../settings.ts";
+import { OVERLAY_MODEL_OPTIONS, type OverlaySettings } from "../settings.ts";
 import { Input } from "../ui/input.tsx";
 import { Kbd } from "../ui/kbd.tsx";
 import { Label } from "../ui/label.tsx";
@@ -80,15 +80,18 @@ export function CommentSettingsPanel({ settings, onChange }: Props) {
       <Section label="Preferred model">
         <select
           className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          onChange={(e) => onChange({ model: e.target.value as OverlayModel })}
+          onChange={(e) =>
+            onChange({
+              model: e.target.value as OverlaySettings["model"],
+            })
+          }
           value={settings.model}
         >
-          <option value="composer-2.5-fast">
-            composer-2.5-fast (Cursor CLI)
-          </option>
-          <option value="composer-2.5">composer-2.5 (Cursor CLI)</option>
-          <option value="claude-sonnet-4-6">claude-sonnet-4-6</option>
-          <option value="claude-opus-4-7">claude-opus-4-7</option>
+          {OVERLAY_MODEL_OPTIONS.map((opt) => (
+            <option key={opt.value} value={opt.value}>
+              {opt.label}
+            </option>
+          ))}
         </select>
         <p className="m-0 mt-1 text-muted-foreground text-xs">
           Tried first on Fix, then falls back through faster models

@@ -6,6 +6,48 @@ import {
 
 export interface ParseIterateStreamCallbacks {
   onProgress: (detail: string) => void;
+  signal?: AbortSignal;
+}
+
+function parseIterateLine(
+  line: string,
+  onProgress: ParseIterateStreamCallbacks["onProgress"]
+): IterateDoneEvent | "continue" {
+  if (!line) {
+    return "continue";
+  }
+  let event: IterateStreamEvent;
+  try {
+    event = JSON.parse(line) as IterateStreamEvent;
+  } catch {
+    return "continue";
+  }
+  if (event.type === "progress") {
+    onProgress(formatProgress(event));
+    return "continue";
+  }
+  if (event.type === "done") {
+    return event;
+  }
+  return "continue";
+}
+
+function drainBufferLines(
+  buffer: string,
+  onProgress: ParseIterateStreamCallbacks["onProgress"]
+): { buffer: string; done: IterateDoneEvent | null } {
+  let rest = buffer;
+  let nl = rest.indexOf("\n");
+  while (nl >= 0) {
+    const line = rest.slice(0, nl).trim();
+    rest = rest.slice(nl + 1);
+    nl = rest.indexOf("\n");
+    const parsed = parseIterateLine(line, onProgress);
+    if (parsed !== "continue") {
+      return { buffer: rest, done: parsed };
+    }
+  }
+  return { buffer: rest, done: null };
 }
 
 export async function readIterateStream(
@@ -16,33 +58,38 @@ export async function readIterateStream(
   const decoder = new TextDecoder();
   let buffer = "";
   let done: IterateDoneEvent | null = null;
+  const { signal, onProgress } = callbacks;
 
-  streamLoop: while (true) {
-    const { done: streamDone, value } = await reader.read();
-    if (streamDone) {
-      break;
+  const onAbort = () => {
+    reader.cancel().catch(() => {
+      /* stream already closed */
+    });
+  };
+  if (signal) {
+    if (signal.aborted) {
+      onAbort();
+      return null;
     }
-    buffer += decoder.decode(value, { stream: true });
-    let nl = buffer.indexOf("\n");
-    while (nl >= 0) {
-      const line = buffer.slice(0, nl).trim();
-      buffer = buffer.slice(nl + 1);
-      nl = buffer.indexOf("\n");
-      if (!line) {
-        continue;
+    signal.addEventListener("abort", onAbort, { once: true });
+  }
+
+  try {
+    while (!signal?.aborted) {
+      const { done: streamDone, value } = await reader.read();
+      if (streamDone) {
+        break;
       }
-      let event: IterateStreamEvent;
-      try {
-        event = JSON.parse(line) as IterateStreamEvent;
-      } catch {
-        continue;
+      buffer += decoder.decode(value, { stream: true });
+      const drained = drainBufferLines(buffer, onProgress);
+      buffer = drained.buffer;
+      if (drained.done) {
+        done = drained.done;
+        break;
       }
-      if (event.type === "progress") {
-        callbacks.onProgress(formatProgress(event));
-      } else if (event.type === "done") {
-        done = event;
-        break streamLoop;
-      }
+    }
+  } finally {
+    if (signal) {
+      signal.removeEventListener("abort", onAbort);
     }
   }
 

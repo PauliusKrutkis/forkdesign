@@ -2,45 +2,45 @@ import type { CommentReply } from "../../types.ts";
 import type { IterationVersion } from "../hooks/use-iterations.ts";
 
 /**
- * A single row in the comment's conversation. The bubble renders these
- * top-to-bottom (oldest first), with the persistent composer underneath:
+ * The comment's conversation, modelled as **turns**. A turn is an instruction
+ * (the original comment, or a follow-up reply) plus the agent run(s) it
+ * produced — so request and result read as one unit instead of three stacked
+ * entries.
  *
- *   - `comment`  — the original instruction (always pinned first)
- *   - `variants` — one agent run: the versions it produced, grouped together.
- *                  `v0` is the baseline (pinned right after the comment); a
- *                  fix run with `count > 1` becomes a single group of N cards.
- *   - `reply`    — a follow-up note (human comment, or the steering text that
- *                  was sent alongside a Fix), interleaved by date.
+ *   - The original comment is always the first turn.
+ *   - Each reply is a turn. An agent-mode reply has the run it triggered
+ *     attached beneath it; a plain comment-mode reply has no runs (a note).
+ *   - The baseline (`v0`) is NOT a turn — it's returned separately and surfaced
+ *     once as a quiet "Original" reference, since it's the starting state, not
+ *     something the agent said.
  */
-export type TranscriptEntry =
-  | {
-      kind: "comment";
-      sortKey: number;
-      id: string;
-      text: string;
-      author: string;
-      date: string;
-    }
-  | {
-      kind: "reply";
-      sortKey: number;
-      reply: CommentReply;
-      replyIndex: number;
-    }
-  | {
-      kind: "variants";
-      sortKey: number;
-      isBaseline: boolean;
-      createdAt?: string;
-      versions: IterationVersion[];
-    };
+interface VariantRun {
+  createdAt?: string;
+  versions: IterationVersion[];
+}
 
-// Pinned positions. Real timestamps are epoch-ms (~1.7e12), safely above these
-// sentinels, so the comment always sorts first and the baseline second.
-const COMMENT_SORT = Number.MIN_SAFE_INTEGER;
-const BASELINE_SORT = Number.MIN_SAFE_INTEGER + 1;
+export type TurnInstruction =
+  | { kind: "comment"; id: string; text: string; author: string; date: string }
+  | { kind: "reply"; replyIndex: number; reply: CommentReply };
 
-function parseSortKey(iso: string | undefined): number {
+export interface TranscriptTurn {
+  instruction: TurnInstruction;
+  key: string;
+  /** Agent runs produced in response to this instruction, oldest first. */
+  runs: VariantRun[];
+}
+
+export interface Transcript {
+  /** The v0 starting state, if it exists. */
+  baseline?: IterationVersion;
+  turns: TranscriptTurn[];
+}
+
+// The comment is pinned before every reply/run. Real timestamps are epoch-ms
+// (~1.7e12), safely above this sentinel.
+const COMMENT_TIME = Number.MIN_SAFE_INTEGER;
+
+function parseTime(iso: string | undefined): number {
   if (!iso) {
     return 0;
   }
@@ -48,50 +48,28 @@ function parseSortKey(iso: string | undefined): number {
   return Number.isNaN(ts) ? 0 : ts;
 }
 
-function kindWeight(entry: TranscriptEntry): number {
-  if (entry.kind === "comment") {
-    return 0;
-  }
-  return entry.kind === "variants" ? 1 : 2;
-}
-
-interface VersionGroup {
-  createdAt?: string;
-  isBaseline: boolean;
-  versions: IterationVersion[];
-}
-
 /**
- * Group versions into agent runs. The manifest persists only `createdAt` per
- * version (no run id survives a reload), but every version written in one
- * iterate run shares a single `createdAt` — so that's the grouping key. The
- * baseline (`v0`) is always its own group regardless of timestamp.
+ * Group fix versions (v > 0) into runs. Every version written in one iterate
+ * run shares a single `createdAt` (the only run signal that survives a reload),
+ * so that's the grouping key. Runs are returned oldest-first.
  */
-function groupVersions(versions: IterationVersion[]): VersionGroup[] {
+function groupRuns(versions: IterationVersion[]): VariantRun[] {
   const map = new Map<string, IterationVersion[]>();
   for (const v of versions) {
-    const key = v.v === 0 ? "baseline" : (v.createdAt ?? `__v${v.v}`);
+    const key = v.createdAt ?? `__v${v.v}`;
     const list = map.get(key) ?? [];
     list.push(v);
     map.set(key, list);
   }
-  const groups: VersionGroup[] = [];
-  for (const [key, list] of map) {
+  const runs: VariantRun[] = [];
+  for (const list of map.values()) {
     list.sort((a, b) => a.v - b.v);
-    groups.push({
-      isBaseline: key === "baseline",
-      createdAt: list[0]?.createdAt,
-      versions: list,
-    });
+    runs.push({ createdAt: list[0]?.createdAt, versions: list });
   }
-  return groups;
+  runs.sort((a, b) => parseTime(a.createdAt) - parseTime(b.createdAt));
+  return runs;
 }
 
-/**
- * Build the ordered conversation for a comment. Version chrome (baseline +
- * fix groups) only appears once at least one fix exists — a fresh comment with
- * just its baseline reads as a plain note with an empty conversation below.
- */
 export function buildTranscript(args: {
   id: string;
   text: string;
@@ -99,44 +77,53 @@ export function buildTranscript(args: {
   date: string;
   replies?: CommentReply[];
   versions: IterationVersion[];
-}): TranscriptEntry[] {
+}): Transcript {
   const { id, text, author, date, replies, versions } = args;
-  const entries: TranscriptEntry[] = [
-    { kind: "comment", sortKey: COMMENT_SORT, id, text, author, date },
-  ];
 
+  const baseline = versions.find((v) => v.v === 0);
+  const runs = groupRuns(versions.filter((v) => v.v > 0));
+
+  // Instructions, oldest first (comment pinned ahead of every reply).
+  const turns: { turn: TranscriptTurn; time: number }[] = [
+    {
+      turn: {
+        key: "comment",
+        instruction: { kind: "comment", id, text, author, date },
+        runs: [],
+      },
+      time: COMMENT_TIME,
+    },
+  ];
   for (let i = 0; i < (replies?.length ?? 0); i++) {
     const reply = replies?.[i];
     if (!reply) {
       continue;
     }
-    entries.push({
-      kind: "reply",
-      sortKey: parseSortKey(reply.date),
-      reply,
-      replyIndex: i,
+    turns.push({
+      turn: {
+        key: `reply-${i}`,
+        instruction: { kind: "reply", replyIndex: i, reply },
+        runs: [],
+      },
+      time: parseTime(reply.date),
     });
   }
+  turns.sort((a, b) => a.time - b.time);
 
-  const hasFixes = versions.some((v) => v.v > 0);
-  if (hasFixes) {
-    for (const group of groupVersions(versions)) {
-      entries.push({
-        kind: "variants",
-        isBaseline: group.isBaseline,
-        createdAt: group.createdAt,
-        versions: group.versions,
-        sortKey: group.isBaseline
-          ? BASELINE_SORT
-          : parseSortKey(group.createdAt),
-      });
+  // Attach each run to the latest instruction that precedes it. Because the
+  // comment is pinned first, every run finds a home.
+  for (const run of runs) {
+    const runTime = parseTime(run.createdAt);
+    let target = turns[0];
+    for (const candidate of turns) {
+      if (candidate.time <= runTime) {
+        target = candidate;
+      } else {
+        break;
+      }
     }
+    target?.turn.runs.push(run);
   }
 
-  entries.sort((a, b) =>
-    a.sortKey === b.sortKey
-      ? kindWeight(a) - kindWeight(b)
-      : a.sortKey - b.sortKey
-  );
-  return entries;
+  return { turns: turns.map((t) => t.turn), baseline };
 }

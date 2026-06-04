@@ -2,6 +2,7 @@ import { toPng } from "html-to-image";
 import { SquareDashedMousePointer, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { DEFAULT_FIX_VERSION_COUNT } from "../../shared/fix-version-count.ts";
+import type { OverlayModel } from "../settings.ts";
 import { Button } from "../ui/button.tsx";
 import {
   CommentComposerBar,
@@ -18,13 +19,14 @@ export interface ComposerSubmission {
   anchor: string;
   /** anchor point (page x/y of the click) for positioning the panel */
   clickPoint: { x: number; y: number };
+  /** Fix model when `runAgent` is set; defaults to overlay settings. */
+  model?: OverlayModel;
   /** submitted in Agent mode — create the comment, then run the agent on it */
   runAgent?: boolean;
   /**
    * Optional `data:image/png;base64,...` capture of the targeted element's
-   * bounding box. Undefined when the client-side capture failed (cross-origin
-   * image, font load race, etc.) — the server will save the comment without
-   * a screenshot rather than fail the request.
+   * bounding box (Comment mode only). Agent mode omits this; baseline `v0`
+   * is captured immediately before the agent run instead.
    */
   screenshotPng?: string;
   /** the element that was clicked to seed the comment */
@@ -47,8 +49,10 @@ export type ComposerSubmitResult = { ok: true } | { ok: false; error: string };
 interface CommentComposerProps {
   /** when true, the composer mode is active (highlight + capture next click) */
   active: boolean;
+  fixModel: OverlayModel;
   /** turn composer mode off */
   onCancel: () => void;
+  onFixModelChange: (model: OverlayModel) => void;
   /**
    * Invoked when the user submits a comment. Returns a Promise so the
    * composer can show inline "saving"/"saved"/"error" states. On a failed
@@ -58,7 +62,7 @@ interface CommentComposerProps {
   onSubmit: (entry: ComposerSubmission) => Promise<ComposerSubmitResult>;
 }
 
-const PANEL_WIDTH = 360;
+const PANEL_WIDTH = 400;
 const VIEWPORT_PADDING = 12;
 
 /**
@@ -72,6 +76,8 @@ const VIEWPORT_PADDING = 12;
  */
 export function CommentComposer({
   active,
+  fixModel,
+  onFixModelChange,
   onCancel,
   onSubmit,
 }: CommentComposerProps) {
@@ -209,10 +215,12 @@ export function CommentComposer({
       {target ? (
         <ComposerPanel
           clickPoint={target.clickPoint}
+          fixModel={fixModel}
           onCancel={() => {
             setTarget(null);
             setText("");
           }}
+          onFixModelChange={onFixModelChange}
           onSaved={() => {
             // Defer the reset slightly so the "saved" pill is visible.
             window.setTimeout(() => {
@@ -220,7 +228,7 @@ export function CommentComposer({
               setText("");
             }, 600);
           }}
-          onSubmit={async ({ runAgent, versionCount }) => {
+          onSubmit={async ({ runAgent, versionCount, model }) => {
             const trimmed = text.trim();
             if (!trimmed) {
               return { ok: false, error: "empty body" };
@@ -229,7 +237,9 @@ export function CommentComposer({
             const view =
               target.el.closest("[data-view]")?.getAttribute("data-view") ??
               undefined;
-            const screenshotPng = await captureElementScreenshot(target.el);
+            const screenshotPng = runAgent
+              ? undefined
+              : await captureElementScreenshot(target.el);
             const result = await onSubmit({
               anchor,
               target: target.el,
@@ -238,6 +248,7 @@ export function CommentComposer({
               text: trimmed,
               runAgent,
               versionCount,
+              ...(model ? { model } : {}),
               ...(screenshotPng ? { screenshotPng } : {}),
             });
             return result;
@@ -263,6 +274,8 @@ function ComposerPanel({
   clickPoint,
   text,
   textareaRef,
+  fixModel,
+  onFixModelChange,
   onTextChange,
   onCancel,
   onSubmit,
@@ -272,11 +285,14 @@ function ComposerPanel({
   clickPoint: { x: number; y: number };
   text: string;
   textareaRef: React.RefObject<HTMLTextAreaElement | null>;
+  fixModel: OverlayModel;
+  onFixModelChange: (model: OverlayModel) => void;
   onTextChange: (v: string) => void;
   onCancel: () => void;
   onSubmit: (opts: {
     runAgent: boolean;
     versionCount: number;
+    model: OverlayModel;
   }) => Promise<ComposerSubmitResult>;
   onSaved: () => void;
 }) {
@@ -327,7 +343,11 @@ function ComposerPanel({
     setStatus({ kind: "saving" });
     let result: ComposerSubmitResult;
     try {
-      result = await onSubmit({ runAgent: mode === "agent", versionCount });
+      result = await onSubmit({
+        runAgent: mode === "agent",
+        versionCount,
+        model: fixModel,
+      });
     } catch (err) {
       setStatus({ kind: "error", message: toErrorMessage(err) });
       return;
@@ -385,16 +405,17 @@ function ComposerPanel({
       <CommentComposerBar
         busy={submitting}
         error={status.kind === "error" ? status.message : null}
+        fixModel={fixModel}
         fixVersionCount={versionCount}
         iterating={false}
         mode={mode}
         onChange={onTextChange}
+        onFixModelChange={onFixModelChange}
         onFixVersionCountChange={setVersionCount}
         onModeChange={setMode}
         onSubmit={() => {
           submit().catch(ignorePromiseRejection);
         }}
-        placeholder="Describe the change you want…"
         textareaRef={textareaRef}
         value={text}
       />

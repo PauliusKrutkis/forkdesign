@@ -305,14 +305,11 @@ export async function handleIterationsNew(
 /**
  * POST /api/iterations/screenshot { id, v, screenshotPng }
  *
- * Client-side follow-up to `POST /api/iterations/new`: the iterate endpoint
- * placeholder-copies `v0.png` to `v{N}.png`, but that PNG is visually wrong
- * since the design just changed. The browser re-captures the now-edited
- * element after HMR settles and POSTs the fresh PNG here. We overwrite the
- * placeholder atomically.
+ * Client uploads a version PNG: `v0` baseline before agent work, or `v{N}`
+ * after HMR once that variant is applied. Iterate placeholder-copies `v0.png`
+ * to new variants until the client overwrites with a fresh capture.
  *
- * Best-effort: a failure here doesn't roll back the iteration. The placeholder
- * stays in place and the user keeps a slightly-stale screenshot.
+ * Best-effort: a failure here doesn't roll back the iteration.
  */
 export async function handleIterationsScreenshot(
   req: IncomingMessage,

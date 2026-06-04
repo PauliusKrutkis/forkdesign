@@ -1,28 +1,30 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { OverlayModel } from "../../settings.ts";
 import type { CommentData } from "../../types.ts";
-import { readApiError } from "../lib/api.ts";
-import { captureAndUploadV } from "../lib/capture-iteration-screenshot.ts";
-import { toErrorMessage } from "../lib/errors.ts";
 import { ignorePromiseRejection } from "../lib/ignore-promise-rejection.ts";
-import {
-  formatIterateSuccess,
-  readIterateStream,
-  validateIterateDone,
-} from "../lib/parse-iterate-stream.ts";
+import { runIterateFixRequest } from "../lib/iterate-fix-request.ts";
 
 export function useIterateFix(args: {
   lead: CommentData | undefined;
   fixModel: OverlayModel;
   fixVersionCount: number;
   reloadIterations: () => void | Promise<void>;
+  /** Pin loading — survives bubble close until the run finishes. */
+  onAgentWorkingChange?: (anchor: string | null) => void;
 }) {
-  const { lead, fixModel, fixVersionCount, reloadIterations } = args;
+  const {
+    lead,
+    fixModel,
+    fixVersionCount,
+    reloadIterations,
+    onAgentWorkingChange,
+  } = args;
   const [iterating, setIterating] = useState(false);
   const [iterateError, setIterateError] = useState<string | null>(null);
   const [iterateStatus, setIterateStatus] = useState<string | null>(null);
   const [iterateStartedAt, setIterateStartedAt] = useState<number | null>(null);
   const [iterateNow, setIterateNow] = useState<number>(() => Date.now());
+  const abortRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
     if (!iterating) {
@@ -32,60 +34,60 @@ export function useIterateFix(args: {
     return () => window.clearInterval(t);
   }, [iterating]);
 
-  const handleIterate = useCallback(async () => {
-    if (!lead || iterating) {
-      return;
-    }
-    setIterating(true);
-    setIterateError(null);
-    setIterateStatus(null);
-    setIterateStartedAt(Date.now());
-    setIterateNow(Date.now());
-    try {
-      const res = await fetch("/api/iterations/new", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          id: lead.id,
-          model: fixModel,
-          count: fixVersionCount,
-        }),
-      });
-      if (!(res.ok && res.body)) {
-        setIterateError(await readApiError(res));
+  const handleCancelIterate = useCallback(() => {
+    abortRef.current?.abort();
+  }, []);
+
+  const handleIterate = useCallback(
+    async (overrides?: {
+      fixModel?: OverlayModel;
+      fixVersionCount?: number;
+    }) => {
+      if (!lead || iterating) {
         return;
       }
+      const runModel = overrides?.fixModel ?? fixModel;
+      const runCount = overrides?.fixVersionCount ?? fixVersionCount;
+      const abortController = new AbortController();
+      abortRef.current = abortController;
 
-      const done = await readIterateStream(res.body, {
-        onProgress: setIterateStatus,
+      setIterating(true);
+      onAgentWorkingChange?.(lead.anchor);
+      setIterateError(null);
+      setIterateStatus(null);
+      setIterateStartedAt(Date.now());
+      setIterateNow(Date.now());
+
+      const outcome = await runIterateFixRequest({
+        lead,
+        fixModel: runModel,
+        fixVersionCount: runCount,
+        signal: abortController.signal,
+        reloadIterations,
+        setIterateError,
+        setIterateStatus,
       });
-      const validated = validateIterateDone(done);
-      if (!validated.ok) {
-        setIterateError(validated.error);
-        return;
-      }
 
-      setIterateStatus(formatIterateSuccess(validated.value));
-      window.setTimeout(() => setIterateStatus(null), 3000);
-
-      Promise.resolve(reloadIterations()).catch(ignorePromiseRejection);
-      if (validated.value.v !== undefined && validated.value.changed === true) {
-        captureAndUploadV({
-          id: lead.id,
-          anchor: lead.anchor,
-          v: validated.value.v,
-          onUploaded: () => {
-            Promise.resolve(reloadIterations()).catch(ignorePromiseRejection);
-          },
-        });
+      if (abortRef.current === abortController) {
+        abortRef.current = null;
       }
-    } catch (err) {
-      setIterateError(`network error: ${toErrorMessage(err)}`);
-    } finally {
       setIterating(false);
       setIterateStartedAt(null);
-    }
-  }, [lead, iterating, fixModel, fixVersionCount, reloadIterations]);
+      onAgentWorkingChange?.(null);
+      if (outcome === "cancelled") {
+        setIterateStatus(null);
+        Promise.resolve(reloadIterations()).catch(ignorePromiseRejection);
+      }
+    },
+    [
+      lead,
+      iterating,
+      fixModel,
+      fixVersionCount,
+      reloadIterations,
+      onAgentWorkingChange,
+    ]
+  );
 
   return {
     iterating,
@@ -94,5 +96,6 @@ export function useIterateFix(args: {
     iterateStartedAt,
     iterateNow,
     handleIterate,
+    handleCancelIterate,
   };
 }

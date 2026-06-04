@@ -29,7 +29,6 @@ import { currentAppRoute, getCommentAuthor } from "./lib/comment-author.ts";
 import {
   appendReply,
   removeComment,
-  removeReply,
   toggleCommentResolved,
   updateCommentText,
   updateReply,
@@ -112,7 +111,12 @@ export function CommentOverlay({
   const [pendingFix, setPendingFix] = useState<{
     id: string;
     count: number;
+    model: OverlaySettings["model"];
   } | null>(null);
+  /** Anchor whose thread currently has an in-flight agent run (pin loading). */
+  const [agentWorkingAnchor, setAgentWorkingAnchor] = useState<string | null>(
+    null
+  );
   /** After navigation, open the bubble once the anchor appears in the DOM. */
   const [pendingOpen, setPendingOpen] = useState<{
     anchor: string;
@@ -309,6 +313,7 @@ export function CommentOverlay({
           setPendingFix({
             id: result.id,
             count: entry.versionCount ?? DEFAULT_FIX_VERSION_COUNT,
+            model: entry.model ?? settings.model,
           });
         }
       }
@@ -317,7 +322,7 @@ export function CommentOverlay({
       }, 650);
       return { ok: true };
     },
-    []
+    [settings.model]
   );
 
   const handleEdit = useCallback(async (id: string, text: string) => {
@@ -373,23 +378,6 @@ export function CommentOverlay({
       });
       try {
         await patchComment(id, { editReply: { index: replyIndex, text } });
-      } catch (err) {
-        setComments(snapshot);
-        throw err;
-      }
-    },
-    []
-  );
-
-  const handleDeleteReply = useCallback(
-    async (id: string, replyIndex: number) => {
-      let snapshot: CommentData[] = [];
-      setComments((prev) => {
-        snapshot = prev;
-        return removeReply(prev, id, replyIndex);
-      });
-      try {
-        await patchComment(id, { deleteReply: { index: replyIndex } });
       } catch (err) {
         setComments(snapshot);
         throw err;
@@ -539,6 +527,7 @@ export function CommentOverlay({
         {settings.enabled
           ? visibleAnchors.map((anchor) => (
               <CommentDot
+                agentWorking={agentWorkingAnchor === anchor}
                 anchor={anchor}
                 comments={grouped.get(anchor) ?? []}
                 key={anchor}
@@ -575,12 +564,13 @@ export function CommentOverlay({
             autoFix={pendingFix}
             comments={grouped.get(openTarget.anchor) ?? []}
             fixModel={settings.model}
+            onAgentWorkingChange={setAgentWorkingAnchor}
             onAutoFixStarted={() => setPendingFix(null)}
             onClose={() => setOpenTarget(null)}
             onDelete={handleDelete}
-            onDeleteReply={handleDeleteReply}
             onEdit={handleEdit}
             onEditReply={handleEditReply}
+            onFixModelChange={(model) => updateSettings({ model })}
             onResolve={handleResolve}
             onSubmitReply={handleSubmitReply}
             skipDeleteConfirmation={settings.skipDeleteConfirmation}
@@ -592,7 +582,9 @@ export function CommentOverlay({
         {settings.enabled ? (
           <CommentComposer
             active={composerActive}
+            fixModel={settings.model}
             onCancel={() => setComposerActive(false)}
+            onFixModelChange={(model) => updateSettings({ model })}
             onSubmit={handleSubmit}
           />
         ) : null}
@@ -730,8 +722,10 @@ function OpenBubble({
   target,
   comments,
   fixModel,
+  onFixModelChange,
   skipDeleteConfirmation,
   autoFix,
+  onAgentWorkingChange,
   onAutoFixStarted,
   onClose,
   onResolve,
@@ -739,13 +733,18 @@ function OpenBubble({
   onEdit,
   onSubmitReply,
   onEditReply,
-  onDeleteReply,
 }: {
   target: DotInstanceTarget;
   comments: CommentData[];
   fixModel: OverlaySettings["model"];
+  onFixModelChange: (model: OverlaySettings["model"]) => void;
   skipDeleteConfirmation: boolean;
-  autoFix: { id: string; count: number } | null;
+  autoFix: {
+    id: string;
+    count: number;
+    model: OverlaySettings["model"];
+  } | null;
+  onAgentWorkingChange: (anchor: string | null) => void;
   onAutoFixStarted: () => void;
   onClose: () => void;
   onResolve: (id: string) => void | Promise<void>;
@@ -756,7 +755,6 @@ function OpenBubble({
   onEdit: (id: string, text: string) => Promise<void>;
   onSubmitReply: (id: string, text: string, v?: number) => Promise<void>;
   onEditReply: (id: string, replyIndex: number, text: string) => Promise<void>;
-  onDeleteReply: (id: string, replyIndex: number) => Promise<void>;
 }) {
   const instances = useAnchorRects(target.anchor);
   const rect = findAnchorInstanceRect(instances, target.instance);
@@ -766,19 +764,19 @@ function OpenBubble({
   }
   // Only auto-run the agent when the pending fix matches the open comment.
   const lead = comments[0];
-  const autoFixCount =
-    autoFix && lead?.id === autoFix.id ? autoFix.count : null;
+  const pendingAutoFix = autoFix && lead?.id === autoFix.id ? autoFix : null;
   return (
     <CommentBubble
-      autoFixCount={autoFixCount}
+      autoFixCount={pendingAutoFix?.count ?? null}
       comments={comments}
-      fixModel={fixModel}
+      fixModel={pendingAutoFix?.model ?? fixModel}
+      onAgentWorkingChange={onAgentWorkingChange}
       onAutoFixStarted={onAutoFixStarted}
       onClose={onClose}
       onDelete={onDelete}
-      onDeleteReply={onDeleteReply}
       onEdit={onEdit}
       onEditReply={onEditReply}
+      onFixModelChange={onFixModelChange}
       onResolve={onResolve}
       onSubmitReply={onSubmitReply}
       rect={rect}

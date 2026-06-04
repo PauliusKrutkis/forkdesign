@@ -20,76 +20,86 @@ const baseArgs = {
 };
 
 describe("buildTranscript", () => {
-  it("returns just the comment when no fixes exist", () => {
-    const entries = buildTranscript({
+  it("returns a single comment turn with no runs when there are no fixes", () => {
+    const { turns, baseline } = buildTranscript({
       ...baseArgs,
       versions: [version({ v: 0 })],
     });
-    expect(entries).toHaveLength(1);
-    expect(entries[0]?.kind).toBe("comment");
+    expect(turns).toHaveLength(1);
+    expect(turns[0]?.instruction.kind).toBe("comment");
+    expect(turns[0]?.runs).toHaveLength(0);
+    expect(baseline?.v).toBe(0);
   });
 
-  it("pins the comment first and baseline second once fixes exist", () => {
-    const entries = buildTranscript({
+  it("attaches an auto-fix run to the original comment turn", () => {
+    const { turns } = buildTranscript({
       ...baseArgs,
       versions: [
-        version({ v: 0, createdAt: "1970-01-01T00:00:00.000Z" }),
-        version({ v: 1, createdAt: "2026-01-01T10:05:00.000Z" }),
+        version({ v: 0, createdAt: "2026-01-01T10:00:00.000Z" }),
+        version({ v: 1, createdAt: "2026-01-01T10:00:05.000Z" }),
       ],
     });
-    expect(entries.map((e) => e.kind)).toEqual([
-      "comment",
-      "variants",
-      "variants",
-    ]);
-    const baseline = entries[1];
-    expect(baseline.kind === "variants" && baseline.isBaseline).toBe(true);
-    const fix = entries[2];
-    expect(fix.kind === "variants" && fix.isBaseline).toBe(false);
+    expect(turns).toHaveLength(1);
+    expect(turns[0]?.runs).toHaveLength(1);
+    expect(turns[0]?.runs[0]?.versions.map((v) => v.v)).toEqual([1]);
   });
 
-  it("groups versions from one run (shared createdAt) into a single group", () => {
-    const entries = buildTranscript({
+  it("groups versions from one run (shared createdAt) into a single run", () => {
+    const { turns } = buildTranscript({
       ...baseArgs,
       versions: [
-        version({ v: 0, createdAt: "1970-01-01T00:00:00.000Z" }),
+        version({ v: 0, createdAt: "2026-01-01T10:00:00.000Z" }),
         version({ v: 1, createdAt: "2026-01-01T10:05:00.000Z" }),
         version({ v: 2, createdAt: "2026-01-01T10:05:00.000Z" }),
         version({ v: 3, createdAt: "2026-01-01T10:05:00.000Z" }),
       ],
     });
-    const groups = entries.filter((e) => e.kind === "variants");
-    expect(groups).toHaveLength(2); // baseline + one fix run
-    const fixGroup = groups.find((g) => g.kind === "variants" && !g.isBaseline);
-    expect(
-      fixGroup?.kind === "variants" && fixGroup.versions.map((v) => v.v)
-    ).toEqual([1, 2, 3]);
+    expect(turns[0]?.runs).toHaveLength(1);
+    expect(turns[0]?.runs[0]?.versions.map((v) => v.v)).toEqual([1, 2, 3]);
   });
 
-  it("interleaves replies with fix groups by date", () => {
-    const entries = buildTranscript({
+  it("pairs each reply with the run it triggered", () => {
+    const { turns } = buildTranscript({
       ...baseArgs,
       replies: [
         {
           author: "alice@example.com",
           date: "2026-01-01T10:10:00.000Z",
-          text: "closer",
+          text: "more contrast",
           v: 1,
         },
       ],
       versions: [
-        version({ v: 0, createdAt: "1970-01-01T00:00:00.000Z" }),
+        version({ v: 0, createdAt: "2026-01-01T10:00:00.000Z" }),
         version({ v: 1, createdAt: "2026-01-01T10:05:00.000Z" }),
-        version({ v: 2, createdAt: "2026-01-01T10:15:00.000Z" }),
+        version({ v: 2, createdAt: "2026-01-01T10:10:05.000Z" }),
       ],
     });
-    // comment, baseline, fix@10:05, reply@10:10, fix@10:15
-    expect(entries.map((e) => e.kind)).toEqual([
-      "comment",
-      "variants",
-      "variants",
-      "reply",
-      "variants",
-    ]);
+    // comment turn owns the first run; the reply turn owns the run it triggered
+    expect(turns).toHaveLength(2);
+    expect(turns[0]?.instruction.kind).toBe("comment");
+    expect(turns[0]?.runs[0]?.versions.map((v) => v.v)).toEqual([1]);
+    expect(turns[1]?.instruction.kind).toBe("reply");
+    expect(turns[1]?.runs[0]?.versions.map((v) => v.v)).toEqual([2]);
+  });
+
+  it("leaves a comment-mode reply (no run) as a turn with no runs", () => {
+    const { turns } = buildTranscript({
+      ...baseArgs,
+      replies: [
+        {
+          author: "bob@example.com",
+          date: "2026-01-01T10:20:00.000Z",
+          text: "leaving this for Dana",
+          v: 1,
+        },
+      ],
+      versions: [
+        version({ v: 0, createdAt: "2026-01-01T10:00:00.000Z" }),
+        version({ v: 1, createdAt: "2026-01-01T10:05:00.000Z" }),
+      ],
+    });
+    expect(turns).toHaveLength(2);
+    expect(turns[1]?.runs).toHaveLength(0);
   });
 });

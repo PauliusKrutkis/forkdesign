@@ -1,5 +1,5 @@
-import { Check, Pencil } from "lucide-react";
-import { useMemo } from "react";
+import { Check, Loader2, Pencil } from "lucide-react";
+import { type ReactNode, useMemo } from "react";
 import type { CommentData } from "../types.ts";
 import { cn } from "../ui/cn.ts";
 import { useAnchorRects } from "./hooks/use-anchor-element.ts";
@@ -12,6 +12,8 @@ export interface DotInstanceTarget {
 }
 
 interface CommentDotProps {
+  /** True while an agent fix/iterate run is in flight for this anchor. */
+  agentWorking?: boolean;
   anchor: string;
   comments: CommentData[];
   onHover: (target: DotInstanceTarget | null) => void;
@@ -44,6 +46,145 @@ function pinState(
   return "default";
 }
 
+const PIN_SHAPE = { borderRadius: "50% 50% 50% 3px" } as const;
+
+function pinPulseRing(
+  agentWorking: boolean,
+  state: PinState,
+  isOpen: boolean
+): ReactNode {
+  if (agentWorking) {
+    return (
+      <span
+        aria-hidden
+        className="absolute inset-0 animate-pin-agent-ping"
+        style={PIN_SHAPE}
+      />
+    );
+  }
+  if (state === "recent" && !isOpen) {
+    return (
+      <span
+        aria-hidden
+        className="absolute inset-0 animate-pin-pulse"
+        style={PIN_SHAPE}
+      />
+    );
+  }
+  return null;
+}
+
+function pinBubbleClasses(
+  agentWorking: boolean,
+  state: PinState,
+  isOpen: boolean
+): string {
+  return cn(
+    "relative flex h-full w-full items-center justify-center font-semibold text-[10px] tabular-nums leading-none tracking-tight shadow-[0_1px_2px_rgba(0,0,0,0.16),0_2px_6px_-1px_rgba(0,0,0,0.22)] ring-1 transition-[background-color,box-shadow,outline,color] duration-150",
+    agentWorking &&
+      "bg-[var(--agent)] text-white ring-[color-mix(in_oklch,var(--agent)_40%,transparent)]",
+    !agentWorking &&
+      (state === "default" || state === "recent") &&
+      "bg-foreground text-background ring-black/10",
+    !agentWorking &&
+      state === "resolved" &&
+      "bg-background text-muted-foreground ring-border",
+    isOpen &&
+      !agentWorking &&
+      "outline outline-2 outline-foreground outline-offset-2",
+    isOpen &&
+      agentWorking &&
+      "outline outline-2 outline-[var(--agent)] outline-offset-2"
+  );
+}
+
+function pinGlyph(agentWorking: boolean, state: PinState): ReactNode {
+  if (agentWorking) {
+    return (
+      <Loader2 aria-hidden className="h-3 w-3 animate-spin" strokeWidth={2.5} />
+    );
+  }
+  if (state === "resolved") {
+    return <Check className="h-3 w-3" strokeWidth={2.75} />;
+  }
+  return <Pencil className="h-2.5 w-2.5" strokeWidth={2.5} />;
+}
+
+function PinInstanceButton({
+  anchor,
+  instance,
+  agentWorking,
+  author,
+  count,
+  isOpen,
+  left,
+  top,
+  state,
+  onHover,
+  onOpen,
+}: {
+  anchor: string;
+  instance: number;
+  agentWorking: boolean;
+  author: string;
+  count: number;
+  isOpen: boolean;
+  left: number;
+  state: PinState;
+  top: number;
+  onHover: (target: DotInstanceTarget | null) => void;
+  onOpen: (target: DotInstanceTarget) => void;
+}) {
+  const target = { anchor, instance };
+  const pinLabel = agentWorking
+    ? `Agent working on ${count} comment${count === 1 ? "" : "s"} by ${author}`
+    : `${count} comment${count === 1 ? "" : "s"} by ${author}`;
+
+  return (
+    <button
+      aria-busy={agentWorking}
+      aria-label={pinLabel}
+      className={cn(
+        "pointer-events-auto fixed z-[9100] m-0 p-0 outline-none transition-transform duration-150 ease-out hover:scale-110 focus-visible:scale-110",
+        isOpen && "scale-110"
+      )}
+      key={`${anchor}-${instance}`}
+      onBlur={() => onHover(null)}
+      onClick={(e) => {
+        e.stopPropagation();
+        onOpen(target);
+      }}
+      onFocus={() => onHover(target)}
+      onMouseEnter={() => onHover(target)}
+      onMouseLeave={() => onHover(null)}
+      style={{
+        left: left - 3,
+        top: top - PIN_SIZE + 5,
+        width: PIN_SIZE,
+        height: PIN_SIZE,
+      }}
+      type="button"
+    >
+      {pinPulseRing(agentWorking, state, isOpen)}
+      <span
+        aria-hidden
+        className={pinBubbleClasses(agentWorking, state, isOpen)}
+        style={PIN_SHAPE}
+      >
+        {pinGlyph(agentWorking, state)}
+      </span>
+      {count > 1 ? (
+        <span
+          aria-hidden
+          className="pointer-events-none absolute -top-1 -right-1 flex h-3.5 min-w-3.5 items-center justify-center rounded-full border border-background bg-foreground px-1 font-semibold text-[8px] text-background leading-none shadow-sm"
+        >
+          {count}
+        </span>
+      ) : null}
+    </button>
+  );
+}
+
 /**
  * Comment marker anchored to DOM elements. Renders as a soft-elevated bubble
  * with a pointed corner aimed at the anchor; carries a pencil glyph (or a
@@ -52,6 +193,7 @@ function pinState(
  */
 export function CommentDot({
   anchor,
+  agentWorking = false,
   comments,
   openTarget,
   onOpen,
@@ -81,9 +223,6 @@ export function CommentDot({
 
   const state = pinState(comments, unresolvedRecent);
   const count = comments.length;
-  // Three rounded corners + one sharp (bottom-left) → a marker that points
-  // down-left at the element's top-right corner where the pin is anchored.
-  const pinShape = { borderRadius: "50% 50% 50% 3px" };
 
   return (
     <>
@@ -95,66 +234,20 @@ export function CommentDot({
         const isOpen =
           openTarget?.anchor === anchor && openTarget.instance === instance;
         return (
-          <button
-            aria-label={`${count} comment${count === 1 ? "" : "s"} by ${lead.author}`}
-            className={cn(
-              "pointer-events-auto fixed z-[9100] m-0 p-0 outline-none transition-transform duration-150 ease-out hover:scale-110 focus-visible:scale-110",
-              isOpen && "scale-110"
-            )}
+          <PinInstanceButton
+            agentWorking={agentWorking}
+            anchor={anchor}
+            author={lead.author}
+            count={count}
+            instance={instance}
+            isOpen={isOpen}
             key={`${anchor}-${instance}`}
-            onBlur={() => onHover(null)}
-            onClick={(e) => {
-              e.stopPropagation();
-              onOpen({ anchor, instance });
-            }}
-            onFocus={() => onHover({ anchor, instance })}
-            onMouseEnter={() => onHover({ anchor, instance })}
-            onMouseLeave={() => onHover(null)}
-            style={{
-              left: left - 3,
-              top: top - PIN_SIZE + 5,
-              width: PIN_SIZE,
-              height: PIN_SIZE,
-            }}
-            type="button"
-          >
-            {/* Pulse ring for recent threads — sits behind the bubble so the
-                expanding shadow never disturbs the bubble's own elevation. */}
-            {state === "recent" && !isOpen ? (
-              <span
-                aria-hidden
-                className="absolute inset-0 animate-pin-pulse"
-                style={pinShape}
-              />
-            ) : null}
-            <span
-              aria-hidden
-              className={cn(
-                "relative flex h-full w-full items-center justify-center font-semibold text-[10px] tabular-nums leading-none tracking-tight shadow-[0_1px_2px_rgba(0,0,0,0.16),0_2px_6px_-1px_rgba(0,0,0,0.22)] ring-1 transition-[box-shadow,outline] duration-150",
-                (state === "default" || state === "recent") &&
-                  "bg-foreground text-background ring-black/10",
-                state === "resolved" &&
-                  "bg-background text-muted-foreground ring-border",
-                isOpen &&
-                  "outline outline-2 outline-foreground outline-offset-2"
-              )}
-              style={pinShape}
-            >
-              {state === "resolved" ? (
-                <Check className="h-3 w-3" strokeWidth={2.75} />
-              ) : (
-                <Pencil className="h-2.5 w-2.5" strokeWidth={2.5} />
-              )}
-            </span>
-            {count > 1 ? (
-              <span
-                aria-hidden
-                className="pointer-events-none absolute -top-1 -right-1 flex h-3.5 min-w-3.5 items-center justify-center rounded-full border border-background bg-foreground px-1 font-semibold text-[8px] text-background leading-none shadow-sm"
-              >
-                {count}
-              </span>
-            ) : null}
-          </button>
+            left={left}
+            onHover={onHover}
+            onOpen={onOpen}
+            state={state}
+            top={top}
+          />
         );
       })}
     </>

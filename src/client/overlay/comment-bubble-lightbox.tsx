@@ -51,21 +51,29 @@ export function CommentBubbleLightbox({
 
   return createPortal(
     <dialog
-      aria-label="Comment screenshot"
+      aria-label="Version screenshot"
       className="redline-lightbox-backdrop"
       data-comment-overlay="true"
       ref={dialogRef}
     >
-      <img
-        alt="Comment screenshot"
-        className="redline-lightbox-image"
-        height={600}
-        src={src}
-        width={800}
+      <button
+        aria-label="Close screenshot"
+        className="redline-lightbox-scrim"
+        onClick={onClose}
+        type="button"
       />
+      <div className="redline-lightbox-image-wrap">
+        <img
+          alt="Version screenshot"
+          className="redline-lightbox-image"
+          height={600}
+          src={src}
+          width={800}
+        />
+      </div>
       <Button
         aria-label="Close screenshot"
-        className="absolute top-6 right-6"
+        className="redline-lightbox-close"
         onClick={onClose}
         size="icon"
         type="button"

@@ -31,6 +31,23 @@ export function withCtrl(key: string): string {
   return ctrlKey === "⌘" ? `⌘${key}` : `Ctrl+${key}`;
 }
 
+/** Format an Alt/Option combo (`⌥↑` on Mac, `Alt+↑` elsewhere). */
+export function withAlt(key: string): string {
+  const alt = detectAltKey();
+  return alt === "⌥" ? `⌥${key}` : `Alt+${key}`;
+}
+
+function detectAltKey(): string {
+  if (typeof navigator === "undefined") {
+    return "Alt";
+  }
+  const uaPlatform = (
+    navigator as unknown as { userAgentData?: { platform?: string } }
+  ).userAgentData?.platform;
+  const platform = (uaPlatform ?? navigator.platform ?? "").toLowerCase();
+  return platform.includes("mac") ? "⌥" : "Alt";
+}
+
 function detectCtrlKey(): string {
   if (typeof navigator === "undefined") {
     return "Ctrl";

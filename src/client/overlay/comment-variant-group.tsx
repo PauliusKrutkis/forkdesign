@@ -1,17 +1,15 @@
-import { Check, History, Sparkles, Trash2 } from "lucide-react";
+import { Check, Expand, Trash2 } from "lucide-react";
+import { type ReactNode, useState } from "react";
 import { Button } from "../ui/button.tsx";
 import { cn } from "../ui/cn.ts";
 import { DeleteConfirmOverlay } from "./delete-confirm-overlay.tsx";
 import { useDeleteConfirm } from "./hooks/use-delete-confirm.ts";
 import type { IterationVersion } from "./hooks/use-iterations.ts";
-import { formatDate } from "./lib/bubble-formatters.ts";
 import { formatVersionDisplay } from "./lib/version-format.ts";
 
-interface CommentVariantGroupProps {
+interface VariantGridProps {
   active: number;
-  createdAt?: string;
   deleting: boolean;
-  isBaseline: boolean;
   onActivate: (v: number) => void;
   onRemoveVersion: (v: number) => void | Promise<void>;
   onThumbClick: (src: string) => void;
@@ -19,72 +17,64 @@ interface CommentVariantGroupProps {
   versions: IterationVersion[];
 }
 
-function AgentAvatar({ baseline }: { baseline: boolean }) {
+function VariantThumbnail({ src }: { src: string }) {
+  const [ready, setReady] = useState(false);
+
   return (
-    <span
-      aria-hidden
-      className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border bg-muted text-muted-foreground"
-    >
-      {baseline ? (
-        <History className="h-3.5 w-3.5" />
-      ) : (
-        <Sparkles className="h-3.5 w-3.5" />
+    <>
+      {ready ? null : (
+        <div aria-hidden className="redline-shimmer absolute inset-0" />
       )}
-    </span>
+      {/* biome-ignore lint/a11y/noNoninteractiveElementInteractions: track decode for skeleton */}
+      <img
+        alt=""
+        className={cn(
+          "h-full w-full object-contain transition-opacity",
+          ready ? "opacity-100" : "opacity-0"
+        )}
+        height={80}
+        onLoad={() => setReady(true)}
+        ref={(el) => {
+          if (el?.complete && el.naturalWidth > 0) {
+            setReady(true);
+          }
+        }}
+        src={src}
+        width={320}
+      />
+    </>
   );
 }
 
 /**
- * One agent run rendered as a chat turn: a header line plus the versions it
- * produced as a grid of cards. The baseline (`v0`) is its own group so the
- * user can always see — and revert to — where they started.
+ * The variant cards produced by one agent run, as a 2-up grid. Rendered inside
+ * a turn (beneath the instruction that produced it), so it carries no avatar or
+ * heading of its own. Clicking a card makes that version live; the expand
+ * button opens the full screenshot; non-baseline versions can be deleted.
  */
-export function CommentVariantGroup({
+export function VariantGrid({
   versions,
-  isBaseline,
-  createdAt,
   active,
   switching,
   deleting,
   onActivate,
   onRemoveVersion,
   onThumbClick,
-}: CommentVariantGroupProps) {
-  const count = versions.length;
-  const heading = (() => {
-    if (isBaseline) {
-      return "Baseline";
-    }
-    return count > 1 ? `${count} variants` : "Fix";
-  })();
-
+}: VariantGridProps) {
   return (
-    <div className="flex gap-2.5">
-      <AgentAvatar baseline={isBaseline} />
-      <div className="min-w-0 flex-1">
-        <div className="flex items-baseline gap-2">
-          <span className="font-medium text-foreground text-xs">{heading}</span>
-          {createdAt ? (
-            <span className="font-mono text-[10px] text-muted-foreground tabular-nums">
-              {formatDate(createdAt)}
-            </span>
-          ) : null}
-        </div>
-        <div className="mt-2 grid grid-cols-2 gap-2">
-          {versions.map((version) => (
-            <VariantCard
-              active={active}
-              deleting={deleting}
-              key={version.v}
-              onActivate={onActivate}
-              onRemoveVersion={onRemoveVersion}
-              onThumbClick={onThumbClick}
-              switching={switching}
-              version={version}
-            />
-          ))}
-        </div>
-      </div>
+    <div className="grid grid-cols-2 gap-2">
+      {versions.map((version) => (
+        <VariantCard
+          active={active}
+          deleting={deleting}
+          key={version.v}
+          onActivate={onActivate}
+          onRemoveVersion={onRemoveVersion}
+          onThumbClick={onThumbClick}
+          switching={switching}
+          version={version}
+        />
+      ))}
     </div>
   );
 }
@@ -108,7 +98,7 @@ function VariantCard({
 }) {
   const isActive = version.v === active;
   const canDelete = version.v > 0;
-  const label = version.v === 0 ? "Baseline" : formatVersionDisplay(version.v);
+  const label = version.v === 0 ? "Original" : formatVersionDisplay(version.v);
 
   const {
     confirming,
@@ -122,6 +112,47 @@ function VariantCard({
     },
   });
 
+  const canActivate = !(isActive || switching || deleting || confirming);
+
+  const activate = () => {
+    if (!canActivate) {
+      return;
+    }
+    onActivate(version.v);
+  };
+
+  let footerTrailing: ReactNode = <span aria-hidden className="h-6 w-6" />;
+  if (isActive) {
+    footerTrailing = (
+      <span className="flex items-center gap-1 font-medium text-[10px] text-primary leading-none">
+        <Check aria-hidden className="h-3 w-3 shrink-0" />
+        Live
+      </span>
+    );
+  } else if (switching) {
+    footerTrailing = (
+      <span className="font-mono text-[10px] text-muted-foreground leading-none">
+        …
+      </span>
+    );
+  }
+
+  const cardBody = (
+    <>
+      <div className="relative h-20 w-full bg-muted">
+        <VariantThumbnail key={version.png} src={version.png} />
+      </div>
+      <div className="flex h-7 items-center justify-between gap-1 px-2">
+        <span className="truncate font-mono text-[10px] text-muted-foreground tabular-nums leading-none">
+          {label}
+        </span>
+        <div className="flex h-6 min-w-6 shrink-0 items-center justify-end">
+          {footerTrailing}
+        </div>
+      </div>
+    </>
+  );
+
   return (
     <div
       className={cn(
@@ -129,65 +160,52 @@ function VariantCard({
         isActive ? "border-primary ring-1 ring-primary" : "hover:border-ring/60"
       )}
     >
-      <button
-        aria-label="Show full screenshot"
-        className="block h-20 w-full bg-muted"
+      {canActivate ? (
+        <button
+          aria-label={`Use ${label}`}
+          className="block w-full cursor-pointer text-left"
+          onClick={activate}
+          type="button"
+        >
+          {cardBody}
+        </button>
+      ) : (
+        cardBody
+      )}
+      <Button
+        aria-label="View screenshot fullscreen"
+        className="absolute top-1 right-1 z-10 h-6 w-6 bg-background/90 text-muted-foreground opacity-0 shadow-sm backdrop-blur-sm transition-opacity hover:bg-background hover:text-foreground focus-visible:opacity-100 group-hover/card:opacity-100"
         onClick={() => onThumbClick(version.png)}
+        size="icon"
         type="button"
+        variant="secondary"
       >
-        <img
-          alt=""
-          className="h-full w-full object-contain"
-          height={80}
-          src={version.png}
-          width={320}
-        />
-      </button>
-      <div className="flex items-center justify-between gap-1 px-2 py-1.5">
-        <span className="truncate font-mono text-[10px] text-muted-foreground tabular-nums">
-          {label}
-        </span>
-        {isActive ? (
-          <span className="flex shrink-0 items-center gap-1 font-medium text-[10px] text-primary">
-            <Check aria-hidden className="h-3 w-3" />
-            Live
-          </span>
-        ) : (
-          <div className="flex shrink-0 items-center gap-0.5">
-            <Button
-              className="h-6 px-1.5 text-[11px]"
-              disabled={switching || deleting}
-              onClick={() => onActivate(version.v)}
-              size="sm"
-              type="button"
-              variant="outline"
-            >
-              {switching ? "…" : "Use"}
-            </Button>
-            {canDelete ? (
-              <Button
-                aria-label="Delete version"
-                className="h-6 w-6 text-muted-foreground opacity-0 transition-opacity hover:bg-destructive/10 hover:text-destructive focus-visible:opacity-100 group-hover/card:opacity-100"
-                disabled={deleting || deleteBusy}
-                onClick={requestDelete}
-                size="icon"
-                type="button"
-                variant="ghost"
-              >
-                <Trash2 aria-hidden className="h-3.5 w-3.5" />
-              </Button>
-            ) : null}
-          </div>
-        )}
-      </div>
+        <Expand aria-hidden className="h-3.5 w-3.5" />
+      </Button>
+      {canDelete && !isActive ? (
+        <Button
+          aria-label="Delete version"
+          className="absolute right-1 bottom-0.5 z-10 h-6 w-6 text-muted-foreground opacity-0 transition-opacity hover:bg-destructive/10 hover:text-destructive focus-visible:opacity-100 group-hover/card:opacity-100"
+          disabled={deleting || deleteBusy || confirming}
+          onClick={(e) => {
+            e.stopPropagation();
+            requestDelete();
+          }}
+          size="icon"
+          type="button"
+          variant="ghost"
+        >
+          <Trash2 aria-hidden className="h-3.5 w-3.5" />
+        </Button>
+      ) : null}
       {confirming ? (
-        <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-background/95 p-2 text-center">
-          <span className="font-medium text-foreground text-xs">
+        <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-2.5 bg-background/95 p-2.5 text-center backdrop-blur-[2px]">
+          <span className="font-medium font-mono text-[11px] text-foreground tracking-tight">
             Delete {label}?
           </span>
           <DeleteConfirmOverlay
             busy={deleteBusy}
-            layout="inline"
+            layout="compact"
             onCancel={cancelDelete}
             onConfirm={confirmDelete}
           />

@@ -1,7 +1,7 @@
 import { Badge } from "../ui/badge.tsx";
 import { cn } from "../ui/cn.ts";
 import { formatDate } from "./lib/bubble-formatters.ts";
-import { formatVersionDisplay } from "./lib/version-format.ts";
+import { formatReplyVersionContext } from "./lib/version-format.ts";
 
 /** One-line `author · date` metadata row. */
 export function CommentBubbleAttribution({
@@ -47,7 +47,7 @@ export function ReplyVersionBadge({ v }: { v?: number }) {
       className="h-5 shrink-0 px-1.5 font-normal text-[10px]"
       variant="outline"
     >
-      Re: {formatVersionDisplay(v)}
+      Re: {formatReplyVersionContext(v)}
     </Badge>
   );
 }

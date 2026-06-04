@@ -10,8 +10,10 @@ import { ignorePromiseRejection } from "./ignore-promise-rejection.ts";
  */
 export interface CommentBubbleKeydownContext {
   cancelDeleteConfirm: () => void;
+  cancelInlineEdit?: () => void;
   confirmDelete: () => Promise<void>;
   deleteConfirming: boolean;
+  editingEntryKey?: string | null;
   lead: CommentData;
   lightboxSrc: string | null;
   onClose: () => void;
@@ -39,6 +41,12 @@ function handleEscapeKey(
   }
   if (ctx.deleteConfirming) {
     ctx.cancelDeleteConfirm();
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    return true;
+  }
+  if (ctx.editingEntryKey) {
+    ctx.cancelInlineEdit?.();
     e.preventDefault();
     e.stopImmediatePropagation();
     return true;

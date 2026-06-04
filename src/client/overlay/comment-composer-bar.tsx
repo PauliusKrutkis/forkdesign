@@ -5,17 +5,20 @@ import {
   Loader2,
   MessageSquare,
   Sparkles,
+  Square,
 } from "lucide-react";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import {
   DEFAULT_FIX_VERSION_COUNT,
   MAX_FIX_VERSION_COUNT,
 } from "../../shared/fix-version-count.ts";
+import { OVERLAY_MODEL_OPTIONS, type OverlayModel } from "../settings.ts";
 import { cn } from "../ui/cn.ts";
 import { Textarea } from "../ui/textarea.tsx";
 import { HotkeyTip } from "./hotkey-tip.tsx";
 import { ignorePromiseRejection } from "./lib/ignore-promise-rejection.ts";
-import { withCtrl } from "./shortcut-hint.tsx";
+import { formatReplyVersionContext } from "./lib/version-format.ts";
+import { withAlt, withCtrl } from "./shortcut-hint.tsx";
 
 /**
  * Composer mode. `agent` is the default verb: the message is recorded as a
@@ -36,16 +39,21 @@ interface CommentComposerBarProps {
   /** A plain reply / comment is saving. */
   busy: boolean;
   error?: string | null;
+  fixModel: OverlayModel;
   fixVersionCount: number;
   /** A fix run is streaming. */
   iterating: boolean;
   mode: ComposerMode;
+  onCancelIterate?: () => void;
   onChange: (value: string) => void;
+  onFixModelChange: (model: OverlayModel) => void;
   onFixVersionCountChange: (count: number) => void;
   onModeChange: (mode: ComposerMode) => void;
   onSubmit: () => void | Promise<void>;
   /** Placeholder override; defaults adapt to the mode. */
   placeholder?: string;
+  /** Live iteration the next send will attach to; shown as a quiet corner hint. */
+  replyVersion?: number;
   textareaRef: React.RefObject<HTMLTextAreaElement | null>;
   value: string;
 }
@@ -158,11 +166,75 @@ const MODE_LABEL: Record<ComposerMode, string> = {
   comment: "Comment",
 };
 
+function ComposerTextarea({
+  isAgent,
+  iterating,
+  onChange,
+  onKeyDown,
+  placeholder,
+  replyVersionLabel,
+  textareaRef,
+  value,
+}: {
+  isAgent: boolean;
+  iterating: boolean;
+  onChange: (value: string) => void;
+  onKeyDown: (e: React.KeyboardEvent<HTMLTextAreaElement>) => void;
+  placeholder?: string;
+  replyVersionLabel: string | null;
+  textareaRef: React.RefObject<HTMLTextAreaElement | null>;
+  value: string;
+}) {
+  return (
+    <div className="relative">
+      {replyVersionLabel ? (
+        <span
+          aria-hidden
+          className="pointer-events-none absolute top-2.5 right-3 select-none font-mono text-[10px] text-muted-foreground/55 tabular-nums"
+          title={`Replying on ${replyVersionLabel}`}
+        >
+          on {replyVersionLabel}
+        </span>
+      ) : null}
+      <Textarea
+        aria-describedby={
+          replyVersionLabel ? "composer-reply-version" : undefined
+        }
+        aria-label={isAgent ? "Instruction for the agent" : "Comment"}
+        className={cn(
+          "max-h-[168px] min-h-[40px] resize-none border-0 bg-transparent px-3 py-2.5 text-sm leading-relaxed shadow-none focus-visible:ring-0",
+          replyVersionLabel && "pr-[4.75rem]"
+        )}
+        disabled={iterating}
+        onChange={(e) => {
+          onChange(e.target.value);
+          const ta = e.target;
+          ta.style.height = "auto";
+          ta.style.height = `${Math.min(ta.scrollHeight, TEXTAREA_MAX_HEIGHT)}px`;
+        }}
+        onKeyDown={onKeyDown}
+        placeholder={
+          placeholder ??
+          (isAgent ? "Tell the agent what to change…" : "Leave a comment…")
+        }
+        ref={textareaRef}
+        rows={1}
+        value={value}
+      />
+      {replyVersionLabel ? (
+        <span className="sr-only" id="composer-reply-version">
+          Replying on {replyVersionLabel}
+        </span>
+      ) : null}
+    </div>
+  );
+}
+
 /**
  * Persistent composer pinned to the bottom of the bubble (and reused by the
  * new-comment panel). Controls live inside the writing surface and stay
- * minimal: a mode dropdown, a variant-count dropdown (agent only), and a single
- * send arrow. Sends on Cmd/Ctrl+Enter; ⌘/ toggles mode; ⌘. cycles the count.
+ * minimal: mode, model, and variant-count dropdowns (agent only), plus send.
+ * Sends on Cmd/Ctrl+Enter; ⌘/ toggles mode; ⌥↑/↓ steps variant count.
  */
 export function CommentComposerBar({
   value,
@@ -170,17 +242,22 @@ export function CommentComposerBar({
   onSubmit,
   mode,
   onModeChange,
+  fixModel,
+  onFixModelChange,
   fixVersionCount,
   onFixVersionCountChange,
   iterating,
+  onCancelIterate,
   busy,
   error,
   textareaRef,
   placeholder,
+  replyVersion,
 }: CommentComposerBarProps) {
   const isAgent = mode === "agent";
   const submitDisabled = !value.trim() || iterating || busy;
-  const working = iterating || busy;
+  const replyVersionLabel =
+    replyVersion === undefined ? null : formatReplyVersionContext(replyVersion);
 
   useEffect(() => {
     const ta = textareaRef.current;
@@ -198,15 +275,31 @@ export function CommentComposerBar({
     Promise.resolve(onSubmit()).catch(ignorePromiseRejection);
   };
 
-  const cycleCount = () => {
+  const stepVersionCount = (delta: number) => {
     const idx = FIX_VARIANT_OPTIONS.indexOf(fixVersionCount);
-    const next =
-      FIX_VARIANT_OPTIONS[(idx + 1) % FIX_VARIANT_OPTIONS.length] ??
-      DEFAULT_FIX_VERSION_COUNT;
-    onFixVersionCountChange(next);
+    const baseIdx = idx >= 0 ? idx : 0;
+    const nextIdx = Math.max(
+      0,
+      Math.min(FIX_VARIANT_OPTIONS.length - 1, baseIdx + delta)
+    );
+    onFixVersionCountChange(
+      FIX_VARIANT_OPTIONS[nextIdx] ?? DEFAULT_FIX_VERSION_COUNT
+    );
   };
 
   const onKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (
+      isAgent &&
+      e.altKey &&
+      !e.metaKey &&
+      !e.ctrlKey &&
+      (e.key === "ArrowUp" || e.key === "ArrowDown")
+    ) {
+      e.preventDefault();
+      stepVersionCount(e.key === "ArrowUp" ? 1 : -1);
+      return;
+    }
+
     const mod = e.metaKey || e.ctrlKey;
     if (!mod) {
       return;
@@ -219,11 +312,6 @@ export function CommentComposerBar({
     if (e.key === "/") {
       e.preventDefault();
       onModeChange(isAgent ? "comment" : "agent");
-      return;
-    }
-    if (e.key === "." && isAgent) {
-      e.preventDefault();
-      cycleCount();
     }
   };
 
@@ -235,23 +323,14 @@ export function CommentComposerBar({
         </p>
       ) : null}
       <div className="rounded-lg border bg-background focus-within:ring-2 focus-within:ring-ring">
-        <Textarea
-          aria-label={isAgent ? "Instruction for the agent" : "Comment"}
-          className="max-h-[168px] min-h-[40px] resize-none border-0 bg-transparent px-3 py-2.5 text-sm leading-relaxed shadow-none focus-visible:ring-0"
-          disabled={iterating}
-          onChange={(e) => {
-            onChange(e.target.value);
-            const ta = e.target;
-            ta.style.height = "auto";
-            ta.style.height = `${Math.min(ta.scrollHeight, TEXTAREA_MAX_HEIGHT)}px`;
-          }}
+        <ComposerTextarea
+          isAgent={isAgent}
+          iterating={iterating}
+          onChange={onChange}
           onKeyDown={onKeyDown}
-          placeholder={
-            placeholder ??
-            (isAgent ? "Tell the agent what to change…" : "Leave a comment…")
-          }
-          ref={textareaRef}
-          rows={1}
+          placeholder={placeholder}
+          replyVersionLabel={replyVersionLabel}
+          textareaRef={textareaRef}
           value={value}
         />
         <div className="flex items-center gap-0.5 px-1.5 pb-1.5">
@@ -273,47 +352,78 @@ export function CommentComposerBar({
             value={mode}
           />
           {isAgent ? (
-            <ComposerSelect
-              disabled={iterating}
-              onChange={onFixVersionCountChange}
-              options={FIX_VARIANT_OPTIONS.map((n) => ({
-                value: n,
-                label: `${n} variants`,
-              }))}
-              tipKeys={withCtrl(".")}
-              tipLabel="Variants to generate"
-              trigger={
-                <span className="font-mono tabular-nums">
-                  {fixVersionCount}
-                </span>
-              }
-              value={fixVersionCount}
-            />
+            <>
+              <ComposerSelect
+                disabled={iterating}
+                onChange={onFixModelChange}
+                options={OVERLAY_MODEL_OPTIONS.map((opt) => ({
+                  value: opt.value,
+                  label: opt.label,
+                }))}
+                tipLabel="Agent model"
+                trigger={
+                  <span className="max-w-[5.5rem] truncate font-mono text-[11px]">
+                    {OVERLAY_MODEL_OPTIONS.find((o) => o.value === fixModel)
+                      ?.shortLabel ?? fixModel}
+                  </span>
+                }
+                value={fixModel}
+              />
+              <ComposerSelect
+                disabled={iterating}
+                onChange={onFixVersionCountChange}
+                options={FIX_VARIANT_OPTIONS.map((n) => ({
+                  value: n,
+                  label: `${n} variants`,
+                }))}
+                tipKeys={`${withAlt("↑")} ${withAlt("↓")}`}
+                tipLabel="Variants to generate"
+                trigger={
+                  <span className="font-mono tabular-nums">
+                    {fixVersionCount}
+                  </span>
+                }
+                value={fixVersionCount}
+              />
+            </>
           ) : null}
           <div className="flex-1" />
-          <HotkeyTip
-            keys={withCtrl("⏎")}
-            label={isAgent ? "Run agent" : "Send"}
-          >
-            <button
-              aria-label={isAgent ? "Run agent" : "Send comment"}
-              className={cn(
-                "flex h-7 w-7 items-center justify-center rounded-md transition-colors",
-                submitDisabled
-                  ? "bg-muted text-muted-foreground"
-                  : "bg-primary text-primary-foreground hover:bg-primary/90"
-              )}
-              disabled={submitDisabled}
-              onClick={submit}
-              type="button"
+          {iterating && onCancelIterate ? (
+            <HotkeyTip label="Cancel agent">
+              <button
+                aria-label="Cancel agent"
+                className="flex h-7 w-7 items-center justify-center rounded-md bg-muted text-foreground transition-colors hover:bg-muted/80"
+                onClick={onCancelIterate}
+                type="button"
+              >
+                <Square aria-hidden className="h-3.5 w-3.5 fill-current" />
+              </button>
+            </HotkeyTip>
+          ) : (
+            <HotkeyTip
+              keys={withCtrl("⏎")}
+              label={isAgent ? "Run agent" : "Send"}
             >
-              {working ? (
-                <Loader2 aria-hidden className="h-4 w-4 animate-spin" />
-              ) : (
-                <ArrowUp aria-hidden className="h-4 w-4" />
-              )}
-            </button>
-          </HotkeyTip>
+              <button
+                aria-label={isAgent ? "Run agent" : "Send comment"}
+                className={cn(
+                  "flex h-7 w-7 items-center justify-center rounded-md transition-colors",
+                  submitDisabled
+                    ? "bg-muted text-muted-foreground"
+                    : "bg-primary text-primary-foreground hover:bg-primary/90"
+                )}
+                disabled={submitDisabled}
+                onClick={submit}
+                type="button"
+              >
+                {busy ? (
+                  <Loader2 aria-hidden className="h-4 w-4 animate-spin" />
+                ) : (
+                  <ArrowUp aria-hidden className="h-4 w-4" />
+                )}
+              </button>
+            </HotkeyTip>
+          )}
         </div>
       </div>
     </div>

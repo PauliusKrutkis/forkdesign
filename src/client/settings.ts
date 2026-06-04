@@ -22,6 +22,36 @@ export const OVERLAY_FIX_MODELS = [
 
 export type OverlayModel = (typeof OVERLAY_FIX_MODELS)[number];
 
+/** Labels for settings UI and the inline composer model picker. */
+export const OVERLAY_MODEL_OPTIONS: ReadonlyArray<{
+  value: OverlayModel;
+  /** Full name in the settings panel dropdown. */
+  label: string;
+  /** Compact label in the composer toolbar. */
+  shortLabel: string;
+}> = [
+  {
+    value: "composer-2.5-fast",
+    label: "composer-2.5-fast (Cursor CLI)",
+    shortLabel: "2.5 fast",
+  },
+  {
+    value: "composer-2.5",
+    label: "composer-2.5 (Cursor CLI)",
+    shortLabel: "2.5",
+  },
+  {
+    value: "claude-sonnet-4-6",
+    label: "claude-sonnet-4-6",
+    shortLabel: "sonnet 4.6",
+  },
+  {
+    value: "claude-opus-4-7",
+    label: "claude-opus-4-7",
+    shortLabel: "opus 4.7",
+  },
+];
+
 const VALID_OVERLAY_MODELS: ReadonlySet<FixModel> = new Set(OVERLAY_FIX_MODELS);
 
 export interface OverlaySettings {

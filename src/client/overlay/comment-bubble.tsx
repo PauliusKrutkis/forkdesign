@@ -20,6 +20,7 @@ import { handleCommentBubbleKeydown } from "./lib/comment-bubble-keydown.ts";
 import { toErrorMessage } from "./lib/errors.ts";
 import { ignorePromiseRejection } from "./lib/ignore-promise-rejection.ts";
 import { dotRect, placeFloater } from "./lib/placement.ts";
+import type { TranscriptEditSubmit } from "./transcript-entry-composer.tsx";
 
 interface CommentBubbleProps {
   /**
@@ -30,15 +31,17 @@ interface CommentBubbleProps {
   autoFixCount?: number | null;
   comments: CommentData[];
   fixModel?: OverlayModel;
+  /** Drives pin loading while the agent iterates (cleared when the run ends). */
+  onAgentWorkingChange?: (anchor: string | null) => void;
   onAutoFixStarted?: () => void;
   onClose: () => void;
   onDelete?: (
     id: string,
     options?: { revertBaseline?: boolean }
   ) => Promise<void>;
-  onDeleteReply?: (id: string, replyIndex: number) => Promise<void>;
   onEdit?: (id: string, text: string) => Promise<void>;
   onEditReply?: (id: string, replyIndex: number, text: string) => Promise<void>;
+  onFixModelChange: (model: OverlayModel) => void;
   onResolve?: (id: string) => void;
   onSubmitReply?: (id: string, text: string, v?: number) => Promise<void>;
   rect: DOMRect;
@@ -61,21 +64,23 @@ export function CommentBubble({
   comments,
   rect,
   fixModel = "composer-2.5-fast",
+  onFixModelChange,
   skipDeleteConfirmation = false,
   autoFixCount = null,
   onAutoFixStarted,
+  onAgentWorkingChange,
   onClose,
   onResolve,
   onDelete,
   onEdit,
   onSubmitReply,
   onEditReply,
-  onDeleteReply,
 }: CommentBubbleProps) {
   const lead = comments[0];
   const commentId = lead?.id ?? "";
   const {
     data: iterations,
+    loading: iterationsLoading,
     switching: versionSwitching,
     deleting: versionDeleting,
     deleteError: versionDeleteError,
@@ -103,9 +108,11 @@ export function CommentBubble({
   );
   const [replyBusy, setReplyBusy] = useState(false);
   const [composerError, setComposerError] = useState<string | null>(null);
+  const [editingEntryKey, setEditingEntryKey] = useState<string | null>(null);
   const viewport = useViewport();
 
   const activeVersion = iterations?.active ?? lead?.active ?? 0;
+  const hasAgentHistory = (iterations?.versions ?? []).some((v) => v.v > 0);
 
   const {
     iterating,
@@ -114,7 +121,14 @@ export function CommentBubble({
     iterateStartedAt,
     iterateNow,
     handleIterate,
-  } = useIterateFix({ lead, fixModel, fixVersionCount, reloadIterations });
+    handleCancelIterate,
+  } = useIterateFix({
+    lead,
+    fixModel,
+    fixVersionCount,
+    reloadIterations,
+    onAgentWorkingChange,
+  });
 
   const {
     deleteConfirming,
@@ -164,6 +178,37 @@ export function CommentBubble({
     obs.observe(el);
     return () => obs.disconnect();
   }, []);
+
+  const persistTranscriptEdit = useCallback(
+    async (
+      payload: TranscriptEditSubmit,
+      persist: (text: string) => Promise<void>
+    ) => {
+      const trimmed = payload.text.trim();
+      if (!trimmed || iterating || replyBusy) {
+        return;
+      }
+      setComposerError(null);
+      setReplyBusy(true);
+      try {
+        await persist(trimmed);
+      } catch (err) {
+        setComposerError(toErrorMessage(err));
+        throw err;
+      } finally {
+        setReplyBusy(false);
+      }
+      if (payload.runAgent) {
+        setFixVersionCount(payload.versionCount);
+        onFixModelChange(payload.model);
+        await handleIterate({
+          fixVersionCount: payload.versionCount,
+          fixModel: payload.model,
+        });
+      }
+    },
+    [iterating, replyBusy, handleIterate, onFixModelChange]
+  );
 
   const submit = useCallback(async () => {
     const text = draft.trim();
@@ -217,6 +262,8 @@ export function CommentBubble({
     const onKey = (e: KeyboardEvent) => {
       handleCommentBubbleKeydown(e, {
         cancelDeleteConfirm,
+        cancelInlineEdit: () => setEditingEntryKey(null),
+        editingEntryKey,
         confirmDelete,
         deleteConfirming,
         lead,
@@ -240,6 +287,7 @@ export function CommentBubble({
     confirmDelete,
     cancelDeleteConfirm,
     requestDelete,
+    editingEntryKey,
   ]);
 
   const maxBubbleHeight = viewport.height - 2 * VIEWPORT_PADDING;
@@ -301,20 +349,24 @@ export function CommentBubble({
       />
 
       {deleteConfirming ? (
-        <div className="shrink-0 border-b bg-muted/40 px-3.5 py-3">
+        <div className="shrink-0 border-b px-2 py-2">
           <DeleteConfirmOverlay
             activeVersion={activeVersion}
             busy={deleteBusy}
-            label="Delete this comment?"
+            label="Delete this thread?"
             layout="inline"
             onCancel={cancelDeleteConfirm}
             onConfirm={confirmDelete}
             onRevertBaselineChange={setRevertBaseline}
             revertBaseline={revertBaseline}
+            showKeyboardHints
             showRevertOption={showRevertOption}
           />
           {deleteError ? (
-            <p className="m-0 mt-2 text-destructive text-xs" role="alert">
+            <p
+              className="m-0 mt-1.5 px-0.5 text-destructive text-xs"
+              role="alert"
+            >
               {deleteError}
             </p>
           ) : null}
@@ -323,40 +375,66 @@ export function CommentBubble({
 
       <CommentTranscript
         activeVersion={activeVersion}
+        editingEntryKey={editingEntryKey}
+        fixModel={fixModel}
         fixVersionCount={fixVersionCount}
+        hasAgentHistory={hasAgentHistory}
         iterateNow={iterateNow}
         iterateStartedAt={iterateStartedAt}
         iterateStatus={iterateStatus}
         iterating={iterating}
         iterations={iterations}
+        iterationsLoading={iterationsLoading}
         lead={lead}
         onActivateVersion={activateVersion}
-        onDeleteReply={onDeleteReply}
-        onEditComment={onEdit}
-        onEditReply={onEditReply}
+        onEditComment={
+          onEdit
+            ? (payload) =>
+                persistTranscriptEdit(payload, (text) => onEdit(lead.id, text))
+            : undefined
+        }
+        onEditingEntryKeyChange={setEditingEntryKey}
+        onEditReply={
+          onEditReply
+            ? (id, replyIndex, payload) =>
+                persistTranscriptEdit(payload, (text) =>
+                  onEditReply(id, replyIndex, text)
+                )
+            : undefined
+        }
+        onFixModelChange={onFixModelChange}
         onRemoveVersion={removeIterationVersion}
+        onResetInlineFlows={() => {
+          setEditingEntryKey(null);
+          cancelDeleteConfirm();
+        }}
         onThumbClick={setLightboxSrc}
-        skipDeleteConfirmation={skipDeleteConfirmation}
         versionDeleteError={versionDeleteError}
         versionDeleting={versionDeleting}
         versionSwitching={versionSwitching}
       />
 
-      <CommentComposerBar
-        busy={replyBusy}
-        error={composerError ?? iterateError}
-        fixVersionCount={fixVersionCount}
-        iterating={iterating}
-        mode={mode}
-        onChange={setDraft}
-        onFixVersionCountChange={setFixVersionCount}
-        onModeChange={setMode}
-        onSubmit={() => {
-          submit().catch(ignorePromiseRejection);
-        }}
-        textareaRef={textareaRef}
-        value={draft}
-      />
+      {editingEntryKey === null ? (
+        <CommentComposerBar
+          busy={replyBusy}
+          error={composerError ?? iterateError}
+          fixModel={fixModel}
+          fixVersionCount={fixVersionCount}
+          iterating={iterating}
+          mode={mode}
+          onCancelIterate={handleCancelIterate}
+          onChange={setDraft}
+          onFixModelChange={onFixModelChange}
+          onFixVersionCountChange={setFixVersionCount}
+          onModeChange={setMode}
+          onSubmit={() => {
+            submit().catch(ignorePromiseRejection);
+          }}
+          replyVersion={hasAgentHistory ? activeVersion : undefined}
+          textareaRef={textareaRef}
+          value={draft}
+        />
+      ) : null}
 
       {lightboxSrc ? (
         <CommentBubbleLightbox
