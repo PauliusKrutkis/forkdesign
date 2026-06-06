@@ -34,44 +34,23 @@ Override the chain with `comments({ fixModelPriority: [...] })`. The `done` even
 
 ```ts
 // vite.config.ts
-import { fileURLToPath } from "node:url";
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
-import { comments, sourceLoc } from "redline/plugin";
-
-const projectRoot = fileURLToPath(new URL(".", import.meta.url));
+import { redline } from "redline/plugin";
 
 export default defineConfig({
-  plugins: [
-    sourceLoc({ projectRoot }),
-    react(),
-    comments(),
-  ],
+  plugins: [redline(), react()],
 });
 ```
 
-```tsx
-// App.tsx
-import { CommentOverlay } from "redline";
-import "redline/styles.css";
+`redline()` is dev-only. It stamps JSX source locations, installs the comment/iteration API middleware, imports `redline/styles.css`, and mounts the overlay automatically.
 
-export function App() {
-  return (
-    <>
-      <YourPlayground />
-      {import.meta.env.DEV && <CommentOverlay />}
-    </>
-  );
-}
-```
-
-Import `redline/styles.css` for overlay theme tokens (`--background`, `--primary`, …). Scan redline so utility classes (`bg-background`, `text-primary`, …) are emitted.
+Scan redline so utility classes (`bg-background`, `text-primary`, …) are emitted.
 
 **Tailwind v4** — add `@source` for redline dist (or linked `src`):
 
 ```css
 @import "tailwindcss";
-@import "redline/styles.css";
 @source "../node_modules/redline/dist/**/*.{js,mjs}";
 ```
 
@@ -85,13 +64,6 @@ export default {
   presets: [redlinePreset],
   content: ["./index.html", "./src/**/*.{js,ts,jsx,tsx}", ...tailwindContent],
 };
-```
-
-```css
-@import "redline/styles.css";
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
 ```
 
 **Linked local dev (`pnpm link:../redline`)** — resolve the built package (default), not raw `source` exports. The published `dist` bundles Radix/lucide so Vite does not pull a second copy of React from `redline/node_modules` (that mismatch blanks the page in Firefox/Zen). Run `pnpm dev` in the redline checkout for overlay HMR, then refresh the host app. If you still see “Invalid hook call”, add `resolve.dedupe: ["react", "react-dom"]` in the host `vite.config.ts` and use `http://127.0.0.1:5173` instead of `localhost` in Zen.
@@ -132,19 +104,42 @@ Comment markers in source look like:
 ## Plugin options
 
 ```ts
-comments({
+redline({
   // Skip comment read/write under these project-relative prefixes:
   excludeSrcPrefixes: ["src/dev/"],
   // Optional: path to Cursor CLI when `agent` is not on PATH
   cursorAgentPath: "/usr/local/bin/agent",
   // Optional: override Fix fallback order (preferred model still goes first)
   fixModelPriority: ["composer-2.5-fast", "composer-2.5", "claude-sonnet-4-6", "default"],
+  // Optional: prompt skills for fix runs (defaults to frontend design guidance)
+  fixSkills: ["frontend-design"], // pass [] to disable
 });
+```
 
-sourceLoc({
-  projectRoot,
-  excludeSrcPrefixes: ["src/dev/"],
+Use the lower-level plugins when you want to mount the overlay yourself:
+
+```ts
+// vite.config.ts
+import { comments, sourceLoc } from "redline/plugin";
+
+export default defineConfig({
+  plugins: [sourceLoc(), react(), comments()],
 });
+```
+
+```tsx
+// App.tsx
+import { CommentOverlay } from "redline";
+import "redline/styles.css";
+
+export function App() {
+  return (
+    <>
+      <YourPlayground />
+      {import.meta.env.DEV && <CommentOverlay />}
+    </>
+  );
+}
 ```
 
 ## Comment overlay options

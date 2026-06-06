@@ -128,6 +128,7 @@ describe("runNewIteration multi-variant", () => {
       id: commentId,
       model: "composer-2.5-fast",
       count: 2,
+      skills: [],
       stream,
     });
 
@@ -189,6 +190,7 @@ describe("runNewIteration multi-variant", () => {
       id: commentId,
       model: "composer-2.5-fast",
       count: 2,
+      skills: [],
       stream,
     });
 
@@ -211,6 +213,7 @@ describe("runNewIteration multi-variant", () => {
       id: commentId,
       model: "composer-2.5-fast",
       count: 2,
+      skills: [],
       stream,
     });
 

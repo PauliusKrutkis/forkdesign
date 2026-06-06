@@ -1,5 +1,6 @@
 import type { FixModel } from "./models.ts";
 import type { PromptReply } from "./prompt.ts";
+import type { FixSkill } from "./skills.ts";
 
 /**
  * A scoped projection of agent activity for downstream progress UI.
@@ -22,6 +23,7 @@ export interface FixRunInput {
   replies?: PromptReply[];
   screenshot?: string;
   signal?: AbortSignal;
+  skills?: FixSkill[];
   text: string;
   variantCount?: number;
   variantIndex?: number;
@@ -66,4 +68,9 @@ export interface FixRuntimeConfig {
   cursorAgentPath?: string;
   /** Override the default Fix model fallback order. */
   fixModelPriority?: FixModel[];
+  /**
+   * Skill guidance injected into generated fix prompts by default.
+   * Use an empty array to disable default skill guidance.
+   */
+  fixSkills?: FixSkill[];
 }

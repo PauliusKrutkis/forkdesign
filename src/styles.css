@@ -137,13 +137,90 @@
   animation: redline-shimmer 1.3s ease-in-out infinite;
 }
 
+/* Bubble entrance — a quiet lift as the thread opens. */
+@keyframes redline-bubble-in {
+  from {
+    opacity: 0;
+    transform: scale(0.97) translateY(3px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+/* No fill-forwards: once the entrance ends, opacity/transform revert to the
+   element's own inline styles so the peek fade can take over. */
+.animate-redline-bubble-in {
+  animation: redline-bubble-in 0.17s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* Leader line — drawn from a detached (dragged/docked) or peeked bubble back
+   to its anchor dot, so the spatial link survives even when the pointer arrow
+   can't. A slow marching-ants dash keeps it legible without shouting. */
+@keyframes redline-leader-dash {
+  to {
+    stroke-dashoffset: -64;
+  }
+}
+
+.redline-leader-line {
+  opacity: 0.4;
+  fill: none;
+  stroke: var(--foreground);
+  stroke-width: 1;
+  stroke-dasharray: 2 5;
+  animation: redline-leader-dash 9s linear infinite;
+}
+
+.redline-leader-dot {
+  opacity: 0.55;
+  fill: var(--foreground);
+}
+
+/* Ring over the anchored element while the bubble is detached/peeking — the
+   "which element is this about" cue that replaces adjacency. An overlay box,
+   never a mutation of the host node. */
+@keyframes redline-ring-in {
+  from {
+    opacity: 0;
+    transform: scale(1.04);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.redline-anchor-ring {
+  outline: 1.5px solid var(--foreground);
+  outline-offset: 2px;
+  border-radius: 6px;
+  box-shadow: 0 0 0 3px color-mix(in oklch, var(--foreground) 6%, transparent);
+  animation: redline-ring-in 0.18s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+/* Collapsed-history expander chevron. */
+.redline-chevron {
+  transition: transform 0.2s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.redline-chevron-open {
+  transform: rotate(180deg);
+}
+
 @media (prefers-reduced-motion: reduce) {
   .animate-pin-pulse,
   .animate-pin-agent-ping,
   .animate-dock-in,
   .animate-dock-row-in,
   .animate-tooltip-in,
+  .animate-redline-bubble-in,
+  .redline-leader-line,
+  .redline-anchor-ring,
+  .redline-chevron,
   .redline-shimmer {
+    transition: none;
     animation: none;
   }
 }

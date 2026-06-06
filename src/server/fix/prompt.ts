@@ -1,4 +1,5 @@
 import path from "node:path";
+import { buildFixSkillPromptSection, type FixSkill } from "./skills.ts";
 
 const EXPLICIT_TEXT_COLOR_RE =
   /\btext-(red|blue|green|yellow|orange|purple|pink|gray|grey|black|white|primary|foreground|muted)\b/;
@@ -39,6 +40,7 @@ export interface PromptInput {
   projectRoot: string;
   replies?: PromptReply[];
   screenshot?: string;
+  skills?: FixSkill[];
   text: string;
   variantCount?: number;
   variantIndex?: number;
@@ -178,6 +180,11 @@ export function buildIteratePrompt(input: PromptInput): string {
       "## View context",
       `The element is inside the \`data-view="${input.view}"\` region.`
     );
+  }
+
+  const skillSection = buildFixSkillPromptSection(input.skills ?? []);
+  if (skillSection.length > 0) {
+    parts.push("", ...skillSection);
   }
 
   const activeVersion = input.activeVersion ?? 0;

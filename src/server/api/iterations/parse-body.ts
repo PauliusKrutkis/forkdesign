@@ -3,6 +3,7 @@ import {
   MAX_FIX_VERSION_COUNT,
 } from "../../../shared/fix-version-count.ts";
 import { type FixModel, parseFixModel } from "../../fix/models.ts";
+import { type FixSkill, parseFixSkill } from "../../fix/skills.ts";
 import {
   type ParseResult,
   requireInt,
@@ -25,6 +26,27 @@ export interface NewIterationBody {
   count: number;
   id: string;
   model?: FixModel;
+  skills?: FixSkill[];
+}
+
+function parseFixSkills(value: unknown): ParseResult<FixSkill[]> {
+  if (!Array.isArray(value)) {
+    return { ok: false, reason: "field `skills` must be an array" };
+  }
+  const skills: FixSkill[] = [];
+  for (const item of value) {
+    if (typeof item !== "string") {
+      return { ok: false, reason: "field `skills` entries must be strings" };
+    }
+    const skill = parseFixSkill(item);
+    if (!skill) {
+      return { ok: false, reason: `unknown fix skill: ${item}` };
+    }
+    if (!skills.includes(skill)) {
+      skills.push(skill);
+    }
+  }
+  return { ok: true, value: skills };
 }
 
 function parseIdVersionBody(
@@ -122,16 +144,27 @@ export function parseNewIterationBody(
     count = parsedCount.value;
   }
 
+  const body: NewIterationBody = { id: id.value, count };
+
   const modelRaw = obj.model;
-  if (modelRaw === undefined) {
-    return { ok: true, value: { id: id.value, count } };
+  if (modelRaw !== undefined) {
+    if (typeof modelRaw !== "string") {
+      return { ok: false, reason: "field `model` must be a string" };
+    }
+    const model = parseFixModel(modelRaw);
+    if (!model) {
+      return { ok: false, reason: `unknown fix model: ${modelRaw}` };
+    }
+    body.model = model;
   }
-  if (typeof modelRaw !== "string") {
-    return { ok: false, reason: "field `model` must be a string" };
+
+  if (obj.skills !== undefined) {
+    const skills = parseFixSkills(obj.skills);
+    if (!skills.ok) {
+      return skills;
+    }
+    body.skills = skills.value;
   }
-  const model = parseFixModel(modelRaw);
-  if (!model) {
-    return { ok: false, reason: `unknown fix model: ${modelRaw}` };
-  }
-  return { ok: true, value: { id: id.value, count, model } };
+
+  return { ok: true, value: body };
 }

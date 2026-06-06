@@ -94,6 +94,25 @@ describe("parseNewIterationBody", () => {
     const parsed = parseNewIterationBody({ id: "abc", model: "unknown" });
     expect(parsed.ok).toBe(false);
   });
+
+  it("accepts supported skills and removes duplicates", () => {
+    expect(
+      parseNewIterationBody({
+        id: "abc",
+        skills: ["frontend-design", "frontend-design"],
+      })
+    ).toEqual({
+      ok: true,
+      value: { id: "abc", count: 1, skills: ["frontend-design"] },
+    });
+  });
+
+  it("rejects unsupported skills", () => {
+    expect(parseNewIterationBody({ id: "abc", skills: ["unknown"] })).toEqual({
+      ok: false,
+      reason: "unknown fix skill: unknown",
+    });
+  });
 });
 
 describe("parseScreenshotBody", () => {

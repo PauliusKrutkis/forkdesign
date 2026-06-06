@@ -1,12 +1,12 @@
 import type { CommentData } from "../../types.ts";
-import { isInTextInput } from "./hotkeys.ts";
 import { ignorePromiseRejection } from "./ignore-promise-rejection.ts";
 
 /**
  * Hotkeys for the open bubble. With an always-focused composer, plain
  * single-key shortcuts are gone — only Escape and Cmd/Ctrl combos remain, so
  * they coexist with typing. Edit/delete of individual entries are hover
- * actions; sending is the composer's own Cmd/Ctrl+Enter.
+ * actions; sending is the composer's own Cmd/Ctrl+Enter. Delete confirmation
+ * uses Cmd/Ctrl+Backspace so the composer can keep focus.
  */
 export interface CommentBubbleKeydownContext {
   cancelDeleteConfirm: () => void;
@@ -65,13 +65,6 @@ function handleDeleteConfirmKeys(
   }
   const mod = e.metaKey || e.ctrlKey;
   if (mod && e.key === "Backspace") {
-    e.preventDefault();
-    ctx.confirmDelete().catch(ignorePromiseRejection);
-    return true;
-  }
-  // Plain Enter confirms only when the user isn't typing in the composer.
-  const plain = !(e.metaKey || e.ctrlKey || e.altKey || e.shiftKey);
-  if (plain && e.key === "Enter" && !isInTextInput(document.activeElement)) {
     e.preventDefault();
     ctx.confirmDelete().catch(ignorePromiseRejection);
     return true;

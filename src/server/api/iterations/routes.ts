@@ -1,6 +1,8 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import path from "node:path";
+import { getFixRuntimeConfig } from "../../fix/config.ts";
 import { DEFAULT_FIX_MODEL_PRIORITY, type FixModel } from "../../fix/models.ts";
+import { DEFAULT_FIX_SKILLS } from "../../fix/skills.ts";
 import { applyIterationVersionToSource } from "../../iterations/activate-version.ts";
 import { resolveCommentIterationContext } from "../../iterations/context.ts";
 import {
@@ -279,6 +281,8 @@ export async function handleIterationsNew(
   }
   const { id, count, model: requestedModel } = parsed.value;
   const model: FixModel = requestedModel ?? DEFAULT_FIX_MODEL_PRIORITY[0];
+  const skills = parsed.value.skills ??
+    getFixRuntimeConfig().fixSkills ?? [...DEFAULT_FIX_SKILLS];
 
   const ctx = await resolveCommentIterationContext(
     projectRoot,
@@ -299,6 +303,7 @@ export async function handleIterationsNew(
     count,
     model,
     stream,
+    skills,
   });
 }
 

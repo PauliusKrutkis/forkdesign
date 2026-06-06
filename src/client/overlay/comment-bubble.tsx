@@ -1,8 +1,9 @@
-import type { PointerEvent } from "react";
+import type { CSSProperties, PointerEvent } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { DEFAULT_FIX_VERSION_COUNT } from "../../shared/fix-version-count.ts";
 import type { OverlayModel } from "../settings.ts";
 import type { CommentData } from "../types.ts";
+import { cn } from "../ui/cn.ts";
 import { CommentBubbleHeader } from "./comment-bubble-header.tsx";
 import { CommentBubbleLightbox } from "./comment-bubble-lightbox.tsx";
 import { CommentBubblePointer } from "./comment-bubble-pointer.tsx";
@@ -13,6 +14,7 @@ import {
 import { CommentTranscript } from "./comment-transcript.tsx";
 import { DeleteConfirmOverlay } from "./delete-confirm-overlay.tsx";
 import { useBubbleLeadActions } from "./hooks/use-bubble-lead-actions.ts";
+import { useBubblePosture } from "./hooks/use-bubble-posture.ts";
 import { useIterateFix } from "./hooks/use-iterate-fix.ts";
 import { useIterations } from "./hooks/use-iterations.ts";
 import { useViewport } from "./hooks/use-viewport.ts";
@@ -53,6 +55,38 @@ const BUBBLE_HEADER_HEIGHT = 34;
 const VIEWPORT_PADDING = 12;
 /** Conservative estimate for first render; updated by ResizeObserver. */
 const INITIAL_BUBBLE_HEIGHT = 320;
+/** Smooth dock/undock/peek; suppressed mid-gesture via the `dragging` flag. */
+const PANEL_TRANSITION =
+  "left 0.3s cubic-bezier(0.65,0,0.1,1), top 0.3s cubic-bezier(0.65,0,0.1,1), width 0.3s cubic-bezier(0.65,0,0.1,1), height 0.3s cubic-bezier(0.65,0,0.1,1), opacity 0.18s ease, border-radius 0.3s";
+
+interface Box {
+  height: number;
+  left: number;
+  top: number;
+  width: number;
+}
+
+function panelStyle(args: {
+  box: Box;
+  docked: boolean;
+  dockedRadius: string | undefined;
+  dragging: boolean;
+  maxFloatHeight: number;
+  peeking: boolean;
+}): CSSProperties {
+  return {
+    left: args.box.left,
+    top: args.box.top,
+    width: args.box.width,
+    height: args.docked ? args.box.height : undefined,
+    maxHeight: args.docked ? undefined : args.maxFloatHeight,
+    // Peek fades the panel so the design shows through — opacity only, the
+    // host page is never touched.
+    opacity: args.peeking ? 0.16 : 1,
+    borderRadius: args.dockedRadius,
+    transition: args.dragging ? "none" : PANEL_TRANSITION,
+  };
+}
 
 /**
  * Open comment panel, rendered as a conversation: the transcript on top
@@ -91,15 +125,6 @@ export function CommentBubble({
   const containerRef = useRef<HTMLDivElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const [bubbleHeight, setBubbleHeight] = useState(INITIAL_BUBBLE_HEIGHT);
-  /**
-   * Once the user grabs the drag handle, the bubble switches to manual
-   * positioning (pointer hidden — it would no longer point at the anchor).
-   * Resets on unmount, so each open starts in auto-placement mode.
-   */
-  const [userPosition, setUserPosition] = useState<{
-    left: number;
-    top: number;
-  } | null>(null);
   const [lightboxSrc, setLightboxSrc] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
   const [mode, setMode] = useState<ComposerMode>("agent");
@@ -309,168 +334,288 @@ export function CommentBubble({
     [rect, bubbleHeight, maxBubbleHeight, viewport]
   );
 
+  // Float / dock / peek posture, the leader-line geometry, and the drag,
+  // resize, dock, and peek gestures. Kept in a hook so this component stays
+  // focused on the conversation itself.
+  const posture = useBubblePosture({
+    rect,
+    viewport,
+    placement,
+    floatWidth: BUBBLE_WIDTH,
+    floatHeight: bubbleHeight,
+    maxFloatHeight: maxBubbleHeight,
+  });
+
   if (!lead) {
     return null;
   }
 
+  const {
+    docked,
+    dockSide,
+    hidePointer,
+    showRing,
+    showLeader,
+    peeking,
+    dragging,
+    box,
+    dockedRadius,
+    dotCx,
+    dotCy,
+    startDrag,
+    startResize,
+    startPeek,
+    toggleDock,
+  } = posture;
+
   return (
-    <div
-      aria-label="Comment"
-      className="pointer-events-auto fixed z-[9200] flex flex-col overflow-hidden rounded-lg border bg-background shadow-lg"
-      data-comment-overlay="true"
-      onPointerDown={(e) => e.stopPropagation()}
-      ref={containerRef}
-      role="dialog"
-      style={{
-        left: userPosition?.left ?? placement.left,
-        top: userPosition?.top ?? placement.top,
-        width: BUBBLE_WIDTH,
-        maxHeight: maxBubbleHeight,
-      }}
-    >
-      {userPosition === null ? (
-        <CommentBubblePointer
-          offset={placement.arrowOffset}
-          side={placement.side}
-        />
-      ) : null}
+    <>
+      <AnchorLink
+        box={box}
+        dotCx={dotCx}
+        dotCy={dotCy}
+        rect={rect}
+        showLeader={showLeader}
+        showRing={showRing}
+      />
 
-      <CommentBubbleHeader
-        height={BUBBLE_HEADER_HEIGHT}
-        onClose={onClose}
-        onDragStart={createBubbleDragHandler({
-          placement,
-          setUserPosition,
-          userPosition,
+      <div
+        aria-label="Comment"
+        className="pointer-events-auto fixed z-[9200] flex animate-redline-bubble-in flex-col overflow-hidden rounded-lg border bg-background shadow-lg"
+        data-comment-overlay="true"
+        onPointerDown={(e) => e.stopPropagation()}
+        ref={containerRef}
+        role="dialog"
+        style={panelStyle({
+          box,
+          docked,
+          dockedRadius,
+          dragging,
+          maxFloatHeight: maxBubbleHeight,
+          peeking,
         })}
-        onRequestDelete={onDelete ? requestDelete : undefined}
-        onResolve={onResolve ? () => onResolve(lead.id) : undefined}
-        resolved={Boolean(lead.resolved)}
-      />
-
-      {deleteConfirming ? (
-        <div className="shrink-0 border-b px-2 py-2">
-          <DeleteConfirmOverlay
-            activeVersion={activeVersion}
-            busy={deleteBusy}
-            label="Delete this thread?"
-            layout="inline"
-            onCancel={cancelDeleteConfirm}
-            onConfirm={confirmDelete}
-            onRevertBaselineChange={setRevertBaseline}
-            revertBaseline={revertBaseline}
-            showKeyboardHints
-            showRevertOption={showRevertOption}
+      >
+        {hidePointer ? null : (
+          <CommentBubblePointer
+            offset={placement.arrowOffset}
+            side={placement.side}
           />
-          {deleteError ? (
-            <p
-              className="m-0 mt-1.5 px-0.5 text-destructive text-xs"
-              role="alert"
-            >
-              {deleteError}
-            </p>
-          ) : null}
-        </div>
-      ) : null}
+        )}
 
-      <CommentTranscript
-        activeVersion={activeVersion}
-        editingEntryKey={editingEntryKey}
-        fixModel={fixModel}
-        fixVersionCount={fixVersionCount}
-        hasAgentHistory={hasAgentHistory}
-        iterateNow={iterateNow}
-        iterateStartedAt={iterateStartedAt}
-        iterateStatus={iterateStatus}
-        iterating={iterating}
-        iterations={iterations}
-        iterationsLoading={iterationsLoading}
-        lead={lead}
-        onActivateVersion={activateVersion}
-        onEditComment={
-          onEdit
-            ? (payload) =>
-                persistTranscriptEdit(payload, (text) => onEdit(lead.id, text))
-            : undefined
-        }
-        onEditingEntryKeyChange={setEditingEntryKey}
-        onEditReply={
-          onEditReply
-            ? (id, replyIndex, payload) =>
-                persistTranscriptEdit(payload, (text) =>
-                  onEditReply(id, replyIndex, text)
-                )
-            : undefined
-        }
-        onFixModelChange={onFixModelChange}
-        onRemoveVersion={removeIterationVersion}
-        onResetInlineFlows={() => {
-          setEditingEntryKey(null);
-          cancelDeleteConfirm();
-        }}
-        onThumbClick={setLightboxSrc}
-        versionDeleteError={versionDeleteError}
-        versionDeleting={versionDeleting}
-        versionSwitching={versionSwitching}
-      />
+        <ResizeGrip onResize={startResize} side={dockSide} />
 
-      {editingEntryKey === null ? (
-        <CommentComposerBar
-          busy={replyBusy}
-          error={composerError ?? iterateError}
+        <CommentBubbleHeader
+          docked={docked}
+          height={BUBBLE_HEADER_HEIGHT}
+          onClose={onClose}
+          onDragStart={startDrag}
+          onPeekStart={startPeek}
+          onRequestDelete={onDelete ? requestDelete : undefined}
+          onResolve={onResolve ? () => onResolve(lead.id) : undefined}
+          onToggleDock={toggleDock}
+          resolved={Boolean(lead.resolved)}
+        />
+
+        {deleteConfirming ? (
+          <div className="shrink-0 border-b px-2 py-2">
+            <DeleteConfirmOverlay
+              activeVersion={activeVersion}
+              busy={deleteBusy}
+              label="Delete this thread?"
+              layout="inline"
+              onCancel={cancelDeleteConfirm}
+              onConfirm={confirmDelete}
+              onRevertBaselineChange={setRevertBaseline}
+              revertBaseline={revertBaseline}
+              showKeyboardHints
+              showRevertOption={showRevertOption}
+            />
+            {deleteError ? (
+              <p
+                className="m-0 mt-1.5 px-0.5 text-destructive text-xs"
+                role="alert"
+              >
+                {deleteError}
+              </p>
+            ) : null}
+          </div>
+        ) : null}
+
+        <CommentTranscript
+          activeVersion={activeVersion}
+          editingEntryKey={editingEntryKey}
           fixModel={fixModel}
           fixVersionCount={fixVersionCount}
+          hasAgentHistory={hasAgentHistory}
+          iterateNow={iterateNow}
+          iterateStartedAt={iterateStartedAt}
+          iterateStatus={iterateStatus}
           iterating={iterating}
-          mode={mode}
-          onCancelIterate={handleCancelIterate}
-          onChange={setDraft}
+          iterations={iterations}
+          iterationsLoading={iterationsLoading}
+          lead={lead}
+          onActivateVersion={activateVersion}
+          onEditComment={
+            onEdit
+              ? (payload) =>
+                  persistTranscriptEdit(payload, (text) =>
+                    onEdit(lead.id, text)
+                  )
+              : undefined
+          }
+          onEditingEntryKeyChange={setEditingEntryKey}
+          onEditReply={
+            onEditReply
+              ? (id, replyIndex, payload) =>
+                  persistTranscriptEdit(payload, (text) =>
+                    onEditReply(id, replyIndex, text)
+                  )
+              : undefined
+          }
           onFixModelChange={onFixModelChange}
-          onFixVersionCountChange={setFixVersionCount}
-          onModeChange={setMode}
-          onSubmit={() => {
-            submit().catch(ignorePromiseRejection);
+          onRemoveVersion={removeIterationVersion}
+          onResetInlineFlows={() => {
+            setEditingEntryKey(null);
+            cancelDeleteConfirm();
           }}
-          replyVersion={hasAgentHistory ? activeVersion : undefined}
-          textareaRef={textareaRef}
-          value={draft}
+          onThumbClick={setLightboxSrc}
+          versionDeleteError={versionDeleteError}
+          versionDeleting={versionDeleting}
+          versionSwitching={versionSwitching}
         />
-      ) : null}
 
-      {lightboxSrc ? (
-        <CommentBubbleLightbox
-          onClose={() => setLightboxSrc(null)}
-          src={lightboxSrc}
-        />
-      ) : null}
+        {editingEntryKey === null ? (
+          <CommentComposerBar
+            busy={replyBusy}
+            error={composerError ?? iterateError}
+            fixModel={fixModel}
+            fixVersionCount={fixVersionCount}
+            iterating={iterating}
+            mode={mode}
+            onCancelIterate={handleCancelIterate}
+            onChange={setDraft}
+            onFixModelChange={onFixModelChange}
+            onFixVersionCountChange={setFixVersionCount}
+            onModeChange={setMode}
+            onSubmit={() => {
+              submit().catch(ignorePromiseRejection);
+            }}
+            replyVersion={hasAgentHistory ? activeVersion : undefined}
+            textareaRef={textareaRef}
+            value={draft}
+          />
+        ) : null}
+
+        {lightboxSrc ? (
+          <CommentBubbleLightbox
+            onClose={() => setLightboxSrc(null)}
+            src={lightboxSrc}
+          />
+        ) : null}
+      </div>
+    </>
+  );
+}
+
+/**
+ * Anchor cues drawn over the canvas. The ring is localized (cheap), shown
+ * whenever detached/peeking; the leader line spans the canvas, so it only
+ * shows while actively relating panel↔design (drag/peek) to avoid clutter.
+ */
+function AnchorLink({
+  showRing,
+  showLeader,
+  rect,
+  box,
+  dotCx,
+  dotCy,
+}: {
+  showRing: boolean;
+  showLeader: boolean;
+  rect: DOMRect;
+  box: Box;
+  dotCx: number;
+  dotCy: number;
+}) {
+  return (
+    <>
+      {showRing ? <AnchorHighlight rect={rect} /> : null}
+      {showLeader ? <LeaderLine box={box} dotCx={dotCx} dotCy={dotCy} /> : null}
+    </>
+  );
+}
+
+/** Drag handle on the docked panel's inner edge to resize the drawer. */
+function ResizeGrip({
+  side,
+  onResize,
+}: {
+  side: "left" | "right" | null;
+  onResize: (e: PointerEvent<HTMLDivElement>) => void;
+}) {
+  if (!side) {
+    return null;
+  }
+  return (
+    <div
+      aria-hidden
+      className={cn(
+        "absolute inset-y-0 z-20 w-2 cursor-col-resize",
+        side === "right" ? "left-0" : "right-0"
+      )}
+      onPointerDown={onResize}
+    >
+      <div className="absolute inset-y-[42%] left-1/2 w-0.5 -translate-x-1/2 rounded-full bg-border" />
     </div>
   );
 }
 
-function createBubbleDragHandler(args: {
-  placement: { left: number; top: number };
-  setUserPosition: (pos: { left: number; top: number }) => void;
-  userPosition: { left: number; top: number } | null;
-}): (e: PointerEvent<HTMLDivElement>) => void {
-  return (e) => {
-    if ((e.target as Element).closest("button")) {
-      return;
-    }
-    e.preventDefault();
-    const startX = e.clientX;
-    const startY = e.clientY;
-    const baseLeft = args.userPosition?.left ?? args.placement.left;
-    const baseTop = args.userPosition?.top ?? args.placement.top;
-    const onMove = (ev: globalThis.PointerEvent) => {
-      args.setUserPosition({
-        left: baseLeft + ev.clientX - startX,
-        top: baseTop + ev.clientY - startY,
-      });
-    };
-    const onUp = () => {
-      document.removeEventListener("pointermove", onMove);
-      document.removeEventListener("pointerup", onUp);
-    };
-    document.addEventListener("pointermove", onMove);
-    document.addEventListener("pointerup", onUp);
-  };
+/** Full-viewport overlay drawing the dashed link from the panel to its dot. */
+function LeaderLine({
+  box,
+  dotCx,
+  dotCy,
+}: {
+  box: Box;
+  dotCx: number;
+  dotCy: number;
+}) {
+  const toLeftEdge = dotCx < box.left + box.width / 2;
+  const edgeX = toLeftEdge ? box.left : box.left + box.width;
+  const edgeY = Math.max(
+    box.top + 16,
+    Math.min(dotCy, box.top + box.height - 16)
+  );
+  const midX = (dotCx + edgeX) / 2;
+  return (
+    <svg
+      aria-hidden
+      className="pointer-events-none fixed inset-0 z-[9180] h-full w-full"
+      role="img"
+    >
+      <title>Connector to the anchored element</title>
+      <path
+        className="redline-leader-line"
+        d={`M${dotCx},${dotCy} C${midX},${dotCy} ${midX},${edgeY} ${edgeX},${edgeY}`}
+      />
+      <circle className="redline-leader-dot" cx={dotCx} cy={dotCy} r={3.5} />
+    </svg>
+  );
+}
+
+/** Ring over the anchored element while detached/peeking. Overlay only — the
+ * host node is never touched, so this is safe on any page layout. */
+function AnchorHighlight({ rect }: { rect: DOMRect }) {
+  return (
+    <div
+      aria-hidden
+      className="redline-anchor-ring pointer-events-none fixed z-[9170]"
+      style={{
+        left: rect.left,
+        top: rect.top,
+        width: rect.width,
+        height: rect.height,
+      }}
+    />
+  );
 }

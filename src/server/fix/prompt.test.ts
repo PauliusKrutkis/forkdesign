@@ -56,6 +56,16 @@ describe("buildIteratePrompt", () => {
     expect(prompt).toContain('data-view="hero"');
   });
 
+  it("includes frontend-design guidance when selected", () => {
+    const prompt = buildIteratePrompt({
+      ...base,
+      skills: ["frontend-design"],
+    });
+    expect(prompt).toContain("## Skill: frontend-design");
+    expect(prompt).toContain("intentional visual direction");
+    expect(prompt).toContain("Keep the edit scoped to the anchored UI");
+  });
+
   it("includes version-scoped replies for the active version", () => {
     const prompt = buildIteratePrompt({
       ...base,

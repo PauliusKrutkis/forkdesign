@@ -16,6 +16,7 @@ import {
   summarizeFixSourceDiff,
 } from "../fix/prompt.ts";
 import { appendFixRunLog } from "../fix/run-log.ts";
+import type { FixSkill } from "../fix/skills.ts";
 import type { FixAttemptTiming } from "../fix/types.ts";
 import { atomicWriteText } from "../platform/atomic-write.ts";
 import { errorMessage } from "../platform/http.ts";
@@ -176,6 +177,7 @@ export interface RunNewIterationInput {
   id: string;
   model: FixModel;
   projectRoot: string;
+  skills: FixSkill[];
   stream: NdjsonStream;
 }
 
@@ -198,6 +200,7 @@ async function runSingleFixVariant(args: {
   model: FixModel;
   priorVariantApproaches: string[];
   projectRoot: string;
+  skills: FixSkill[];
   stream: NdjsonStream;
   variantIndex: number;
 }): Promise<{ result: VariantRunOutcome; lastAgentSummary?: string }> {
@@ -208,6 +211,7 @@ async function runSingleFixVariant(args: {
     model,
     priorVariantApproaches,
     projectRoot,
+    skills,
     stream,
     variantIndex,
   } = args;
@@ -243,6 +247,7 @@ async function runSingleFixVariant(args: {
     activeVersion: found.comment.active ?? 0,
     replies: found.comment.replies,
     model,
+    skills,
     variantIndex,
     variantCount: count,
     priorVariantApproaches:
@@ -500,6 +505,7 @@ async function runVariantBatch(args: {
   model: FixModel;
   projectRoot: string;
   recordRun: RecordRunFn;
+  skills: FixSkill[];
   stream: NdjsonStream;
 }): Promise<VariantBatchState> {
   const state: VariantBatchState = {
@@ -521,6 +527,7 @@ async function runVariantBatch(args: {
       model: args.model,
       priorVariantApproaches,
       projectRoot: args.projectRoot,
+      skills: args.skills,
       stream: args.stream,
       variantIndex,
     });
@@ -711,7 +718,7 @@ async function finishSuccessfulBatch(args: {
 export async function runNewIteration(
   input: RunNewIterationInput
 ): Promise<void> {
-  const { projectRoot, found, id, model, count, stream } = input;
+  const { projectRoot, found, id, model, count, skills, stream } = input;
 
   const fixStartedAt = Date.now();
   const priority =
@@ -756,6 +763,7 @@ export async function runNewIteration(
     model,
     projectRoot,
     recordRun,
+    skills,
     stream,
   });
 

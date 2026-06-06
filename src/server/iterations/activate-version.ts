@@ -1,12 +1,13 @@
 import { readFile } from "node:fs/promises";
-import type { FoundComment } from "../comments/find-comment.ts";
-import { readCommentsFromSource } from "../comments/reader.ts";
-import { updateCommentActive } from "../comments/writer.ts";
 import {
-  extractDirectiveInner,
-  injectExistingMarkerIntoSource,
-  replaceCommentMarkerInSource,
-} from "../comments/writer-directive.ts";
+  assertValidTsx,
+  parseSourceAst,
+  printAst,
+} from "../comments/directive-ast.ts";
+import type { FoundComment } from "../comments/find-comment.ts";
+import { updateCommentActive } from "../comments/writer.ts";
+import { findJsxElementByAnchor } from "../comments/writer-ast.ts";
+import { extractDirectiveInner } from "../comments/writer-directive.ts";
 import { WriteError } from "../comments/writer-errors.ts";
 import { atomicWriteText } from "../platform/atomic-write.ts";
 import { errorMessage } from "../platform/http.ts";
@@ -20,10 +21,21 @@ type ReadSourceResult =
   | { ok: true; text: string }
   | { ok: false; status: number; message: string };
 
+type MergeSnapshotResult =
+  | { ok: true; source: string }
+  | { ok: false; status: number; message: string };
+
 function iterationApplyError(
   status: number,
   message: string
 ): IterationApplyResult {
+  return { ok: false, status, message };
+}
+
+function mergeSnapshotError(
+  status: number,
+  message: string
+): MergeSnapshotResult {
   return { ok: false, status, message };
 }
 
@@ -49,76 +61,54 @@ async function readUtf8OrApplyError(
   }
 }
 
-function snapshotContainsCommentMarker(
-  snapshotSource: string,
-  id: string
-): boolean {
-  try {
-    const parsedSnapshot = readCommentsFromSource(snapshotSource);
-    return parsedSnapshot.comments.some((c) => c.id === id);
-  } catch {
-    return false;
-  }
-}
-
-type MergeSnapshotResult =
-  | { ok: true; source: string }
-  | { ok: false; status: number; message: string };
-
-function mergeSnapshotError(
-  status: number,
-  message: string
-): MergeSnapshotResult {
-  return { ok: false, status, message };
-}
-
-function writeErrorToMergeResult(err: unknown): MergeSnapshotResult {
-  if (err instanceof WriteError) {
-    return mergeSnapshotError(err.status, err.message);
-  }
-  return mergeSnapshotError(500, errorMessage(err));
-}
-
-function mergeSnapshotWithDirective(
+function mergeSnapshotAnchorIntoCurrentSource(
+  currentSource: string,
   snapshotSource: string,
   found: FoundComment,
-  id: string,
-  v: number,
-  directiveInner: string
+  id: string
 ): MergeSnapshotResult {
-  const snapshotHasMarker = snapshotContainsCommentMarker(snapshotSource, id);
-  try {
-    if (snapshotHasMarker) {
-      return {
-        ok: true,
-        source: replaceCommentMarkerInSource(
-          snapshotSource,
-          id,
-          directiveInner
-        ),
-      };
-    }
-    if (
-      snapshotSource.includes(`data-comment-anchor="${found.comment.anchor}"`)
-    ) {
-      console.warn(
-        `[vite-plugin-comments] injected marker into v${v} snapshot of comment ${id} before activating (snapshot pre-dated the marker)`
-      );
-      return {
-        ok: true,
-        source: injectExistingMarkerIntoSource(
-          snapshotSource,
-          found.comment.anchor,
-          directiveInner
-        ),
-      };
-    }
+  const currentAst = parseSourceAst(currentSource);
+  const snapshotAst = parseSourceAst(snapshotSource);
+  const currentTarget = findJsxElementByAnchor(
+    currentAst,
+    found.comment.anchor
+  );
+  const snapshotTarget = findJsxElementByAnchor(
+    snapshotAst,
+    found.comment.anchor
+  );
+
+  if (!currentTarget) {
+    return mergeSnapshotError(
+      500,
+      `could not find current JSX element for comment ${id}`
+    );
+  }
+  if (!snapshotTarget) {
     return mergeSnapshotError(
       400,
       "snapshot is too old to safely activate; it pre-dates the anchor attribute."
     );
+  }
+
+  const currentHasMarker = extractDirectiveInner(currentSource, id) !== null;
+  if (!currentHasMarker) {
+    return mergeSnapshotError(
+      500,
+      `could not extract directive for comment ${id} from current source`
+    );
+  }
+
+  try {
+    Object.assign(currentTarget, snapshotTarget);
+    const output = printAst(currentAst);
+    assertValidTsx(output, "mergeSnapshotAnchorIntoCurrentSource");
+    return { ok: true, source: output };
   } catch (err) {
-    return writeErrorToMergeResult(err);
+    if (err instanceof WriteError) {
+      return mergeSnapshotError(err.status, err.message);
+    }
+    return mergeSnapshotError(500, errorMessage(err));
   }
 }
 
@@ -133,22 +123,9 @@ export async function applyIterationVersionToSource(
     return iterationApplyError(400, `version snapshot not found: v${v}.tsx`);
   }
 
-  if (found.siblingIds.length > 0) {
-    console.warn(
-      `[vite-plugin-comments] activating v${v} for comment ${id} will overwrite ${found.siblingIds.length} other comment(s) in ${found.relativePath}`
-    );
-  }
-
   const currentRead = await readUtf8OrApplyError(found.absolutePath);
   if (!currentRead.ok) {
     return currentRead;
-  }
-  const directiveInner = extractDirectiveInner(currentRead.text, id);
-  if (directiveInner === null) {
-    return iterationApplyError(
-      500,
-      `could not extract directive for comment ${id} from current source`
-    );
   }
 
   const snapshotRead = await readUtf8OrApplyError(snapshotPath);
@@ -156,12 +133,11 @@ export async function applyIterationVersionToSource(
     return snapshotRead;
   }
 
-  const merged = mergeSnapshotWithDirective(
+  const merged = mergeSnapshotAnchorIntoCurrentSource(
+    currentRead.text,
     snapshotRead.text,
     found,
-    id,
-    v,
-    directiveInner
+    id
   );
   if (!merged.ok) {
     return merged;

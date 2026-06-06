@@ -1,7 +1,8 @@
-import { Loader2 } from "lucide-react";
-import { useEffect, useMemo, useRef } from "react";
+import { ChevronDown, Loader2, MessageSquareMore } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { OverlayModel } from "../settings.ts";
 import type { CommentData } from "../types.ts";
+import { cn } from "../ui/cn.ts";
 import { ReplyVersionBadge } from "./comment-bubble-attribution.tsx";
 import type { ComposerMode } from "./comment-composer-bar.tsx";
 import { TranscriptHumanEntry } from "./comment-transcript-human.tsx";
@@ -18,6 +19,11 @@ import type {
 import { buildTranscript } from "./lib/build-transcript.ts";
 import { commentMayHaveFixVersions } from "./lib/comment-may-have-fix-versions.ts";
 import type { TranscriptEditSubmit } from "./transcript-entry-composer.tsx";
+
+/** Collapse the middle once a thread has more than this many turns. */
+const COLLAPSE_THRESHOLD = 4;
+/** Always-visible turns at the end (most recent exchange). */
+const COLLAPSE_TAIL = 2;
 
 function defaultEditModeForInstruction(
   instruction: TurnInstruction,
@@ -90,6 +96,7 @@ export function CommentTranscript({
   iterationsLoading = false,
 }: CommentTranscriptProps) {
   const scrollRef = useRef<HTMLDivElement | null>(null);
+  const [historyOpen, setHistoryOpen] = useState(false);
 
   const transcript = useMemo(
     () =>
@@ -110,6 +117,49 @@ export function CommentTranscript({
   // that produced variants, so Original sits beside the new version(s).
   const firstRunTurnKey = transcript.turns.find((t) => t.runs.length > 0)?.key;
 
+  // Collapse the middle of long threads so the lead comment + the most recent
+  // exchange stay in view no matter how many replies pile up. The composer
+  // never gets pushed off; reply count stops driving the panel height. Any
+  // in-progress inline edit forces the full thread open so the edited entry
+  // can't be hidden out from under the user.
+  const collapsed =
+    turnCount > COLLAPSE_THRESHOLD + 1 && !historyOpen && !editingEntryKey;
+  const hiddenCount = turnCount - 1 - COLLAPSE_TAIL;
+  const leadTurn = transcript.turns[0];
+  const middleTurns = collapsed
+    ? []
+    : transcript.turns.slice(1, turnCount - COLLAPSE_TAIL);
+  const tailTurns =
+    turnCount > COLLAPSE_TAIL + 1
+      ? transcript.turns.slice(turnCount - COLLAPSE_TAIL)
+      : transcript.turns.slice(1);
+  const showHistoryToggle = turnCount > COLLAPSE_THRESHOLD + 1;
+
+  const renderTurn = (turn: TranscriptTurn) => (
+    <TurnView
+      activeVersion={activeVersion}
+      baseline={turn.key === firstRunTurnKey ? transcript.baseline : undefined}
+      editingEntryKey={editingEntryKey}
+      fixModel={fixModel}
+      fixVersionCount={fixVersionCount}
+      hasAgentHistory={hasAgentHistory}
+      iterating={iterating}
+      key={turn.key}
+      lead={lead}
+      onActivateVersion={onActivateVersion}
+      onEditComment={onEditComment}
+      onEditingEntryKeyChange={onEditingEntryKeyChange}
+      onEditReply={onEditReply}
+      onFixModelChange={onFixModelChange}
+      onRemoveVersion={onRemoveVersion}
+      onResetInlineFlows={onResetInlineFlows}
+      onThumbClick={onThumbClick}
+      turn={turn}
+      versionDeleting={versionDeleting}
+      versionSwitching={versionSwitching}
+    />
+  );
+
   // Stick to the bottom as the conversation grows / a fix streams in.
   // biome-ignore lint/correctness/useExhaustiveDependencies: scroll on growth/stream
   useEffect(() => {
@@ -117,39 +167,26 @@ export function CommentTranscript({
     if (el) {
       el.scrollTop = el.scrollHeight;
     }
-  }, [turnCount, iterating, iterationsLoading, editingEntryKey]);
+  }, [turnCount, iterating, iterationsLoading, editingEntryKey, historyOpen]);
 
   return (
     <div
       className="redline-scroll min-h-0 flex-1 space-y-4 overflow-y-auto px-3.5 py-3.5"
       ref={scrollRef}
     >
-      {transcript.turns.map((turn) => (
-        <TurnView
-          activeVersion={activeVersion}
-          baseline={
-            turn.key === firstRunTurnKey ? transcript.baseline : undefined
-          }
-          editingEntryKey={editingEntryKey}
-          fixModel={fixModel}
-          fixVersionCount={fixVersionCount}
-          hasAgentHistory={hasAgentHistory}
-          iterating={iterating}
-          key={turn.key}
-          lead={lead}
-          onActivateVersion={onActivateVersion}
-          onEditComment={onEditComment}
-          onEditingEntryKeyChange={onEditingEntryKeyChange}
-          onEditReply={onEditReply}
-          onFixModelChange={onFixModelChange}
-          onRemoveVersion={onRemoveVersion}
-          onResetInlineFlows={onResetInlineFlows}
-          onThumbClick={onThumbClick}
-          turn={turn}
-          versionDeleting={versionDeleting}
-          versionSwitching={versionSwitching}
+      {leadTurn ? renderTurn(leadTurn) : null}
+
+      {showHistoryToggle ? (
+        <HistoryToggle
+          hiddenCount={hiddenCount}
+          onToggle={() => setHistoryOpen((v) => !v)}
+          open={!collapsed}
         />
-      ))}
+      ) : null}
+
+      {middleTurns.map(renderTurn)}
+
+      {tailTurns.map(renderTurn)}
 
       {versionDeleteError ? (
         <p className="m-0 text-destructive text-xs" role="alert">
@@ -286,6 +323,44 @@ function TurnView({
         />
       ))}
     </div>
+  );
+}
+
+/**
+ * Expander that hides the middle of a long thread. Collapsed, it reads as
+ * "N earlier replies"; open, it offers to hide them again. The lead comment
+ * and the most recent turns stay visible on either side of it.
+ */
+function HistoryToggle({
+  hiddenCount,
+  open,
+  onToggle,
+}: {
+  hiddenCount: number;
+  open: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <button
+      aria-expanded={open}
+      className="flex w-full items-center gap-2 rounded-md border border-dashed bg-muted/30 px-3 py-2 text-left text-muted-foreground text-xs transition-colors hover:border-border hover:bg-muted/60"
+      onClick={onToggle}
+      type="button"
+    >
+      <MessageSquareMore aria-hidden className="h-3.5 w-3.5 shrink-0" />
+      <span className="flex-1">
+        {open
+          ? `Hide ${hiddenCount} earlier ${hiddenCount === 1 ? "reply" : "replies"}`
+          : `${hiddenCount} earlier ${hiddenCount === 1 ? "reply" : "replies"}`}
+      </span>
+      <ChevronDown
+        aria-hidden
+        className={cn(
+          "redline-chevron h-4 w-4 shrink-0",
+          open && "redline-chevron-open"
+        )}
+      />
+    </button>
   );
 }
 

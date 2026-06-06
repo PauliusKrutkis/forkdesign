@@ -15,10 +15,50 @@ import {
   iterationsSubpath,
 } from "../api/iterations/routes.ts";
 import { configureFixRuntime } from "../fix/config.ts";
+import type { FixModel } from "../fix/models.ts";
+import type { FixSkill } from "../fix/skills.ts";
 import { errorMessage, sendError, wrapApiHandler } from "../platform/http.ts";
 import { sourceLoc as createSourceLocPlugin } from "./source-loc.ts";
 
 const INJECT_MARKER = "<!-- vite-plugin-comments injected -->";
+const AUTO_MOUNT_MARKER = "<!-- redline overlay auto-mount -->";
+const VIRTUAL_CLIENT_ID = "virtual:redline/client";
+const RESOLVED_VIRTUAL_CLIENT_ID = `\0${VIRTUAL_CLIENT_ID}`;
+
+function redlineClientModule(): string {
+  return `
+import { createElement } from "react";
+import { createRoot } from "react-dom/client";
+import { CommentOverlay } from "redline";
+import "redline/styles.css";
+
+const ROOT_ID = "redline-overlay-root";
+
+function mountRedlineOverlay() {
+  if (!import.meta.env.DEV || typeof document === "undefined") {
+    return;
+  }
+  if (document.getElementById(ROOT_ID)) {
+    return;
+  }
+  const host = document.body;
+  if (!host) {
+    return;
+  }
+  const root = document.createElement("div");
+  root.id = ROOT_ID;
+  root.setAttribute("data-comment-overlay", "true");
+  host.appendChild(root);
+  createRoot(root).render(createElement(CommentOverlay));
+}
+
+if (document.readyState === "loading") {
+  document.addEventListener("DOMContentLoaded", mountRedlineOverlay, { once: true });
+} else {
+  mountRedlineOverlay();
+}
+`;
+}
 
 function handleIterationsMiddleware(
   req: IncomingMessage,
@@ -99,13 +139,26 @@ export interface CommentsPluginOptions {
    */
   excludeSrcPrefixes?: string[];
   /** Override the default Fix model priority order. */
-  fixModelPriority?: import("../fix/models.ts").FixModel[];
+  fixModelPriority?: FixModel[];
+  /**
+   * Skill guidance injected into generated fix prompts.
+   * Defaults to `["frontend-design"]`; pass `[]` to disable.
+   */
+  fixSkills?: FixSkill[];
+  /**
+   * Inject and mount `<CommentOverlay />` automatically in dev. The low-level
+   * `comments()` middleware keeps this off by default; use `redline()` for the
+   * streamlined setup.
+   */
+  mountOverlay?: boolean;
 }
 
 export function comments(options: CommentsPluginOptions = {}): Plugin {
   const excludeSrcPrefixes = options.excludeSrcPrefixes ?? [];
   const cursorAgentPath = options.cursorAgentPath;
   const fixModelPriority = options.fixModelPriority;
+  const fixSkills = options.fixSkills;
+  const mountOverlay = options.mountOverlay ?? false;
   let projectRoot = process.cwd();
 
   return {
@@ -117,6 +170,7 @@ export function comments(options: CommentsPluginOptions = {}): Plugin {
       configureFixRuntime({
         ...(cursorAgentPath ? { cursorAgentPath } : {}),
         ...(fixModelPriority ? { fixModelPriority } : {}),
+        ...(fixSkills === undefined ? {} : { fixSkills }),
       });
     },
 
@@ -170,21 +224,80 @@ export function comments(options: CommentsPluginOptions = {}): Plugin {
       });
     },
 
+    resolveId(id) {
+      if (mountOverlay && id === VIRTUAL_CLIENT_ID) {
+        return RESOLVED_VIRTUAL_CLIENT_ID;
+      }
+      return null;
+    },
+
+    load(id) {
+      if (mountOverlay && id === RESOLVED_VIRTUAL_CLIENT_ID) {
+        return redlineClientModule();
+      }
+      return null;
+    },
+
     transformIndexHtml: {
       order: "pre",
       handler(html) {
-        if (html.includes(INJECT_MARKER)) {
-          return html;
+        let nextHtml = html;
+        if (!nextHtml.includes(INJECT_MARKER)) {
+          nextHtml = nextHtml.replace(
+            "</head>",
+            `  ${INJECT_MARKER}\n  </head>`
+          );
         }
-        return html.replace("</head>", `  ${INJECT_MARKER}\n  </head>`);
+        if (mountOverlay && !nextHtml.includes(AUTO_MOUNT_MARKER)) {
+          nextHtml = nextHtml.replace(
+            "</head>",
+            `  ${AUTO_MOUNT_MARKER}\n  <script type="module">import "${VIRTUAL_CLIENT_ID}";</script>\n  </head>`
+          );
+        }
+        return nextHtml;
       },
     },
   };
 }
 
+export interface RedlinePluginOptions extends CommentsPluginOptions {
+  /**
+   * Source-location stamping for DOM target picking. Enabled by default.
+   * Pass `false` only when you mount the overlay manually and provide another
+   * source-location strategy.
+   */
+  sourceLoc?:
+    | false
+    | {
+        excludeSrcPrefixes?: string[];
+        projectRoot?: string;
+      };
+}
+
+/** Streamlined dev setup: source locations + API middleware + overlay mount. */
+export function redline(options: RedlinePluginOptions = {}): Plugin[] {
+  const {
+    sourceLoc: sourceLocOptions,
+    mountOverlay = true,
+    ...commentsOptions
+  } = options;
+  const middleware = comments({ ...commentsOptions, mountOverlay });
+  if (sourceLocOptions === false) {
+    return [middleware];
+  }
+  return [
+    createSourceLocPlugin({
+      excludeSrcPrefixes:
+        sourceLocOptions?.excludeSrcPrefixes ?? options.excludeSrcPrefixes,
+      projectRoot: sourceLocOptions?.projectRoot,
+    }),
+    middleware,
+  ];
+}
+
 /** Re-exported for `redline/plugin` consumers configuring the dev source-loc stamper. */
 export function sourceLoc(
-  options: Parameters<typeof createSourceLocPlugin>[0]
+  options: Parameters<typeof createSourceLocPlugin>[0] = {}
 ): ReturnType<typeof createSourceLocPlugin> {
   return createSourceLocPlugin(options);
 }
