@@ -4,6 +4,7 @@ import path from "node:path";
 
 export interface VersionManifestEntry {
   createdAt: string;
+  runId?: string;
   summary: string;
 }
 
@@ -64,30 +65,46 @@ export function parseManifestJson(raw: string): IterationsManifest {
   }
   const out: Record<string, VersionManifestEntry> = {};
   for (const [key, value] of Object.entries(versions)) {
-    if (!value || typeof value !== "object") {
+    const entry = parseManifestEntry(key, value);
+    if (!entry) {
       continue;
     }
-    const entry = value as { summary?: unknown; createdAt?: unknown };
-    const summary =
-      typeof entry.summary === "string" ? entry.summary.trim() : "";
-    const createdAt =
-      typeof entry.createdAt === "string" ? entry.createdAt : "";
-    if (!(summary || createdAt)) {
-      continue;
-    }
-    out[key] = {
-      summary: summary || defaultSummaryForVersion(Number.parseInt(key, 10)),
-      createdAt: createdAt || new Date(0).toISOString(),
-    };
+    out[key] = entry;
   }
   return { versions: out };
+}
+
+function parseManifestEntry(
+  key: string,
+  value: unknown
+): VersionManifestEntry | null {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+  const entry = value as {
+    createdAt?: unknown;
+    runId?: unknown;
+    summary?: unknown;
+  };
+  const summary = typeof entry.summary === "string" ? entry.summary.trim() : "";
+  const createdAt = typeof entry.createdAt === "string" ? entry.createdAt : "";
+  if (!(summary || createdAt)) {
+    return null;
+  }
+  return {
+    summary: summary || defaultSummaryForVersion(Number.parseInt(key, 10)),
+    createdAt: createdAt || new Date(0).toISOString(),
+    ...(typeof entry.runId === "string" && entry.runId.trim()
+      ? { runId: entry.runId.trim() }
+      : {}),
+  };
 }
 
 export function defaultSummaryForVersion(v: number): string {
   if (v === 0) {
     return "Baseline";
   }
-  return "AI fix";
+  return "AI edit";
 }
 
 export function mergeVersionEntry(
@@ -125,7 +142,7 @@ export function enrichVersionMeta(
   v: number,
   manifestEntry: VersionManifestEntry | null,
   tsxMtimeMs: number | null
-): { summary: string; createdAt: string } {
+): { createdAt: string; runId?: string; summary: string } {
   const summary = manifestEntry?.summary?.trim() || defaultSummaryForVersion(v);
   let createdAt = manifestEntry?.createdAt;
   if (!createdAt || Number.isNaN(Date.parse(createdAt))) {
@@ -134,12 +151,16 @@ export function enrichVersionMeta(
         ? new Date(tsxMtimeMs).toISOString()
         : new Date(0).toISOString();
   }
-  return { summary, createdAt };
+  return {
+    summary,
+    createdAt,
+    ...(manifestEntry?.runId ? { runId: manifestEntry.runId } : {}),
+  };
 }
 
 /**
  * All on-disk iteration directories for a comment. Baseline artifacts from
- * comment POST live under `public/designs/iterations/<id>/`; Fix snapshots
+ * comment POST live under `public/designs/iterations/<id>/`; Agent snapshots
  * are written under `designs/iterations/<id>/`. Both may exist at once.
  */
 export function resolveIterationDirRoots(
@@ -163,7 +184,7 @@ export function resolveIterationDirRoots(
 }
 
 /**
- * Canonical iteration store used by Fix/activate/list APIs. Prefers the Fix
+ * Canonical iteration store used by Agent/activate/list APIs. Prefers the agent
  * snapshot tree, then the legacy public tree from comment POST.
  */
 export function resolveIterationsDir(
@@ -207,7 +228,7 @@ export async function listCompleteIterationVersionsAllRoots(
 }
 
 /**
- * Next snapshot version index for Fix iterations under `iterDir`. Creates the
+ * Next snapshot version index for Agent iterations under `iterDir`. Creates the
  * directory when absent; scans existing v{N}.tsx files for the high water mark.
  */
 export async function nextIterationVersion(

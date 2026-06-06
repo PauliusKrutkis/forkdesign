@@ -1,6 +1,6 @@
 import type { CSSProperties, PointerEvent } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { DEFAULT_FIX_VERSION_COUNT } from "../../shared/fix-version-count.ts";
+import { DEFAULT_AGENT_VERSION_COUNT } from "../../shared/agent-version-count.ts";
 import type { OverlayModel } from "../settings.ts";
 import type { CommentData } from "../types.ts";
 import { cn } from "../ui/cn.ts";
@@ -13,9 +13,9 @@ import {
 } from "./comment-composer-bar.tsx";
 import { CommentTranscript } from "./comment-transcript.tsx";
 import { DeleteConfirmOverlay } from "./delete-confirm-overlay.tsx";
+import { useAgentIteration } from "./hooks/use-agent-iteration.ts";
 import { useBubbleLeadActions } from "./hooks/use-bubble-lead-actions.ts";
 import { useBubblePosture } from "./hooks/use-bubble-posture.ts";
-import { useIterateFix } from "./hooks/use-iterate-fix.ts";
 import { useIterations } from "./hooks/use-iterations.ts";
 import { useViewport } from "./hooks/use-viewport.ts";
 import { handleCommentBubbleKeydown } from "./lib/comment-bubble-keydown.ts";
@@ -25,27 +25,44 @@ import { dotRect, placeFloater } from "./lib/placement.ts";
 import type { TranscriptEditSubmit } from "./transcript-entry-composer.tsx";
 
 interface CommentBubbleProps {
+  agentModel?: OverlayModel;
+  agentRun?: {
+    cancel?: () => void;
+    count: number;
+    model: OverlayModel;
+    startedAt: number;
+  } | null;
+  /** True when this thread already has an agent run in flight outside this mount. */
+  agentWorking?: boolean;
   /**
    * When set, the bubble runs the agent once on mount with this many variants.
-   * Used by "create comment in Agent mode" so the fix kicks off as the bubble
+   * Used by "create comment in Agent mode" so the agent run kicks off as the bubble
    * auto-opens. `null`/undefined = no auto-run.
    */
-  autoFixCount?: number | null;
+  autoAgentCount?: number | null;
   comments: CommentData[];
-  fixModel?: OverlayModel;
+  initialActiveVersion?: number;
+  onActiveVersionChange?: (id: string, active: number) => void;
+  onAgentModelChange: (model: OverlayModel) => void;
   /** Drives pin loading while the agent iterates (cleared when the run ends). */
-  onAgentWorkingChange?: (anchor: string | null) => void;
-  onAutoFixStarted?: () => void;
+  onAgentWorkingChange?: (
+    anchor: string | null,
+    run?: { count: number; model: OverlayModel; startedAt: number },
+    cancel?: () => void
+  ) => void;
+  onAutoAgentStarted?: () => void;
   onClose: () => void;
   onDelete?: (
     id: string,
     options?: { revertBaseline?: boolean }
   ) => Promise<void>;
+  /** Reports docked posture so the overlay can hide this thread's pin. */
+  onDockedChange?: (docked: boolean) => void;
   onEdit?: (id: string, text: string) => Promise<void>;
   onEditReply?: (id: string, replyIndex: number, text: string) => Promise<void>;
-  onFixModelChange: (model: OverlayModel) => void;
   onResolve?: (id: string) => void;
   onSubmitReply?: (id: string, text: string, v?: number) => Promise<void>;
+  reanchorRequest: number;
   rect: DOMRect;
   skipDeleteConfirmation?: boolean;
 }
@@ -88,6 +105,30 @@ function panelStyle(args: {
   };
 }
 
+function visibleIterationState(args: {
+  agentRun?: { cancel?: () => void; startedAt: number } | null;
+  agentWorking: boolean;
+  iterating: boolean;
+  iterateStartedAt: number | null;
+  iterateStatus: string | null;
+}) {
+  if (!(args.agentWorking && !args.iterating)) {
+    return {
+      cancelable: args.iterating || Boolean(args.agentRun?.cancel),
+      iterating: args.iterating,
+      startedAt: args.iterateStartedAt,
+      status: args.iterateStatus,
+    };
+  }
+
+  return {
+    cancelable: Boolean(args.agentRun?.cancel),
+    iterating: true,
+    startedAt: args.agentRun?.startedAt ?? null,
+    status: "Agent working…",
+  };
+}
+
 /**
  * Open comment panel, rendered as a conversation: the transcript on top
  * (comment + agent variant groups + replies) and a persistent composer below.
@@ -95,20 +136,26 @@ function panelStyle(args: {
  * has no room.
  */
 export function CommentBubble({
+  agentRun = null,
+  agentWorking = false,
   comments,
   rect,
-  fixModel = "composer-2.5-fast",
-  onFixModelChange,
+  agentModel = "composer-2.5-fast",
+  onAgentModelChange,
   skipDeleteConfirmation = false,
-  autoFixCount = null,
-  onAutoFixStarted,
+  autoAgentCount = null,
+  initialActiveVersion,
+  onActiveVersionChange,
+  onAutoAgentStarted,
   onAgentWorkingChange,
   onClose,
+  onDockedChange,
   onResolve,
   onDelete,
   onEdit,
   onSubmitReply,
   onEditReply,
+  reanchorRequest,
 }: CommentBubbleProps) {
   const lead = comments[0];
   const commentId = lead?.id ?? "";
@@ -128,16 +175,24 @@ export function CommentBubble({
   const [lightboxSrc, setLightboxSrc] = useState<string | null>(null);
   const [draft, setDraft] = useState("");
   const [mode, setMode] = useState<ComposerMode>("agent");
-  const [fixVersionCount, setFixVersionCount] = useState(
-    autoFixCount ?? DEFAULT_FIX_VERSION_COUNT
+  const [agentVersionCount, setAgentVersionCount] = useState(
+    autoAgentCount ?? agentRun?.count ?? DEFAULT_AGENT_VERSION_COUNT
   );
   const [replyBusy, setReplyBusy] = useState(false);
   const [composerError, setComposerError] = useState<string | null>(null);
   const [editingEntryKey, setEditingEntryKey] = useState<string | null>(null);
   const viewport = useViewport();
 
-  const activeVersion = iterations?.active ?? lead?.active ?? 0;
+  const activeVersion =
+    iterations?.active ?? initialActiveVersion ?? lead?.active ?? 0;
   const hasAgentHistory = (iterations?.versions ?? []).some((v) => v.v > 0);
+
+  useEffect(() => {
+    if (!lead) {
+      return;
+    }
+    onActiveVersionChange?.(lead.id, activeVersion);
+  }, [lead, activeVersion, onActiveVersionChange]);
 
   const {
     iterating,
@@ -147,13 +202,36 @@ export function CommentBubble({
     iterateNow,
     handleIterate,
     handleCancelIterate,
-  } = useIterateFix({
+  } = useAgentIteration({
     lead,
-    fixModel,
-    fixVersionCount,
+    agentModel,
+    agentVersionCount,
     reloadIterations,
     onAgentWorkingChange,
   });
+  const iterationState = visibleIterationState({
+    agentRun,
+    agentWorking,
+    iterating,
+    iterateStartedAt,
+    iterateStatus,
+  });
+  const cancelIterate = iterationState.cancelable
+    ? (agentRun?.cancel ?? handleCancelIterate)
+    : undefined;
+
+  // The original stream reader may belong to a bubble that was closed. While
+  // this remounted bubble shows an in-flight run, poll the persisted manifest
+  // so completed variants replace loaders as soon as they hit disk.
+  useEffect(() => {
+    if (!iterationState.iterating) {
+      return;
+    }
+    const interval = window.setInterval(() => {
+      Promise.resolve(reloadIterations()).catch(ignorePromiseRejection);
+    }, 1500);
+    return () => window.clearInterval(interval);
+  }, [iterationState.iterating, reloadIterations]);
 
   const {
     deleteConfirming,
@@ -178,17 +256,17 @@ export function CommentBubble({
   }, []);
 
   // "Create comment in Agent mode" auto-runs the agent once as the bubble
-  // opens. fixVersionCount is already seeded from autoFixCount, so handleIterate
+  // opens. agentVersionCount is already seeded from autoAgentCount, so handleIterate
   // picks up the right count.
   const autoFiredRef = useRef(false);
   useEffect(() => {
-    if (autoFixCount == null || autoFiredRef.current || !lead) {
+    if (autoAgentCount == null || autoFiredRef.current || !lead) {
       return;
     }
     autoFiredRef.current = true;
-    onAutoFixStarted?.();
+    onAutoAgentStarted?.();
     handleIterate().catch(ignorePromiseRejection);
-  }, [autoFixCount, lead, onAutoFixStarted, handleIterate]);
+  }, [autoAgentCount, lead, onAutoAgentStarted, handleIterate]);
 
   useEffect(() => {
     const el = containerRef.current;
@@ -210,7 +288,7 @@ export function CommentBubble({
       persist: (text: string) => Promise<void>
     ) => {
       const trimmed = payload.text.trim();
-      if (!trimmed || iterating || replyBusy) {
+      if (!trimmed || iterationState.iterating || replyBusy) {
         return;
       }
       setComposerError(null);
@@ -224,30 +302,31 @@ export function CommentBubble({
         setReplyBusy(false);
       }
       if (payload.runAgent) {
-        setFixVersionCount(payload.versionCount);
-        onFixModelChange(payload.model);
+        setAgentVersionCount(payload.versionCount);
+        onAgentModelChange(payload.model);
         await handleIterate({
-          fixVersionCount: payload.versionCount,
-          fixModel: payload.model,
+          agentVersionCount: payload.versionCount,
+          agentModel: payload.model,
         });
       }
     },
-    [iterating, replyBusy, handleIterate, onFixModelChange]
+    [iterationState.iterating, replyBusy, handleIterate, onAgentModelChange]
   );
 
   const submit = useCallback(async () => {
     const text = draft.trim();
-    if (!text || iterating || replyBusy) {
+    if (!text || iterationState.iterating || replyBusy) {
       return;
     }
     setComposerError(null);
 
     if (mode === "comment") {
       setReplyBusy(true);
+      setDraft("");
       try {
         await onSubmitReply?.(lead?.id ?? "", text, activeVersion);
-        setDraft("");
       } catch (err) {
+        setDraft((current) => (current ? current : draft));
         setComposerError(toErrorMessage(err));
       } finally {
         setReplyBusy(false);
@@ -255,22 +334,23 @@ export function CommentBubble({
       return;
     }
 
-    // Fix: record the instruction as a versioned reply (the agent reads it as
+    // Agent: record the instruction as a versioned reply (the agent reads it as
     // steering) and then iterate. The reply is persisted before iterating, so
-    // the fix prompt picks it up.
+    // the agent prompt picks it up.
+    setDraft("");
     try {
       if (onSubmitReply && lead) {
         await onSubmitReply(lead.id, text, activeVersion);
       }
-      setDraft("");
     } catch (err) {
+      setDraft((current) => (current ? current : draft));
       setComposerError(toErrorMessage(err));
       return;
     }
     await handleIterate();
   }, [
     draft,
-    iterating,
+    iterationState.iterating,
     replyBusy,
     mode,
     onSubmitReply,
@@ -345,6 +425,23 @@ export function CommentBubble({
     floatHeight: bubbleHeight,
     maxFloatHeight: maxBubbleHeight,
   });
+  const { reanchor } = posture;
+
+  const lastReanchorRequest = useRef(reanchorRequest);
+  useEffect(() => {
+    if (lastReanchorRequest.current === reanchorRequest) {
+      return;
+    }
+    lastReanchorRequest.current = reanchorRequest;
+    reanchor();
+  }, [reanchorRequest, reanchor]);
+
+  // Tell the overlay whether this thread is docked, so it can hide the pin.
+  // Reset to false when the bubble closes.
+  useEffect(() => {
+    onDockedChange?.(posture.docked);
+    return () => onDockedChange?.(false);
+  }, [posture.docked, onDockedChange]);
 
   if (!lead) {
     return null;
@@ -354,7 +451,6 @@ export function CommentBubble({
     docked,
     dockSide,
     hidePointer,
-    showRing,
     showLeader,
     peeking,
     dragging,
@@ -374,9 +470,7 @@ export function CommentBubble({
         box={box}
         dotCx={dotCx}
         dotCy={dotCy}
-        rect={rect}
         showLeader={showLeader}
-        showRing={showRing}
       />
 
       <div
@@ -443,18 +537,19 @@ export function CommentBubble({
 
         <CommentTranscript
           activeVersion={activeVersion}
+          agentModel={agentModel}
+          agentVersionCount={agentVersionCount}
           editingEntryKey={editingEntryKey}
-          fixModel={fixModel}
-          fixVersionCount={fixVersionCount}
           hasAgentHistory={hasAgentHistory}
           iterateNow={iterateNow}
-          iterateStartedAt={iterateStartedAt}
-          iterateStatus={iterateStatus}
-          iterating={iterating}
+          iterateStartedAt={iterationState.startedAt}
+          iterateStatus={iterationState.status}
+          iterating={iterationState.iterating}
           iterations={iterations}
           iterationsLoading={iterationsLoading}
           lead={lead}
           onActivateVersion={activateVersion}
+          onAgentModelChange={onAgentModelChange}
           onEditComment={
             onEdit
               ? (payload) =>
@@ -472,7 +567,6 @@ export function CommentBubble({
                   )
               : undefined
           }
-          onFixModelChange={onFixModelChange}
           onRemoveVersion={removeIterationVersion}
           onResetInlineFlows={() => {
             setEditingEntryKey(null);
@@ -486,16 +580,16 @@ export function CommentBubble({
 
         {editingEntryKey === null ? (
           <CommentComposerBar
+            agentModel={agentModel}
+            agentVersionCount={agentVersionCount}
             busy={replyBusy}
             error={composerError ?? iterateError}
-            fixModel={fixModel}
-            fixVersionCount={fixVersionCount}
-            iterating={iterating}
+            iterating={iterationState.iterating}
             mode={mode}
-            onCancelIterate={handleCancelIterate}
+            onAgentModelChange={onAgentModelChange}
+            onAgentVersionCountChange={setAgentVersionCount}
+            onCancelIterate={cancelIterate}
             onChange={setDraft}
-            onFixModelChange={onFixModelChange}
-            onFixVersionCountChange={setFixVersionCount}
             onModeChange={setMode}
             onSubmit={() => {
               submit().catch(ignorePromiseRejection);
@@ -518,31 +612,23 @@ export function CommentBubble({
 }
 
 /**
- * Anchor cues drawn over the canvas. The ring is localized (cheap), shown
- * whenever detached/peeking; the leader line spans the canvas, so it only
- * shows while actively relating panel↔design (drag/peek) to avoid clutter.
+ * Anchor cue drawn over the canvas. The leader line spans the canvas, so it
+ * only shows while actively relating panel↔design (drag/peek) to avoid clutter.
  */
 function AnchorLink({
-  showRing,
   showLeader,
-  rect,
   box,
   dotCx,
   dotCy,
 }: {
-  showRing: boolean;
   showLeader: boolean;
-  rect: DOMRect;
   box: Box;
   dotCx: number;
   dotCy: number;
 }) {
-  return (
-    <>
-      {showRing ? <AnchorHighlight rect={rect} /> : null}
-      {showLeader ? <LeaderLine box={box} dotCx={dotCx} dotCy={dotCy} /> : null}
-    </>
-  );
+  return showLeader ? (
+    <LeaderLine box={box} dotCx={dotCx} dotCy={dotCy} />
+  ) : null;
 }
 
 /** Drag handle on the docked panel's inner edge to resize the drawer. */
@@ -600,22 +686,5 @@ function LeaderLine({
       />
       <circle className="redline-leader-dot" cx={dotCx} cy={dotCy} r={3.5} />
     </svg>
-  );
-}
-
-/** Ring over the anchored element while detached/peeking. Overlay only — the
- * host node is never touched, so this is safe on any page layout. */
-function AnchorHighlight({ rect }: { rect: DOMRect }) {
-  return (
-    <div
-      aria-hidden
-      className="redline-anchor-ring pointer-events-none fixed z-[9170]"
-      style={{
-        left: rect.left,
-        top: rect.top,
-        width: rect.width,
-        height: rect.height,
-      }}
-    />
   );
 }

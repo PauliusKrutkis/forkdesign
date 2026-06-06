@@ -8,14 +8,18 @@ import {
   projectClaudeProgress,
 } from "../progress/claude.ts";
 import { buildIteratePrompt } from "../prompt.ts";
-import type { FixAttemptResult, FixInput, FixStrategy } from "../types.ts";
+import type {
+  AgentAttemptResult,
+  AgentInput,
+  AgentStrategy,
+} from "../types.ts";
 
-export const claudeStrategy: FixStrategy = {
+export const claudeStrategy: AgentStrategy = {
   id: "claude",
-  run: runClaudeFix,
+  run: runClaudeAgent,
 };
 
-async function runClaudeFix(input: FixInput): Promise<FixAttemptResult> {
+async function runClaudeAgent(input: AgentInput): Promise<AgentAttemptResult> {
   const prompt = buildIteratePrompt(input);
 
   const abortController = new AbortController();
@@ -62,7 +66,7 @@ async function runClaudeFix(input: FixInput): Promise<FixAttemptResult> {
 
 function processClaudeEvent(
   event: unknown,
-  input: FixInput,
+  input: AgentInput,
   counters: { turnsUsed: number; toolCalls: number }
 ): void {
   const t = (event as { type?: string }).type;

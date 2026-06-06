@@ -13,21 +13,21 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { FoundComment } from "../comments/find-comment.ts";
 
-const { runFixMock, updateCommentActiveMock } = vi.hoisted(() => ({
-  runFixMock: vi.fn(),
+const { runAgentMock, updateCommentActiveMock } = vi.hoisted(() => ({
+  runAgentMock: vi.fn(),
   updateCommentActiveMock: vi.fn(async () => undefined),
 }));
 
-vi.mock("../fix/index.ts", () => ({
-  runFix: runFixMock,
+vi.mock("../agent/index.ts", () => ({
+  runAgent: runAgentMock,
 }));
 
 vi.mock("../comments/writer.ts", () => ({
   updateCommentActive: updateCommentActiveMock,
 }));
 
-vi.mock("../fix/run-log.ts", () => ({
-  appendFixRunLog: vi.fn(async () => undefined),
+vi.mock("../agent/run-log.ts", () => ({
+  appendAgentRunLog: vi.fn(async () => undefined),
 }));
 
 import { createNdjsonStream, runNewIteration } from "./run-iteration.ts";
@@ -95,7 +95,7 @@ describe("runNewIteration multi-variant", () => {
     writeFileSync(path.join(iterDir, "v0.tsx"), baselineSource, "utf8");
     writeFileSync(path.join(iterDir, "v0.png"), "png", "utf8");
 
-    runFixMock.mockReset();
+    runAgentMock.mockReset();
     updateCommentActiveMock.mockClear();
   });
 
@@ -105,7 +105,7 @@ describe("runNewIteration multi-variant", () => {
 
   it("creates multiple independent snapshots and activates the last", async () => {
     let call = 0;
-    runFixMock.mockImplementation(() => {
+    runAgentMock.mockImplementation(() => {
       call += 1;
       writeFileSync(
         sourcePath,
@@ -132,7 +132,7 @@ describe("runNewIteration multi-variant", () => {
       stream,
     });
 
-    expect(runFixMock).toHaveBeenCalledTimes(2);
+    expect(runAgentMock).toHaveBeenCalledTimes(2);
     expect(
       readFileSync(
         path.join(projectRoot, "designs", "iterations", commentId, "v1.tsx"),
@@ -170,7 +170,7 @@ describe("runNewIteration multi-variant", () => {
   });
 
   it("restores baseline before each variant", async () => {
-    runFixMock.mockImplementation(() => {
+    runAgentMock.mockImplementation(() => {
       const current = readFileSync(sourcePath, "utf8");
       expect(current).toBe(baselineSource);
       writeFileSync(sourcePath, `${baselineSource}\n// edited`, "utf8");
@@ -194,11 +194,11 @@ describe("runNewIteration multi-variant", () => {
       stream,
     });
 
-    expect(runFixMock).toHaveBeenCalledTimes(2);
+    expect(runAgentMock).toHaveBeenCalledTimes(2);
   });
 
   it("returns changed false when every variant makes no diff", async () => {
-    runFixMock.mockResolvedValue({
+    runAgentMock.mockResolvedValue({
       ok: true,
       modelUsed: "composer-2.5-fast",
       turnsUsed: 1,
@@ -217,7 +217,7 @@ describe("runNewIteration multi-variant", () => {
       stream,
     });
 
-    expect(runFixMock).toHaveBeenCalledTimes(2);
+    expect(runAgentMock).toHaveBeenCalledTimes(2);
     expect(
       existsSync(
         path.join(projectRoot, "designs", "iterations", commentId, "v1.tsx")

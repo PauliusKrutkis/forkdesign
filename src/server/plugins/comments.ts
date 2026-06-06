@@ -1,5 +1,8 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { Plugin } from "vite";
+import { configureAgentRuntime } from "../agent/config.ts";
+import type { AgentModel } from "../agent/models.ts";
+import type { AgentSkill } from "../agent/skills.ts";
 import {
   handleDelete,
   handleGet,
@@ -14,9 +17,6 @@ import {
   handleIterationsScreenshot,
   iterationsSubpath,
 } from "../api/iterations/routes.ts";
-import { configureFixRuntime } from "../fix/config.ts";
-import type { FixModel } from "../fix/models.ts";
-import type { FixSkill } from "../fix/skills.ts";
 import { errorMessage, sendError, wrapApiHandler } from "../platform/http.ts";
 import { sourceLoc as createSourceLocPlugin } from "./source-loc.ts";
 
@@ -131,6 +131,13 @@ function sendIterationsStreamError(res: ServerResponse, err: unknown): void {
  * dev server pipeline itself.
  */
 export interface CommentsPluginOptions {
+  /** Override the default Agent model priority order. */
+  agentModelPriority?: AgentModel[];
+  /**
+   * Skill guidance injected into generated agent prompts.
+   * Defaults to `["frontend-design"]`; pass `[]` to disable.
+   */
+  agentSkills?: AgentSkill[];
   /** Path to the Cursor CLI `agent` binary. Default: `"agent"` (must be on PATH). */
   cursorAgentPath?: string;
   /**
@@ -138,13 +145,6 @@ export interface CommentsPluginOptions {
    * (e.g. overlay infrastructure or dev-only routes in your app).
    */
   excludeSrcPrefixes?: string[];
-  /** Override the default Fix model priority order. */
-  fixModelPriority?: FixModel[];
-  /**
-   * Skill guidance injected into generated fix prompts.
-   * Defaults to `["frontend-design"]`; pass `[]` to disable.
-   */
-  fixSkills?: FixSkill[];
   /**
    * Inject and mount `<CommentOverlay />` automatically in dev. The low-level
    * `comments()` middleware keeps this off by default; use `redline()` for the
@@ -156,8 +156,8 @@ export interface CommentsPluginOptions {
 export function comments(options: CommentsPluginOptions = {}): Plugin {
   const excludeSrcPrefixes = options.excludeSrcPrefixes ?? [];
   const cursorAgentPath = options.cursorAgentPath;
-  const fixModelPriority = options.fixModelPriority;
-  const fixSkills = options.fixSkills;
+  const agentModelPriority = options.agentModelPriority;
+  const agentSkills = options.agentSkills;
   const mountOverlay = options.mountOverlay ?? false;
   let projectRoot = process.cwd();
 
@@ -167,10 +167,10 @@ export function comments(options: CommentsPluginOptions = {}): Plugin {
 
     configResolved(config) {
       projectRoot = config.root;
-      configureFixRuntime({
+      configureAgentRuntime({
         ...(cursorAgentPath ? { cursorAgentPath } : {}),
-        ...(fixModelPriority ? { fixModelPriority } : {}),
-        ...(fixSkills === undefined ? {} : { fixSkills }),
+        ...(agentModelPriority ? { agentModelPriority } : {}),
+        ...(agentSkills === undefined ? {} : { agentSkills }),
       });
     },
 

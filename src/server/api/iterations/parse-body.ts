@@ -1,9 +1,9 @@
 import {
-  DEFAULT_FIX_VERSION_COUNT,
-  MAX_FIX_VERSION_COUNT,
-} from "../../../shared/fix-version-count.ts";
-import { type FixModel, parseFixModel } from "../../fix/models.ts";
-import { type FixSkill, parseFixSkill } from "../../fix/skills.ts";
+  DEFAULT_AGENT_VERSION_COUNT,
+  MAX_AGENT_VERSION_COUNT,
+} from "../../../shared/agent-version-count.ts";
+import { type AgentModel, parseAgentModel } from "../../agent/models.ts";
+import { type AgentSkill, parseAgentSkill } from "../../agent/skills.ts";
 import {
   type ParseResult,
   requireInt,
@@ -25,22 +25,22 @@ export interface ActivateBody {
 export interface NewIterationBody {
   count: number;
   id: string;
-  model?: FixModel;
-  skills?: FixSkill[];
+  model?: AgentModel;
+  skills?: AgentSkill[];
 }
 
-function parseFixSkills(value: unknown): ParseResult<FixSkill[]> {
+function parseAgentSkills(value: unknown): ParseResult<AgentSkill[]> {
   if (!Array.isArray(value)) {
     return { ok: false, reason: "field `skills` must be an array" };
   }
-  const skills: FixSkill[] = [];
+  const skills: AgentSkill[] = [];
   for (const item of value) {
     if (typeof item !== "string") {
       return { ok: false, reason: "field `skills` entries must be strings" };
     }
-    const skill = parseFixSkill(item);
+    const skill = parseAgentSkill(item);
     if (!skill) {
-      return { ok: false, reason: `unknown fix skill: ${item}` };
+      return { ok: false, reason: `unknown agent skill: ${item}` };
     }
     if (!skills.includes(skill)) {
       skills.push(skill);
@@ -132,11 +132,11 @@ export function parseNewIterationBody(
     return id;
   }
   const countRaw = obj.count;
-  let count = DEFAULT_FIX_VERSION_COUNT;
+  let count = DEFAULT_AGENT_VERSION_COUNT;
   if (countRaw !== undefined) {
     const parsedCount = requireInt(obj, "count", {
-      min: DEFAULT_FIX_VERSION_COUNT,
-      max: MAX_FIX_VERSION_COUNT,
+      min: DEFAULT_AGENT_VERSION_COUNT,
+      max: MAX_AGENT_VERSION_COUNT,
     });
     if (!parsedCount.ok) {
       return parsedCount;
@@ -151,15 +151,15 @@ export function parseNewIterationBody(
     if (typeof modelRaw !== "string") {
       return { ok: false, reason: "field `model` must be a string" };
     }
-    const model = parseFixModel(modelRaw);
+    const model = parseAgentModel(modelRaw);
     if (!model) {
-      return { ok: false, reason: `unknown fix model: ${modelRaw}` };
+      return { ok: false, reason: `unknown agent model: ${modelRaw}` };
     }
     body.model = model;
   }
 
   if (obj.skills !== undefined) {
-    const skills = parseFixSkills(obj.skills);
+    const skills = parseAgentSkills(obj.skills);
     if (!skills.ok) {
       return skills;
     }

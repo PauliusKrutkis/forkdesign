@@ -1,51 +1,57 @@
 /**
- * Server-side Fix model helpers. Cross-runtime types live in shared/fix-model.ts.
+ * Server-side Agent model helpers. Cross-runtime types live in shared/agent-model.ts.
  */
 
-import { type FixModel, VALID_FIX_MODELS } from "../../shared/fix-model.ts";
+import {
+  type AgentModel,
+  VALID_AGENT_MODELS,
+} from "../../shared/agent-model.ts";
 
-export type { FixModel } from "../../shared/fix-model.ts";
+export type { AgentModel } from "../../shared/agent-model.ts";
 
-/** Default Fix model order — first available wins. */
-export const DEFAULT_FIX_MODEL_PRIORITY: readonly FixModel[] = [
+/** Default Agent model order — first available wins. */
+export const DEFAULT_AGENT_MODEL_PRIORITY: readonly AgentModel[] = [
   "composer-2.5-fast",
   "composer-2.5",
   "claude-sonnet-4-6",
   "default",
 ];
 
-const COMPOSER_MODELS: ReadonlySet<FixModel> = new Set([
+const COMPOSER_MODELS: ReadonlySet<AgentModel> = new Set([
   "composer-2.5",
   "composer-2.5-fast",
 ]);
 
-const CLAUDE_MODELS: ReadonlySet<FixModel> = new Set([
+const CLAUDE_MODELS: ReadonlySet<AgentModel> = new Set([
   "default",
   "claude-sonnet-4-6",
   "claude-opus-4-7",
 ]);
 
-export function parseFixModel(value: unknown): FixModel | null {
-  if (typeof value !== "string" || !VALID_FIX_MODELS.has(value as FixModel)) {
+export function parseAgentModel(value: unknown): AgentModel | null {
+  if (
+    typeof value !== "string" ||
+    !VALID_AGENT_MODELS.has(value as AgentModel)
+  ) {
     return null;
   }
-  return value as FixModel;
+  return value as AgentModel;
 }
 
-export function isComposerModel(model: FixModel): boolean {
+export function isComposerModel(model: AgentModel): boolean {
   return COMPOSER_MODELS.has(model);
 }
 
-export function isClaudeModel(model: FixModel): boolean {
+export function isClaudeModel(model: AgentModel): boolean {
   return CLAUDE_MODELS.has(model);
 }
 
 /** Preferred model first, then the priority list without duplicates. */
-export function buildFixModelChain(
-  preferred: FixModel,
-  priority: readonly FixModel[] = DEFAULT_FIX_MODEL_PRIORITY
-): FixModel[] {
-  const chain: FixModel[] = [preferred];
+export function buildAgentModelChain(
+  preferred: AgentModel,
+  priority: readonly AgentModel[] = DEFAULT_AGENT_MODEL_PRIORITY
+): AgentModel[] {
+  const chain: AgentModel[] = [preferred];
   for (const model of priority) {
     if (model !== preferred) {
       chain.push(model);

@@ -2,7 +2,7 @@
 
 **Why not Onlook / v0 / Builder Visual Copilot?** Those tools keep design history in their platform — redline stores feedback as `{/* @comment … */}` markers inline in your real `.tsx` source and saves per-comment iteration snapshots on disk next to your repo, so design history lives in git with your code, not in a SaaS.
 
-Dev-only overlay for **Vite + React design playgrounds** — click a component, leave a note, optionally let Claude apply the fix. Not a general visual editor.
+Dev-only overlay for **Vite + React design playgrounds** — click a component, leave a note, optionally let an agent iterate on it. Not a general visual editor.
 
 > **0.x scope:** React 19 + Vite 8 + React Router 7 peer deps. Tailwind required in the host app. API may change between minors until 1.0.
 
@@ -21,14 +21,28 @@ pnpm add -D github:PauliusKrutkis/redline
 
 **Peer dependencies:** `react`, `react-dom`, `react-router-dom`, `vite`.
 
-**AI iteration (Fix)** uses a **preferred model + automatic fallback chain**:
+**AI iteration** uses a **preferred model + automatic fallback chain**:
 
 - **Preferred model** — set in overlay Settings → Preferred model (default: `composer-2.5-fast`).
 - **Fallback order** — `composer-2.5-fast` → `composer-2.5` → `claude-sonnet-4-6` → `default`, skipping models unavailable in your environment (Composer ids are probed via `agent models`).
 - **Claude** — [Claude Agent SDK](https://www.npmjs.com/package/@anthropic-ai/claude-agent-sdk); `ANTHROPIC_API_KEY` or Claude Code login.
 - **Composer** — [Cursor CLI](https://cursor.com/docs/cli) (`agent`); `agent login` or `CURSOR_API_KEY`.
 
-Override the chain with `comments({ fixModelPriority: [...] })`. The `done` event includes `modelUsed` and `durationMs`.
+Override the chain with `redline({ agentModelPriority: [...] })`. The `done` event includes `modelUsed` and `durationMs`.
+
+## Security and trust boundary
+
+Redline is intended for local development only. Its Vite middleware can read and
+write `.tsx` files under your app's `src/` tree, writes screenshots and
+iteration files under `designs/`, and may run a local AI agent when you choose
+Agent mode.
+
+Do not expose a Vite dev server running redline to an untrusted network. If AI
+iteration is enabled, prompts can include selected source context, comments,
+screenshots, and design feedback, and that data is sent to whichever agent
+provider you configure through Claude Code/SDK or Cursor CLI. Add `designs/` and
+`public/designs/` to the host app's `.gitignore` if iteration artifacts may
+contain private UI, customer data, or unreleased product work.
 
 ## Quick start
 
@@ -109,10 +123,10 @@ redline({
   excludeSrcPrefixes: ["src/dev/"],
   // Optional: path to Cursor CLI when `agent` is not on PATH
   cursorAgentPath: "/usr/local/bin/agent",
-  // Optional: override Fix fallback order (preferred model still goes first)
-  fixModelPriority: ["composer-2.5-fast", "composer-2.5", "claude-sonnet-4-6", "default"],
-  // Optional: prompt skills for fix runs (defaults to frontend design guidance)
-  fixSkills: ["frontend-design"], // pass [] to disable
+  // Optional: override agent fallback order (preferred model still goes first)
+  agentModelPriority: ["composer-2.5-fast", "composer-2.5", "claude-sonnet-4-6", "default"],
+  // Optional: prompt skills for agent runs (defaults to frontend design guidance)
+  agentSkills: ["frontend-design"], // pass [] to disable
 });
 ```
 

@@ -1,7 +1,7 @@
 import { toPng } from "html-to-image";
 import { SquareDashedMousePointer, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { DEFAULT_FIX_VERSION_COUNT } from "../../shared/fix-version-count.ts";
+import { DEFAULT_AGENT_VERSION_COUNT } from "../../shared/agent-version-count.ts";
 import type { OverlayModel } from "../settings.ts";
 import { Button } from "../ui/button.tsx";
 import {
@@ -20,7 +20,7 @@ export interface ComposerSubmission {
   anchor: string;
   /** anchor point (page x/y of the click) for positioning the panel */
   clickPoint: { x: number; y: number };
-  /** Fix model when `runAgent` is set; defaults to overlay settings. */
+  /** Agent model when `runAgent` is set; defaults to overlay settings. */
   model?: OverlayModel;
   /** submitted in Agent mode — create the comment, then run the agent on it */
   runAgent?: boolean;
@@ -50,10 +50,10 @@ export type ComposerSubmitResult = { ok: true } | { ok: false; error: string };
 interface CommentComposerProps {
   /** when true, the composer mode is active (highlight + capture next click) */
   active: boolean;
-  fixModel: OverlayModel;
+  agentModel: OverlayModel;
+  onAgentModelChange: (model: OverlayModel) => void;
   /** turn composer mode off */
   onCancel: () => void;
-  onFixModelChange: (model: OverlayModel) => void;
   /**
    * Invoked when the user submits a comment. Returns a Promise so the
    * composer can show inline "saving"/"saved"/"error" states. On a failed
@@ -96,8 +96,8 @@ interface PickerState {
  */
 export function CommentComposer({
   active,
-  fixModel,
-  onFixModelChange,
+  agentModel,
+  onAgentModelChange,
   onCancel,
   onSubmit,
 }: CommentComposerProps) {
@@ -366,13 +366,13 @@ export function CommentComposer({
       ) : null}
       {target ? (
         <ComposerPanel
+          agentModel={agentModel}
           clickPoint={target.clickPoint}
-          fixModel={fixModel}
+          onAgentModelChange={onAgentModelChange}
           onCancel={() => {
             setTarget(null);
             setText("");
           }}
-          onFixModelChange={onFixModelChange}
           onSaved={() => {
             // Defer the reset slightly so the "saved" pill is visible.
             window.setTimeout(() => {
@@ -613,8 +613,8 @@ function ComposerPanel({
   clickPoint,
   text,
   textareaRef,
-  fixModel,
-  onFixModelChange,
+  agentModel,
+  onAgentModelChange,
   onTextChange,
   onCancel,
   onSubmit,
@@ -624,8 +624,8 @@ function ComposerPanel({
   clickPoint: { x: number; y: number };
   text: string;
   textareaRef: React.RefObject<HTMLTextAreaElement | null>;
-  fixModel: OverlayModel;
-  onFixModelChange: (model: OverlayModel) => void;
+  agentModel: OverlayModel;
+  onAgentModelChange: (model: OverlayModel) => void;
   onTextChange: (v: string) => void;
   onCancel: () => void;
   onSubmit: (opts: {
@@ -637,7 +637,7 @@ function ComposerPanel({
 }) {
   const [status, setStatus] = useState<ComposerPanelStatus>({ kind: "idle" });
   const [mode, setMode] = useState<ComposerMode>("agent");
-  const [versionCount, setVersionCount] = useState(DEFAULT_FIX_VERSION_COUNT);
+  const [versionCount, setVersionCount] = useState(DEFAULT_AGENT_VERSION_COUNT);
 
   // Anchor the composer panel to the user's click point, not to the target
   // element's bounding box — for page-wide elements whose `bottom` is below
@@ -685,7 +685,7 @@ function ComposerPanel({
       result = await onSubmit({
         runAgent: mode === "agent",
         versionCount,
-        model: fixModel,
+        model: agentModel,
       });
     } catch (err) {
       setStatus({ kind: "error", message: toErrorMessage(err) });
@@ -742,15 +742,15 @@ function ComposerPanel({
       </div>
 
       <CommentComposerBar
+        agentModel={agentModel}
+        agentVersionCount={versionCount}
         busy={submitting}
         error={status.kind === "error" ? status.message : null}
-        fixModel={fixModel}
-        fixVersionCount={versionCount}
         iterating={false}
         mode={mode}
+        onAgentModelChange={onAgentModelChange}
+        onAgentVersionCountChange={setVersionCount}
         onChange={onTextChange}
-        onFixModelChange={onFixModelChange}
-        onFixVersionCountChange={setVersionCount}
         onModeChange={setMode}
         onSubmit={() => {
           submit().catch(ignorePromiseRejection);

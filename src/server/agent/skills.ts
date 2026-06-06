@@ -1,10 +1,10 @@
-export const DEFAULT_FIX_SKILLS = ["frontend-design"] as const;
+export const DEFAULT_AGENT_SKILLS = ["frontend-design"] as const;
 
-export const FIX_SKILLS = ["frontend-design"] as const;
+const AGENT_SKILLS = ["frontend-design"] as const;
 
-export type FixSkill = (typeof FIX_SKILLS)[number];
+export type AgentSkill = (typeof AGENT_SKILLS)[number];
 
-const FIX_SKILL_SET = new Set<string>(FIX_SKILLS);
+const AGENT_SKILL_SET = new Set<string>(AGENT_SKILLS);
 
 const FRONTEND_DESIGN_GUIDANCE = [
   "## Skill: frontend-design",
@@ -16,12 +16,12 @@ const FRONTEND_DESIGN_GUIDANCE = [
   "- Avoid cliched purple gradients, generic card layouts, and unnecessary visual churn.",
 ] as const;
 
-export function parseFixSkill(value: string): FixSkill | undefined {
-  return FIX_SKILL_SET.has(value) ? (value as FixSkill) : undefined;
+export function parseAgentSkill(value: string): AgentSkill | undefined {
+  return AGENT_SKILL_SET.has(value) ? (value as AgentSkill) : undefined;
 }
 
-export function buildFixSkillPromptSection(
-  skills: readonly FixSkill[]
+export function buildAgentSkillPromptSection(
+  skills: readonly AgentSkill[]
 ): string[] {
   if (!skills.includes("frontend-design")) {
     return [];

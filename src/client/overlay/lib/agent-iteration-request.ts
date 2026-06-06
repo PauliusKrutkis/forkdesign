@@ -2,8 +2,9 @@ import type { OverlayModel } from "../../settings.ts";
 import type { CommentData } from "../../types.ts";
 import { readApiError } from "./api.ts";
 import {
+  anchorRenderSignature,
   captureAndUploadVersionNow,
-  scheduleFixVariantScreenshots,
+  scheduleAgentVariantScreenshots,
 } from "./capture-iteration-screenshot.ts";
 import { isAbortError, toErrorMessage } from "./errors.ts";
 import { ignorePromiseRejection } from "./ignore-promise-rejection.ts";
@@ -13,21 +14,21 @@ import {
   validateIterateDone,
 } from "./parse-iterate-stream.ts";
 
-export type IterateFixOutcome = "ok" | "cancelled" | "failed";
+export type AgentIterationOutcome = "ok" | "cancelled" | "failed";
 
-export async function runIterateFixRequest(args: {
+export async function runAgentIterationRequest(args: {
   lead: CommentData;
-  fixModel: OverlayModel;
-  fixVersionCount: number;
+  agentModel: OverlayModel;
+  agentVersionCount: number;
   signal: AbortSignal;
   reloadIterations: () => void | Promise<void>;
   setIterateError: (message: string | null) => void;
   setIterateStatus: (message: string | null) => void;
-}): Promise<IterateFixOutcome> {
+}): Promise<AgentIterationOutcome> {
   const {
     lead,
-    fixModel,
-    fixVersionCount,
+    agentModel,
+    agentVersionCount,
     signal,
     reloadIterations,
     setIterateError,
@@ -35,8 +36,10 @@ export async function runIterateFixRequest(args: {
   } = args;
 
   try {
+    const preAgentSignature = anchorRenderSignature(lead.anchor);
+
     // Agent runs change the page; capture baseline (v0) only while the DOM
-    // still reflects the pre-fix state. Comment-only creates already POST v0.
+    // still reflects the pre-agent state. Comment-only creates already POST v0.
     if (!lead.screenshot) {
       const uploaded = await captureAndUploadVersionNow({
         id: lead.id,
@@ -53,8 +56,8 @@ export async function runIterateFixRequest(args: {
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
         id: lead.id,
-        model: fixModel,
-        count: fixVersionCount,
+        model: agentModel,
+        count: agentVersionCount,
       }),
       signal,
     });
@@ -68,6 +71,11 @@ export async function runIterateFixRequest(args: {
 
     const done = await readIterateStream(res.body, {
       onProgress: setIterateStatus,
+      onProgressEvent: (event) => {
+        if (event.stage === "snapshot" && typeof event.version === "number") {
+          Promise.resolve(reloadIterations()).catch(ignorePromiseRejection);
+        }
+      },
       signal,
     });
     if (signal.aborted) {
@@ -85,18 +93,19 @@ export async function runIterateFixRequest(args: {
 
     await Promise.resolve(reloadIterations()).catch(ignorePromiseRejection);
 
-    const fixVersions =
+    const agentVersions =
       validated.value.versions?.filter((v) => v > 0) ??
       (validated.value.v !== undefined && validated.value.v > 0
         ? [validated.value.v]
         : []);
-    const activeV = validated.value.v ?? fixVersions.at(-1) ?? 0;
-    if (fixVersions.length > 0) {
-      scheduleFixVariantScreenshots({
+    const activeV = validated.value.v ?? agentVersions.at(-1) ?? 0;
+    if (agentVersions.length > 0) {
+      scheduleAgentVariantScreenshots({
         id: lead.id,
         anchor: lead.anchor,
-        versions: fixVersions,
+        versions: agentVersions,
         activeV,
+        initialPreviousSignature: preAgentSignature,
         onDone: () => {
           Promise.resolve(reloadIterations()).catch(ignorePromiseRejection);
         },

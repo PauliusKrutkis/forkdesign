@@ -1,76 +1,76 @@
-import type { FixModel } from "./models.ts";
+import type { AgentModel } from "./models.ts";
 import type { PromptReply } from "./prompt.ts";
-import type { FixSkill } from "./skills.ts";
+import type { AgentSkill } from "./skills.ts";
 
 /**
  * A scoped projection of agent activity for downstream progress UI.
  * Relayed to the browser as NDJSON from `POST /api/iterations/new`.
  */
-export interface FixProgress {
+export interface AgentProgress {
   detail?: string;
   kind: string;
   tool?: string;
 }
 
-export interface FixRunInput {
+export interface AgentRunInput {
   activeVersion?: number;
   anchor: string;
   file: string;
-  model: FixModel;
-  onEvent?: (event: FixProgress) => void;
+  model: AgentModel;
+  onEvent?: (event: AgentProgress) => void;
   priorVariantApproaches?: string[];
   projectRoot: string;
   replies?: PromptReply[];
   screenshot?: string;
   signal?: AbortSignal;
-  skills?: FixSkill[];
+  skills?: AgentSkill[];
   text: string;
   variantCount?: number;
   variantIndex?: number;
   view?: string;
 }
 
-export interface FixInput extends FixRunInput {}
+export interface AgentInput extends AgentRunInput {}
 
-export type FixAttemptResult =
+export type AgentAttemptResult =
   | { ok: true; turnsUsed: number; toolCalls: number }
   | { ok: false; error: string };
 
 /** Per-model timing for one attempt in the fallback chain. */
-export interface FixAttemptTiming {
-  model: FixModel;
+export interface AgentAttemptTiming {
+  model: AgentModel;
   ms: number;
   ok: boolean;
 }
 
-export type FixResult =
+export type AgentResult =
   | {
       ok: true;
-      modelUsed: FixModel;
+      modelUsed: AgentModel;
       turnsUsed: number;
       toolCalls: number;
-      attempts: FixAttemptTiming[];
+      attempts: AgentAttemptTiming[];
     }
   | {
       ok: false;
       error: string;
-      modelsTried?: FixModel[];
-      attempts: FixAttemptTiming[];
+      modelsTried?: AgentModel[];
+      attempts: AgentAttemptTiming[];
     };
 
-export interface FixStrategy {
+export interface AgentStrategy {
   readonly id: string;
-  run(input: FixInput): Promise<FixAttemptResult>;
+  run(input: AgentInput): Promise<AgentAttemptResult>;
 }
 
-export interface FixRuntimeConfig {
-  /** Path to the Cursor CLI `agent` binary. Default: `"agent"`. */
-  cursorAgentPath?: string;
-  /** Override the default Fix model fallback order. */
-  fixModelPriority?: FixModel[];
+export interface AgentRuntimeConfig {
+  /** Override the default Agent model fallback order. */
+  agentModelPriority?: AgentModel[];
   /**
-   * Skill guidance injected into generated fix prompts by default.
+   * Skill guidance injected into generated agent prompts by default.
    * Use an empty array to disable default skill guidance.
    */
-  fixSkills?: FixSkill[];
+  agentSkills?: AgentSkill[];
+  /** Path to the Cursor CLI `agent` binary. Default: `"agent"`. */
+  cursorAgentPath?: string;
 }

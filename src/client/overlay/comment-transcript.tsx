@@ -17,13 +17,31 @@ import type {
   TurnInstruction,
 } from "./lib/build-transcript.ts";
 import { buildTranscript } from "./lib/build-transcript.ts";
-import { commentMayHaveFixVersions } from "./lib/comment-may-have-fix-versions.ts";
+import { commentMayHaveAgentVersions } from "./lib/comment-may-have-agent-versions.ts";
 import type { TranscriptEditSubmit } from "./transcript-entry-composer.tsx";
 
 /** Collapse the middle once a thread has more than this many turns. */
 const COLLAPSE_THRESHOLD = 4;
 /** Always-visible turns at the end (most recent exchange). */
 const COLLAPSE_TAIL = 2;
+const RUN_START_CLOCK_SKEW_MS = 1000;
+
+function countPersistedRunVersions(
+  versions: IterationVersion[],
+  startedAt: number | null
+): number {
+  if (startedAt === null) {
+    return 0;
+  }
+  const threshold = startedAt - RUN_START_CLOCK_SKEW_MS;
+  return versions.filter((version) => {
+    if (version.v <= 0 || !version.createdAt) {
+      return false;
+    }
+    const createdAt = Date.parse(version.createdAt);
+    return Number.isFinite(createdAt) && createdAt >= threshold;
+  }).length;
+}
 
 function defaultEditModeForInstruction(
   instruction: TurnInstruction,
@@ -37,9 +55,9 @@ function defaultEditModeForInstruction(
 
 interface CommentTranscriptProps {
   activeVersion: number;
+  agentModel: OverlayModel;
+  agentVersionCount: number;
   editingEntryKey: string | null;
-  fixModel: OverlayModel;
-  fixVersionCount: number;
   hasAgentHistory: boolean;
   iterateNow: number;
   iterateStartedAt: number | null;
@@ -50,6 +68,7 @@ interface CommentTranscriptProps {
   iterationsLoading?: boolean;
   lead: CommentData;
   onActivateVersion: (v: number) => Promise<void>;
+  onAgentModelChange: (model: OverlayModel) => void;
   onEditComment?: (payload: TranscriptEditSubmit) => Promise<void>;
   onEditingEntryKeyChange: (key: string | null) => void;
   onEditReply?: (
@@ -57,7 +76,6 @@ interface CommentTranscriptProps {
     replyIndex: number,
     payload: TranscriptEditSubmit
   ) => Promise<void>;
-  onFixModelChange: (model: OverlayModel) => void;
   onRemoveVersion: (v: number) => void | Promise<void>;
   onResetInlineFlows?: () => void;
   onThumbClick: (src: string) => void;
@@ -90,9 +108,9 @@ export function CommentTranscript({
   iterateStatus,
   iterateStartedAt,
   iterateNow,
-  fixModel,
-  fixVersionCount,
-  onFixModelChange,
+  agentModel,
+  agentVersionCount,
+  onAgentModelChange,
   iterationsLoading = false,
 }: CommentTranscriptProps) {
   const scrollRef = useRef<HTMLDivElement | null>(null);
@@ -112,7 +130,7 @@ export function CommentTranscript({
   );
 
   const turnCount = transcript.turns.length;
-  const mayHaveFixVersions = commentMayHaveFixVersions(lead);
+  const mayHaveAgentVersions = commentMayHaveAgentVersions(lead);
   // The baseline rides along as the leading "before" card in the first turn
   // that produced variants, so Original sits beside the new version(s).
   const firstRunTurnKey = transcript.turns.find((t) => t.runs.length > 0)?.key;
@@ -134,23 +152,31 @@ export function CommentTranscript({
       ? transcript.turns.slice(turnCount - COLLAPSE_TAIL)
       : transcript.turns.slice(1);
   const showHistoryToggle = turnCount > COLLAPSE_THRESHOLD + 1;
+  const persistedRunVersions = countPersistedRunVersions(
+    iterations?.versions ?? [],
+    iterateStartedAt
+  );
+  const pendingAgentVersionCount = Math.max(
+    0,
+    agentVersionCount - persistedRunVersions
+  );
 
   const renderTurn = (turn: TranscriptTurn) => (
     <TurnView
       activeVersion={activeVersion}
+      agentModel={agentModel}
+      agentVersionCount={agentVersionCount}
       baseline={turn.key === firstRunTurnKey ? transcript.baseline : undefined}
       editingEntryKey={editingEntryKey}
-      fixModel={fixModel}
-      fixVersionCount={fixVersionCount}
       hasAgentHistory={hasAgentHistory}
       iterating={iterating}
       key={turn.key}
       lead={lead}
       onActivateVersion={onActivateVersion}
+      onAgentModelChange={onAgentModelChange}
       onEditComment={onEditComment}
       onEditingEntryKeyChange={onEditingEntryKeyChange}
       onEditReply={onEditReply}
-      onFixModelChange={onFixModelChange}
       onRemoveVersion={onRemoveVersion}
       onResetInlineFlows={onResetInlineFlows}
       onThumbClick={onThumbClick}
@@ -160,7 +186,7 @@ export function CommentTranscript({
     />
   );
 
-  // Stick to the bottom as the conversation grows / a fix streams in.
+  // Stick to the bottom as the conversation grows / an agent run streams in.
   // biome-ignore lint/correctness/useExhaustiveDependencies: scroll on growth/stream
   useEffect(() => {
     const el = scrollRef.current;
@@ -196,14 +222,14 @@ export function CommentTranscript({
 
       {iterating ? (
         <ThinkingEntry
-          count={fixVersionCount}
+          count={pendingAgentVersionCount}
           iterateNow={iterateNow}
           iterateStartedAt={iterateStartedAt}
           status={iterateStatus}
         />
       ) : null}
 
-      {iterationsLoading && !iterating && mayHaveFixVersions ? (
+      {iterationsLoading && !iterating && mayHaveAgentVersions ? (
         <VariantsLoadingEntry skeletonCount={2} />
       ) : null}
     </div>
@@ -212,15 +238,16 @@ export function CommentTranscript({
 
 interface TurnViewProps {
   activeVersion: number;
+  agentModel: OverlayModel;
+  agentVersionCount: number;
   /** When set, prepended as the "before" card in this turn's first run. */
   baseline?: IterationVersion;
   editingEntryKey: string | null;
-  fixModel: OverlayModel;
-  fixVersionCount: number;
   hasAgentHistory: boolean;
   iterating: boolean;
   lead: CommentData;
   onActivateVersion: (v: number) => Promise<void>;
+  onAgentModelChange: (model: OverlayModel) => void;
   onEditComment?: (payload: TranscriptEditSubmit) => Promise<void>;
   onEditingEntryKeyChange: (key: string | null) => void;
   onEditReply?: (
@@ -228,7 +255,6 @@ interface TurnViewProps {
     replyIndex: number,
     payload: TranscriptEditSubmit
   ) => Promise<void>;
-  onFixModelChange: (model: OverlayModel) => void;
   onRemoveVersion: (v: number) => void | Promise<void>;
   onResetInlineFlows?: () => void;
   onThumbClick: (src: string) => void;
@@ -246,9 +272,9 @@ function TurnView({
   hasAgentHistory,
   editingEntryKey,
   onEditingEntryKeyChange,
-  fixModel,
-  fixVersionCount,
-  onFixModelChange,
+  agentModel,
+  agentVersionCount,
+  onAgentModelChange,
   iterating,
   onEditComment,
   onEditReply,
@@ -285,6 +311,8 @@ function TurnView({
   return (
     <div className="space-y-4">
       <TranscriptHumanEntry
+        agentModel={agentModel}
+        agentVersionCount={agentVersionCount}
         ariaLabel={isComment ? "Edit comment" : "Edit reply"}
         author={author}
         badge={
@@ -299,12 +327,10 @@ function TurnView({
         )}
         editingEntryKey={editingEntryKey}
         entryKey={turn.key}
-        fixModel={fixModel}
-        fixVersionCount={fixVersionCount}
         iterating={iterating}
+        onAgentModelChange={onAgentModelChange}
         onEditingEntryKeyChange={onEditingEntryKeyChange}
         onEditSubmit={onEditSubmit}
-        onFixModelChange={onFixModelChange}
         onInteraction={onResetInlineFlows}
         text={text}
       />
@@ -431,7 +457,7 @@ function ThinkingEntry({
             {status ?? "Working…"}
           </span>
         </div>
-        <VariantSkeletonGrid count={count} />
+        {count > 0 ? <VariantSkeletonGrid count={count} /> : null}
       </div>
     </div>
   );

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { DEFAULT_FIX_VERSION_COUNT } from "../../shared/fix-version-count.ts";
+import { DEFAULT_AGENT_VERSION_COUNT } from "../../shared/agent-version-count.ts";
 import type { OverlayModel } from "../settings.ts";
 import {
   CommentComposerBar,
@@ -16,14 +16,14 @@ export interface TranscriptEditSubmit {
 }
 
 interface TranscriptEntryComposerProps {
+  agentModel: OverlayModel;
+  agentVersionCount: number;
   defaultMode: ComposerMode;
   disabled?: boolean;
-  fixModel: OverlayModel;
-  fixVersionCount: number;
   initialText: string;
   iterating: boolean;
+  onAgentModelChange: (model: OverlayModel) => void;
   onCancel: () => void;
-  onFixModelChange: (model: OverlayModel) => void;
   onSubmit: (payload: TranscriptEditSubmit) => Promise<void>;
 }
 
@@ -34,9 +34,9 @@ interface TranscriptEntryComposerProps {
 export function TranscriptEntryComposer({
   initialText,
   defaultMode,
-  fixModel,
-  fixVersionCount,
-  onFixModelChange,
+  agentModel,
+  agentVersionCount,
+  onAgentModelChange,
   iterating,
   disabled,
   onSubmit,
@@ -45,7 +45,7 @@ export function TranscriptEntryComposer({
   const [draft, setDraft] = useState(initialText);
   const [mode, setMode] = useState<ComposerMode>(defaultMode);
   const [versionCount, setVersionCount] = useState(
-    fixVersionCount || DEFAULT_FIX_VERSION_COUNT
+    agentVersionCount || DEFAULT_AGENT_VERSION_COUNT
   );
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -79,7 +79,7 @@ export function TranscriptEntryComposer({
         text: trimmed,
         runAgent: mode === "agent",
         versionCount,
-        model: fixModel,
+        model: agentModel,
       });
     } catch (err) {
       setError(toErrorMessage(err));
@@ -90,15 +90,15 @@ export function TranscriptEntryComposer({
 
   return (
     <CommentComposerBar
+      agentModel={agentModel}
+      agentVersionCount={versionCount}
       busy={busy}
       error={error}
-      fixModel={fixModel}
-      fixVersionCount={versionCount}
       iterating={iterating}
       mode={mode}
+      onAgentModelChange={onAgentModelChange}
+      onAgentVersionCountChange={setVersionCount}
       onChange={setDraft}
-      onFixModelChange={onFixModelChange}
-      onFixVersionCountChange={setVersionCount}
       onModeChange={setMode}
       onSubmit={() => {
         submit().catch(ignorePromiseRejection);

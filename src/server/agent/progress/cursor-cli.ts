@@ -1,4 +1,4 @@
-import type { FixProgress } from "../types.ts";
+import type { AgentProgress } from "../types.ts";
 
 export interface CursorCliStreamEvent {
   subtype?: string;
@@ -8,7 +8,7 @@ export interface CursorCliStreamEvent {
 
 export function projectCursorCliProgress(
   event: CursorCliStreamEvent
-): FixProgress | null {
+): AgentProgress | null {
   const t = event.type;
   if (!t) {
     return null;

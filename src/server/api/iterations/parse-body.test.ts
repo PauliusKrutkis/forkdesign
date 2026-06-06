@@ -110,7 +110,7 @@ describe("parseNewIterationBody", () => {
   it("rejects unsupported skills", () => {
     expect(parseNewIterationBody({ id: "abc", skills: ["unknown"] })).toEqual({
       ok: false,
-      reason: "unknown fix skill: unknown",
+      reason: "unknown agent skill: unknown",
     });
   });
 });

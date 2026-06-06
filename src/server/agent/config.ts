@@ -1,15 +1,15 @@
-import type { FixRuntimeConfig } from "./types.ts";
+import type { AgentRuntimeConfig } from "./types.ts";
 
-let runtimeConfig: FixRuntimeConfig = {};
+let runtimeConfig: AgentRuntimeConfig = {};
 
-export function configureFixRuntime(config: FixRuntimeConfig): void {
+export function configureAgentRuntime(config: AgentRuntimeConfig): void {
   runtimeConfig = { ...runtimeConfig, ...config };
 }
 
-export function getFixRuntimeConfig(): FixRuntimeConfig {
+export function getAgentRuntimeConfig(): AgentRuntimeConfig {
   return runtimeConfig;
 }
 
-export function resetFixRuntimeConfig(): void {
+export function resetAgentRuntimeConfig(): void {
   runtimeConfig = {};
 }

@@ -1,8 +1,11 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import path from "node:path";
-import { getFixRuntimeConfig } from "../../fix/config.ts";
-import { DEFAULT_FIX_MODEL_PRIORITY, type FixModel } from "../../fix/models.ts";
-import { DEFAULT_FIX_SKILLS } from "../../fix/skills.ts";
+import { getAgentRuntimeConfig } from "../../agent/config.ts";
+import {
+  type AgentModel,
+  DEFAULT_AGENT_MODEL_PRIORITY,
+} from "../../agent/models.ts";
+import { DEFAULT_AGENT_SKILLS } from "../../agent/skills.ts";
 import { applyIterationVersionToSource } from "../../iterations/activate-version.ts";
 import { resolveCommentIterationContext } from "../../iterations/context.ts";
 import {
@@ -85,6 +88,7 @@ export async function handleIterationsList(
       png: iterationPngUrl(id, n, pngMtimeMs(iterationRoots, n)),
       summary: meta.summary,
       createdAt: meta.createdAt,
+      ...(meta.runId ? { runId: meta.runId } : {}),
     };
   });
 
@@ -280,9 +284,9 @@ export async function handleIterationsNew(
     return;
   }
   const { id, count, model: requestedModel } = parsed.value;
-  const model: FixModel = requestedModel ?? DEFAULT_FIX_MODEL_PRIORITY[0];
+  const model: AgentModel = requestedModel ?? DEFAULT_AGENT_MODEL_PRIORITY[0];
   const skills = parsed.value.skills ??
-    getFixRuntimeConfig().fixSkills ?? [...DEFAULT_FIX_SKILLS];
+    getAgentRuntimeConfig().agentSkills ?? [...DEFAULT_AGENT_SKILLS];
 
   const ctx = await resolveCommentIterationContext(
     projectRoot,

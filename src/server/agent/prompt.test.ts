@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   buildIteratePrompt,
   shouldIncludeScreenshotInPrompt,
-  summarizeFixSourceDiff,
+  summarizeAgentSourceDiff,
 } from "./prompt.ts";
 
 describe("buildIteratePrompt", () => {
@@ -128,9 +128,9 @@ describe("buildIteratePrompt", () => {
   });
 });
 
-describe("summarizeFixSourceDiff", () => {
+describe("summarizeAgentSourceDiff", () => {
   it("describes changed lines", () => {
-    const summary = summarizeFixSourceDiff(
+    const summary = summarizeAgentSourceDiff(
       '<div className="text-sm">',
       '<div className="text-sm text-blue-500">'
     );

@@ -24,7 +24,7 @@
   --border: oklch(0.92 0.004 286.32);
   --input: oklch(0.92 0.004 286.32);
   --ring: oklch(0.705 0.015 286.067);
-  /* Agent / fix accent — matches design explorations */
+  /* Agent accent — matches design explorations */
   --agent: oklch(0.52 0.2 280);
   --agent-soft: oklch(0.95 0.03 285);
 }
@@ -116,7 +116,7 @@
   animation: tooltip-in 0.12s ease-out;
 }
 
-/* Streaming fix skeletons — a quiet sweep while the agent produces variants. */
+/* Streaming agent skeletons — a quiet sweep while the agent produces variants. */
 @keyframes redline-shimmer {
   from {
     background-position: 200% 0;
@@ -178,28 +178,6 @@
   fill: var(--foreground);
 }
 
-/* Ring over the anchored element while the bubble is detached/peeking — the
-   "which element is this about" cue that replaces adjacency. An overlay box,
-   never a mutation of the host node. */
-@keyframes redline-ring-in {
-  from {
-    opacity: 0;
-    transform: scale(1.04);
-  }
-  to {
-    opacity: 1;
-    transform: scale(1);
-  }
-}
-
-.redline-anchor-ring {
-  outline: 1.5px solid var(--foreground);
-  outline-offset: 2px;
-  border-radius: 6px;
-  box-shadow: 0 0 0 3px color-mix(in oklch, var(--foreground) 6%, transparent);
-  animation: redline-ring-in 0.18s cubic-bezier(0.22, 1, 0.36, 1) both;
-}
-
 /* Collapsed-history expander chevron. */
 .redline-chevron {
   transition: transform 0.2s cubic-bezier(0.22, 1, 0.36, 1);
@@ -217,7 +195,6 @@
   .animate-tooltip-in,
   .animate-redline-bubble-in,
   .redline-leader-line,
-  .redline-anchor-ring,
   .redline-chevron,
   .redline-shimmer {
     transition: none;

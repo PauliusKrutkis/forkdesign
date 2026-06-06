@@ -20,8 +20,8 @@ src/
 ├── index.ts                      # client public entry
 ├── plugin/index.ts               # server public entry
 ├── client/                       # browser-only (overlay, ui, settings, types)
-├── server/                       # node-only (plugins, api, comments, iterations, fix, platform)
-├── shared/fix-model.ts           # cross-runtime contract
+├── server/                       # node-only (plugins, api, comments, iterations, agent, platform)
+├── shared/agent-model.ts         # cross-runtime contract
 └── styles.css
 ```
 
@@ -37,14 +37,14 @@ src/
 | `*/ui/` | Presentational primitives |
 | `server/platform/` | Server infra (HTTP, paths, I/O) |
 | `server/api/` | HTTP middleware handlers |
-| `server/fix/strategies/` | AI fix backends |
+| `server/agent/strategies/` | AI agent backends |
 
 ### Where things go
 
 | Concept | Location |
 |---------|----------|
-| Types | Per domain: `client/types.ts`, `server/fix/types.ts`, `shared/fix-model.ts` |
-| Server logic | `server/comments/`, `server/iterations/`, `server/fix/` |
+| Types | Per domain: `client/types.ts`, `server/agent/types.ts`, `shared/agent-model.ts` |
+| Server logic | `server/comments/`, `server/iterations/`, `server/agent/` |
 | UI | `client/ui/` and `client/overlay/` |
 | Tests | Colocated `*.test.ts` next to implementation |
 
@@ -93,18 +93,18 @@ flowchart TB
     API[api/]
     Comments[comments/]
     Iterations[iterations/]
-    Fix[fix/]
+    Agent[agent/]
   end
 
   subgraph shared [shared/]
-    FixModel[fix-model.ts]
+    AgentModel[agent-model.ts]
   end
 
   Overlay -->|fetch| API
   API --> Comments
   API --> Iterations
-  API --> Fix
-  Overlay --> FixModel
-  Fix --> FixModel
+  API --> Agent
+  Overlay --> AgentModel
+  Agent --> AgentModel
   Plugins --> API
 ```

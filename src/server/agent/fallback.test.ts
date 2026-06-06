@@ -1,30 +1,30 @@
 import { describe, expect, it } from "vitest";
-import { shouldFallbackFix } from "./fallback.ts";
+import { shouldFallbackAgent } from "./fallback.ts";
 
-describe("shouldFallbackFix", () => {
+describe("shouldFallbackAgent", () => {
   it("does not fallback on abort", () => {
-    expect(shouldFallbackFix("aborted")).toBe(false);
+    expect(shouldFallbackAgent("aborted")).toBe(false);
   });
 
   it("fallbacks on auth errors", () => {
     expect(
-      shouldFallbackFix("Cursor CLI not authenticated — run agent login")
+      shouldFallbackAgent("Cursor CLI not authenticated — run agent login")
     ).toBe(true);
   });
 
   it("fallbacks on missing CLI", () => {
     expect(
-      shouldFallbackFix(
+      shouldFallbackAgent(
         "Cursor CLI (`agent`) not found — install from https://cursor.com/docs/cli"
       )
     ).toBe(true);
   });
 
   it("fallbacks on bad model errors", () => {
-    expect(shouldFallbackFix("Bad model name: composer-2.5-fast")).toBe(true);
+    expect(shouldFallbackAgent("Bad model name: composer-2.5-fast")).toBe(true);
   });
 
   it("does not fallback on generic agent failures", () => {
-    expect(shouldFallbackFix("rate limit exceeded")).toBe(false);
+    expect(shouldFallbackAgent("rate limit exceeded")).toBe(false);
   });
 });

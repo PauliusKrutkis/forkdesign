@@ -25,12 +25,17 @@ describe("parseManifestJson", () => {
       JSON.stringify({
         versions: {
           "0": { summary: "Baseline", createdAt: "2026-01-01T00:00:00.000Z" },
-          "1": { summary: "Red CTA", createdAt: "2026-01-02T00:00:00.000Z" },
+          "1": {
+            summary: "Red CTA",
+            createdAt: "2026-01-02T00:00:00.000Z",
+            runId: "run-a",
+          },
         },
       })
     );
     expect(m.versions["0"]?.summary).toBe("Baseline");
     expect(m.versions["1"]?.summary).toBe("Red CTA");
+    expect(m.versions["1"]?.runId).toBe("run-a");
   });
 
   it("returns empty versions for invalid json", () => {
@@ -44,15 +49,15 @@ describe("removeVersionFromManifest", () => {
       JSON.stringify({
         versions: {
           "0": { summary: "Baseline", createdAt: "2026-01-01T00:00:00.000Z" },
-          "1": { summary: "Fix v1", createdAt: "2026-01-02T00:00:00.000Z" },
-          "2": { summary: "Fix v2", createdAt: "2026-01-03T00:00:00.000Z" },
+          "1": { summary: "Agent v1", createdAt: "2026-01-02T00:00:00.000Z" },
+          "2": { summary: "Agent v2", createdAt: "2026-01-03T00:00:00.000Z" },
         },
       })
     );
     const next = removeVersionFromManifest(base, 1);
     expect(next.versions["0"]?.summary).toBe("Baseline");
     expect(next.versions["1"]).toBeUndefined();
-    expect(next.versions["2"]?.summary).toBe("Fix v2");
+    expect(next.versions["2"]?.summary).toBe("Agent v2");
   });
 });
 
@@ -66,11 +71,11 @@ describe("mergeVersionEntry", () => {
       })
     );
     const next = mergeVersionEntry(base, 1, {
-      summary: "Fix v1",
+      summary: "Agent v1",
       createdAt: "2026-01-02T00:00:00.000Z",
     });
     expect(next.versions["0"]?.summary).toBe("Baseline");
-    expect(next.versions["1"]?.summary).toBe("Fix v1");
+    expect(next.versions["1"]?.summary).toBe("Agent v1");
   });
 });
 
@@ -78,11 +83,16 @@ describe("enrichVersionMeta", () => {
   it("uses manifest when present", () => {
     const meta = enrichVersionMeta(
       1,
-      { summary: "Custom", createdAt: "2026-05-01T12:00:00.000Z" },
+      {
+        summary: "Custom",
+        createdAt: "2026-05-01T12:00:00.000Z",
+        runId: "run-a",
+      },
       1000
     );
     expect(meta.summary).toBe("Custom");
     expect(meta.createdAt).toBe("2026-05-01T12:00:00.000Z");
+    expect(meta.runId).toBe("run-a");
   });
 
   it("falls back to defaults and mtime", () => {
@@ -93,7 +103,7 @@ describe("enrichVersionMeta", () => {
 
   it("defaultSummaryForVersion", () => {
     expect(defaultSummaryForVersion(0)).toBe("Baseline");
-    expect(defaultSummaryForVersion(2)).toBe("AI fix");
+    expect(defaultSummaryForVersion(2)).toBe("AI edit");
   });
 });
 
@@ -124,11 +134,11 @@ describe("deleteVersionArtifactsAllRoots", () => {
     await writeFile(path.join(primary, "v1.png"), "png1", "utf8");
     await writeFile(path.join(legacy, "v1.png"), "legacy-png1", "utf8");
     await patchIterationsManifest(primary, 1, {
-      summary: "Fix v1",
+      summary: "Agent v1",
       createdAt: "2026-01-02T00:00:00.000Z",
     });
     await patchIterationsManifest(legacy, 1, {
-      summary: "Fix v1",
+      summary: "Agent v1",
       createdAt: "2026-01-02T00:00:00.000Z",
     });
 

@@ -1,5 +1,5 @@
 import type { PointerEvent } from "react";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { dotRect } from "../lib/placement.ts";
 
 /** Docked (edge-snapped) posture sizing. */
@@ -47,10 +47,9 @@ export interface BubblePosture {
   hidePointer: boolean;
   /** Faded so the design shows through. */
   peeking: boolean;
+  reanchor: () => void;
   /** Canvas-spanning leader — only while actively relating panel↔design. */
   showLeader: boolean;
-  /** Localized element ring — cheap, shown whenever detached or peeking. */
-  showRing: boolean;
   startDrag: (e: PointerEvent<HTMLDivElement>) => void;
   startPeek: () => void;
   startResize: (e: PointerEvent<HTMLDivElement>) => void;
@@ -62,8 +61,8 @@ export interface BubblePosture {
  * docked (edge-snapped, resizable drawer), and peek (faded to reveal the
  * design). Each is reachable without the others fighting: peek owns occlusion
  * by touching only our own opacity, so float/dock placement is pure
- * preference. The element ring + leader line keep the spatial anchor while
- * detached, so dragging never loses "which element."
+ * preference. The leader line keeps the spatial anchor while actively
+ * comparing the panel to the design.
  *
  * Hotkeys (⌘/Ctrl combos, so they coexist with the always-focused composer):
  *   hold ⌘/Ctrl+E to peek · ⌘/Ctrl+D to toggle dock.
@@ -163,7 +162,6 @@ export function useBubblePosture({
   const docked = dockSide !== null;
   const detached = docked || userPosition !== null;
   const hidePointer = detached || peeking;
-  const showRing = detached || peeking;
   // The canvas-spanning line is the only real occluder, so it shows only while
   // you're actively relating the panel to the design: dragging or peeking.
   const showLeader = peeking || dragging;
@@ -208,6 +206,14 @@ export function useBubblePosture({
       return dotCx > viewport.width / 2 ? "left" : "right";
     });
   };
+
+  const reanchor = useCallback(() => {
+    peekSource.current = null;
+    setPeeking(false);
+    setDragging(false);
+    setDockSide(null);
+    setUserPosition(null);
+  }, []);
 
   const startDrag = (e: PointerEvent<HTMLDivElement>) => {
     // Docked panels are edge-snapped (resize only); buttons keep their clicks.
@@ -260,12 +266,12 @@ export function useBubblePosture({
     peeking,
     dragging,
     hidePointer,
-    showRing,
     showLeader,
     box,
     dockedRadius,
     dotCx,
     dotCy,
+    reanchor,
     startDrag,
     startResize,
     startPeek: () => {

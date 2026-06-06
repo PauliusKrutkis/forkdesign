@@ -4,6 +4,7 @@ export interface IterateProgressEvent {
   stage?: "agent" | "snapshot";
   tool?: string;
   type: "progress";
+  version?: number;
 }
 
 export type IterateDoneEvent =

@@ -1,5 +1,5 @@
 import path from "node:path";
-import { buildFixSkillPromptSection, type FixSkill } from "./skills.ts";
+import { type AgentSkill, buildAgentSkillPromptSection } from "./skills.ts";
 
 const EXPLICIT_TEXT_COLOR_RE =
   /\btext-(red|blue|green|yellow|orange|purple|pink|gray|grey|black|white|primary|foreground|muted)\b/;
@@ -35,12 +35,12 @@ export interface PromptInput {
   activeVersion?: number;
   anchor: string;
   file: string;
-  /** Summaries of earlier variants in this multi-fix batch (variant 2+). */
+  /** Summaries of earlier variants in this multi-agent batch (variant 2+). */
   priorVariantApproaches?: string[];
   projectRoot: string;
   replies?: PromptReply[];
   screenshot?: string;
-  skills?: FixSkill[];
+  skills?: AgentSkill[];
   text: string;
   variantCount?: number;
   variantIndex?: number;
@@ -69,7 +69,10 @@ const MAX_DIFF_SUMMARY_LINES = 3;
 const MAX_DIFF_LINE_CHARS = 120;
 
 /** Short description of what changed between two source snapshots (for variant dedup). */
-export function summarizeFixSourceDiff(before: string, after: string): string {
+export function summarizeAgentSourceDiff(
+  before: string,
+  after: string
+): string {
   const beforeLines = before.split("\n");
   const afterLines = after.split("\n");
   const maxLen = Math.max(beforeLines.length, afterLines.length);
@@ -108,7 +111,7 @@ function buildMultiVariantSection(input: PromptInput): string[] {
 
   const lines = [
     "## Multi-variant run",
-    `This is variant **${index} of ${count}**. The user wants **independent design alternatives** to compare — not repeats of the same fix.`,
+    `This is variant **${index} of ${count}**. The user wants **independent design alternatives** to compare — not repeats of the same change.`,
     variantCreativeHint(index),
     "Produce a **visually distinct** solution that still satisfies the feedback. Use a different valid approach when possible (colors, spacing, typography, borders, layout).",
   ];
@@ -182,7 +185,7 @@ export function buildIteratePrompt(input: PromptInput): string {
     );
   }
 
-  const skillSection = buildFixSkillPromptSection(input.skills ?? []);
+  const skillSection = buildAgentSkillPromptSection(input.skills ?? []);
   if (skillSection.length > 0) {
     parts.push("", ...skillSection);
   }

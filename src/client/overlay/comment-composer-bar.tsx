@@ -9,9 +9,9 @@ import {
 } from "lucide-react";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import {
-  DEFAULT_FIX_VERSION_COUNT,
-  MAX_FIX_VERSION_COUNT,
-} from "../../shared/fix-version-count.ts";
+  DEFAULT_AGENT_VERSION_COUNT,
+  MAX_AGENT_VERSION_COUNT,
+} from "../../shared/agent-version-count.ts";
 import { OVERLAY_MODEL_OPTIONS, type OverlayModel } from "../settings.ts";
 import { cn } from "../ui/cn.ts";
 import { Textarea } from "../ui/textarea.tsx";
@@ -28,26 +28,26 @@ import { withAlt, withCtrl } from "./shortcut-hint.tsx";
  */
 export type ComposerMode = "agent" | "comment";
 
-const FIX_VARIANT_OPTIONS = Array.from(
-  { length: MAX_FIX_VERSION_COUNT },
-  (_, i) => i + DEFAULT_FIX_VERSION_COUNT
+const AGENT_VARIANT_OPTIONS = Array.from(
+  { length: MAX_AGENT_VERSION_COUNT },
+  (_, i) => i + DEFAULT_AGENT_VERSION_COUNT
 );
 
 const TEXTAREA_MAX_HEIGHT = 168;
 
 interface CommentComposerBarProps {
+  agentModel: OverlayModel;
+  agentVersionCount: number;
   /** A plain reply / comment is saving. */
   busy: boolean;
   error?: string | null;
-  fixModel: OverlayModel;
-  fixVersionCount: number;
-  /** A fix run is streaming. */
+  /** An agent run is streaming. */
   iterating: boolean;
   mode: ComposerMode;
+  onAgentModelChange: (model: OverlayModel) => void;
+  onAgentVersionCountChange: (count: number) => void;
   onCancelIterate?: () => void;
   onChange: (value: string) => void;
-  onFixModelChange: (model: OverlayModel) => void;
-  onFixVersionCountChange: (count: number) => void;
   onModeChange: (mode: ComposerMode) => void;
   onSubmit: () => void | Promise<void>;
   /** Placeholder override; defaults adapt to the mode. */
@@ -242,10 +242,10 @@ export function CommentComposerBar({
   onSubmit,
   mode,
   onModeChange,
-  fixModel,
-  onFixModelChange,
-  fixVersionCount,
-  onFixVersionCountChange,
+  agentModel,
+  onAgentModelChange,
+  agentVersionCount,
+  onAgentVersionCountChange,
   iterating,
   onCancelIterate,
   busy,
@@ -276,14 +276,14 @@ export function CommentComposerBar({
   };
 
   const stepVersionCount = (delta: number) => {
-    const idx = FIX_VARIANT_OPTIONS.indexOf(fixVersionCount);
+    const idx = AGENT_VARIANT_OPTIONS.indexOf(agentVersionCount);
     const baseIdx = idx >= 0 ? idx : 0;
     const nextIdx = Math.max(
       0,
-      Math.min(FIX_VARIANT_OPTIONS.length - 1, baseIdx + delta)
+      Math.min(AGENT_VARIANT_OPTIONS.length - 1, baseIdx + delta)
     );
-    onFixVersionCountChange(
-      FIX_VARIANT_OPTIONS[nextIdx] ?? DEFAULT_FIX_VERSION_COUNT
+    onAgentVersionCountChange(
+      AGENT_VARIANT_OPTIONS[nextIdx] ?? DEFAULT_AGENT_VERSION_COUNT
     );
   };
 
@@ -355,7 +355,7 @@ export function CommentComposerBar({
             <>
               <ComposerSelect
                 disabled={iterating}
-                onChange={onFixModelChange}
+                onChange={onAgentModelChange}
                 options={OVERLAY_MODEL_OPTIONS.map((opt) => ({
                   value: opt.value,
                   label: opt.label,
@@ -363,16 +363,16 @@ export function CommentComposerBar({
                 tipLabel="Agent model"
                 trigger={
                   <span className="max-w-[5.5rem] truncate font-mono text-[11px]">
-                    {OVERLAY_MODEL_OPTIONS.find((o) => o.value === fixModel)
-                      ?.shortLabel ?? fixModel}
+                    {OVERLAY_MODEL_OPTIONS.find((o) => o.value === agentModel)
+                      ?.shortLabel ?? agentModel}
                   </span>
                 }
-                value={fixModel}
+                value={agentModel}
               />
               <ComposerSelect
                 disabled={iterating}
-                onChange={onFixVersionCountChange}
-                options={FIX_VARIANT_OPTIONS.map((n) => ({
+                onChange={onAgentVersionCountChange}
+                options={AGENT_VARIANT_OPTIONS.map((n) => ({
                   value: n,
                   label: `${n} variants`,
                 }))}
@@ -380,18 +380,18 @@ export function CommentComposerBar({
                 tipLabel="Variants to generate"
                 trigger={
                   <span className="font-mono tabular-nums">
-                    {fixVersionCount}
+                    {agentVersionCount}
                   </span>
                 }
-                value={fixVersionCount}
+                value={agentVersionCount}
               />
             </>
           ) : null}
           <div className="flex-1" />
           {iterating && onCancelIterate ? (
-            <HotkeyTip label="Cancel agent">
+            <HotkeyTip label="Stop agent">
               <button
-                aria-label="Cancel agent"
+                aria-label="Stop agent"
                 className="flex h-7 w-7 items-center justify-center rounded-md bg-muted text-foreground transition-colors hover:bg-muted/80"
                 onClick={onCancelIterate}
                 type="button"

@@ -16,6 +16,7 @@ import type { IterationVersion } from "../hooks/use-iterations.ts";
  */
 interface VariantRun {
   createdAt?: string;
+  runId?: string;
   versions: IterationVersion[];
 }
 
@@ -39,6 +40,10 @@ export interface Transcript {
 // The comment is pinned before every reply/run. Real timestamps are epoch-ms
 // (~1.7e12), safely above this sentinel.
 const COMMENT_TIME = Number.MIN_SAFE_INTEGER;
+// Older manifests only have per-version timestamps. Variants from one request
+// were saved sequentially, so adjacent versions close together are treated as a
+// single legacy run.
+const LEGACY_RUN_GAP_MS = 5 * 60 * 1000;
 
 function parseTime(iso: string | undefined): number {
   if (!iso) {
@@ -48,23 +53,63 @@ function parseTime(iso: string | undefined): number {
   return Number.isNaN(ts) ? 0 : ts;
 }
 
+function shouldJoinLegacyRun(
+  run: VariantRun,
+  version: IterationVersion
+): boolean {
+  if (run.runId || version.runId) {
+    return false;
+  }
+  const previous = run.versions.at(-1);
+  if (!previous || version.v !== previous.v + 1) {
+    return false;
+  }
+  return (
+    Math.abs(parseTime(version.createdAt) - parseTime(previous.createdAt)) <=
+    LEGACY_RUN_GAP_MS
+  );
+}
+
 /**
- * Group fix versions (v > 0) into runs. Every version written in one iterate
- * run shares a single `createdAt` (the only run signal that survives a reload),
- * so that's the grouping key. Runs are returned oldest-first.
+ * Group agent versions (v > 0) into runs. New manifests carry a stable `runId`;
+ * older manifests are grouped by adjacent close timestamps so variants created
+ * by one request still render as one grid after reload.
  */
 function groupRuns(versions: IterationVersion[]): VariantRun[] {
-  const map = new Map<string, IterationVersion[]>();
-  for (const v of versions) {
-    const key = v.createdAt ?? `__v${v.v}`;
-    const list = map.get(key) ?? [];
-    list.push(v);
-    map.set(key, list);
-  }
+  const sorted = [...versions].sort(
+    (a, b) => parseTime(a.createdAt) - parseTime(b.createdAt) || a.v - b.v
+  );
   const runs: VariantRun[] = [];
-  for (const list of map.values()) {
-    list.sort((a, b) => a.v - b.v);
-    runs.push({ createdAt: list[0]?.createdAt, versions: list });
+  const runIdMap = new Map<string, VariantRun>();
+
+  for (const version of sorted) {
+    if (version.runId) {
+      const existing = runIdMap.get(version.runId);
+      if (existing) {
+        existing.versions.push(version);
+        continue;
+      }
+      const run = {
+        createdAt: version.createdAt,
+        runId: version.runId,
+        versions: [version],
+      };
+      runIdMap.set(version.runId, run);
+      runs.push(run);
+      continue;
+    }
+
+    const previousRun = runs.at(-1);
+    if (previousRun && shouldJoinLegacyRun(previousRun, version)) {
+      previousRun.versions.push(version);
+      continue;
+    }
+
+    runs.push({ createdAt: version.createdAt, versions: [version] });
+  }
+
+  for (const run of runs) {
+    run.versions.sort((a, b) => a.v - b.v);
   }
   runs.sort((a, b) => parseTime(a.createdAt) - parseTime(b.createdAt));
   return runs;

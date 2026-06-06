@@ -1,8 +1,8 @@
 /**
- * Classify Fix errors that warrant trying the next model in the priority chain.
+ * Classify agent errors that warrant trying the next model in the priority chain.
  */
 
-export function shouldFallbackFix(error: string): boolean {
+export function shouldFallbackAgent(error: string): boolean {
   if (error === "aborted") {
     return false;
   }
