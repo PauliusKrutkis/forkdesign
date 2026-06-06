@@ -1,7 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { OverlayModel } from "../../settings.ts";
 import type { CommentData } from "../../types.ts";
-import { runAgentIterationRequest } from "../lib/agent-iteration-request.ts";
+import {
+  cancelAgentIterationRequest,
+  runAgentIterationRequest,
+} from "../lib/agent-iteration-request.ts";
 import { ignorePromiseRejection } from "../lib/ignore-promise-rejection.ts";
 
 export function useAgentIteration(args: {
@@ -12,7 +15,12 @@ export function useAgentIteration(args: {
   /** Pin loading — survives bubble close until the run finishes. */
   onAgentWorkingChange?: (
     anchor: string | null,
-    run?: { count: number; model: OverlayModel; startedAt: number },
+    run?: {
+      commentId: string;
+      count: number;
+      model: OverlayModel;
+      startedAt: number;
+    },
     cancel?: () => void
   ) => void;
 }) {
@@ -39,8 +47,11 @@ export function useAgentIteration(args: {
   }, [iterating]);
 
   const handleCancelIterate = useCallback(() => {
+    if (lead?.id) {
+      cancelAgentIterationRequest(lead.id).catch(ignorePromiseRejection);
+    }
     abortRef.current?.abort();
-  }, []);
+  }, [lead?.id]);
 
   const handleIterate = useCallback(
     async (overrides?: {
@@ -60,11 +71,15 @@ export function useAgentIteration(args: {
       onAgentWorkingChange?.(
         lead.anchor,
         {
+          commentId: lead.id,
           count: runCount,
           model: runModel,
           startedAt,
         },
-        () => abortController.abort()
+        () => {
+          cancelAgentIterationRequest(lead.id).catch(ignorePromiseRejection);
+          abortController.abort();
+        }
       );
       setIterateError(null);
       setIterateStatus(null);
@@ -86,7 +101,7 @@ export function useAgentIteration(args: {
       }
       setIterating(false);
       setIterateStartedAt(null);
-      onAgentWorkingChange?.(null);
+      onAgentWorkingChange?.(lead.anchor);
       if (outcome === "cancelled") {
         setIterateStatus(null);
         Promise.resolve(reloadIterations()).catch(ignorePromiseRejection);

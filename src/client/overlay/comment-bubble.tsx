@@ -28,9 +28,11 @@ interface CommentBubbleProps {
   agentModel?: OverlayModel;
   agentRun?: {
     cancel?: () => void;
+    commentId?: string;
     count: number;
     model: OverlayModel;
     startedAt: number;
+    status?: string;
   } | null;
   /** True when this thread already has an agent run in flight outside this mount. */
   agentWorking?: boolean;
@@ -47,7 +49,12 @@ interface CommentBubbleProps {
   /** Drives pin loading while the agent iterates (cleared when the run ends). */
   onAgentWorkingChange?: (
     anchor: string | null,
-    run?: { count: number; model: OverlayModel; startedAt: number },
+    run?: {
+      commentId: string;
+      count: number;
+      model: OverlayModel;
+      startedAt: number;
+    },
     cancel?: () => void
   ) => void;
   onAutoAgentStarted?: () => void;
@@ -106,7 +113,7 @@ function panelStyle(args: {
 }
 
 function visibleIterationState(args: {
-  agentRun?: { cancel?: () => void; startedAt: number } | null;
+  agentRun?: { cancel?: () => void; startedAt: number; status?: string } | null;
   agentWorking: boolean;
   iterating: boolean;
   iterateStartedAt: number | null;
@@ -125,8 +132,32 @@ function visibleIterationState(args: {
     cancelable: Boolean(args.agentRun?.cancel),
     iterating: true,
     startedAt: args.agentRun?.startedAt ?? null,
-    status: "Agent working…",
+    status: args.agentRun?.status ?? "Agent working...",
   };
+}
+
+function useVisibleIterateNow(args: {
+  iterateNow: number;
+  iterationIterating: boolean;
+  iterating: boolean;
+}): number {
+  const [restoredIterateNow, setRestoredIterateNow] = useState(() =>
+    Date.now()
+  );
+  const restoredIterating = args.iterationIterating && !args.iterating;
+
+  useEffect(() => {
+    if (!restoredIterating) {
+      return;
+    }
+    setRestoredIterateNow(Date.now());
+    const interval = window.setInterval(() => {
+      setRestoredIterateNow(Date.now());
+    }, 1000);
+    return () => window.clearInterval(interval);
+  }, [restoredIterating]);
+
+  return args.iterating ? args.iterateNow : restoredIterateNow;
 }
 
 /**
@@ -215,6 +246,11 @@ export function CommentBubble({
     iterating,
     iterateStartedAt,
     iterateStatus,
+  });
+  const visibleIterateNow = useVisibleIterateNow({
+    iterateNow,
+    iterationIterating: iterationState.iterating,
+    iterating,
   });
   const cancelIterate = iterationState.cancelable
     ? (agentRun?.cancel ?? handleCancelIterate)
@@ -541,7 +577,7 @@ export function CommentBubble({
           agentVersionCount={agentVersionCount}
           editingEntryKey={editingEntryKey}
           hasAgentHistory={hasAgentHistory}
-          iterateNow={iterateNow}
+          iterateNow={visibleIterateNow}
           iterateStartedAt={iterationState.startedAt}
           iterateStatus={iterationState.status}
           iterating={iterationState.iterating}

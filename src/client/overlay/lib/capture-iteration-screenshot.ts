@@ -175,7 +175,7 @@ export async function captureAndUploadVersionNow(args: {
  * After source changes (HMR), capture the element and upload PNG for version `v`.
  * Agent variants (v &gt; 0) use this so thumbnails match the applied design.
  */
-function captureAndUploadVersionAfterHmr(args: {
+export function captureAndUploadVersionAfterHmr(args: {
   id: string;
   anchor: string;
   previousSignature?: string | null;
@@ -267,7 +267,13 @@ export async function captureAgentVariantScreenshots(args: {
   }
 
   if (others.length > 0) {
-    await activateIterationVersion(args.id, args.activeV);
+    const previousSignature = anchorRenderSignature(args.anchor);
+    if (await activateIterationVersion(args.id, args.activeV)) {
+      await waitForVersionRender({
+        anchor: args.anchor,
+        previousSignature,
+      });
+    }
   }
 }
 

@@ -71,4 +71,42 @@ describe("captureAgentVariantScreenshots", () => {
     ]);
     expect(htmlToImageMock.capturedText).toEqual(["new"]);
   });
+
+  it("restores the active iteration after capturing other variants", async () => {
+    const activations: number[] = [];
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((input: string | URL | Request, init?: RequestInit) => {
+        const url = String(input);
+        const body = JSON.parse(String(init?.body ?? "{}")) as { v?: number };
+
+        if (url === "/api/iterations/activate" && typeof body.v === "number") {
+          activations.push(body.v);
+          const anchor = document.querySelector("[data-comment-anchor]");
+          if (anchor) {
+            anchor.textContent = `variant ${body.v}`;
+          }
+        }
+
+        return Promise.resolve(
+          new Response(JSON.stringify({ ok: true }), { status: 200 })
+        );
+      })
+    );
+
+    await captureAgentVariantScreenshots({
+      id: "comment-1",
+      anchor: "anchor-1",
+      versions: [1, 2],
+      activeV: 2,
+      initialPreviousSignature: anchorRenderSignature("anchor-1"),
+    });
+
+    expect(activations).toEqual([2, 1, 2]);
+    expect(htmlToImageMock.capturedText).toEqual(["variant 2", "variant 1"]);
+    expect(document.querySelector("[data-comment-anchor]")?.textContent).toBe(
+      "variant 2"
+    );
+  });
 });

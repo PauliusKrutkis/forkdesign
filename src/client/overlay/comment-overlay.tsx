@@ -24,6 +24,7 @@ import {
 } from "./hooks/use-anchor-element.ts";
 import { useViewport } from "./hooks/use-viewport.ts";
 import { useViteHmrReload } from "./hooks/use-vite-hmr-reload.ts";
+import { cancelAgentIterationRequest } from "./lib/agent-iteration-request.ts";
 import { deleteComment, patchComment } from "./lib/api.ts";
 import { currentAppRoute, getCommentAuthor } from "./lib/comment-author.ts";
 import {
@@ -66,6 +67,27 @@ export interface CommentOverlayProps {
   fileToRoute?: (file: string, ctx: { view?: string | null }) => string | null;
   /** React Router `navigate`, or any in-app navigation fn. Falls back to full page load. */
   navigate?: (to: string) => void;
+}
+
+interface OverlayAgentRun {
+  anchor: string;
+  cancel?: () => void;
+  commentId?: string;
+  count: number;
+  model: OverlaySettings["model"];
+  startedAt: number;
+  status?: string;
+}
+
+interface ActiveIterationRunResponse {
+  runs?: Array<{
+    anchor: string;
+    commentId: string;
+    count: number;
+    model: OverlaySettings["model"];
+    startedAt: number;
+    status?: string;
+  }>;
 }
 
 export function CommentOverlay({
@@ -115,13 +137,9 @@ export function CommentOverlay({
     model: OverlaySettings["model"];
   } | null>(null);
   /** In-flight agent run metadata. Kept above the bubble so close/reopen preserves UI state. */
-  const [agentRun, setAgentRun] = useState<{
-    anchor: string;
-    cancel?: () => void;
-    count: number;
-    model: OverlaySettings["model"];
-    startedAt: number;
-  } | null>(null);
+  const [agentRunsByAnchor, setAgentRunsByAnchor] = useState<
+    Map<string, OverlayAgentRun>
+  >(() => new Map());
   const [activeVersionByComment, setActiveVersionByComment] = useState<
     Map<string, number>
   >(() => new Map());
@@ -153,11 +171,71 @@ export function CommentOverlay({
     }
   }, []);
 
+  const cancelServerAgentRun = useCallback(async (commentId: string) => {
+    await cancelAgentIterationRequest(commentId);
+    setAgentRunsByAnchor((prev) => {
+      const next = new Map(prev);
+      for (const [anchor, run] of next) {
+        if (run.commentId === commentId) {
+          next.delete(anchor);
+        }
+      }
+      return next;
+    });
+  }, []);
+
+  const reloadAgentRuns = useCallback(async () => {
+    try {
+      const res = await fetch("/api/iterations/runs");
+      if (!res.ok) {
+        return;
+      }
+      const body = (await res.json()) as ActiveIterationRunResponse;
+      const serverRuns = body.runs ?? [];
+      setAgentRunsByAnchor((prev) => {
+        const next = new Map<string, OverlayAgentRun>();
+        const serverAnchors = new Set<string>();
+        for (const run of serverRuns) {
+          serverAnchors.add(run.anchor);
+          next.set(run.anchor, {
+            ...run,
+            cancel: () => {
+              cancelServerAgentRun(run.commentId).catch(ignorePromiseRejection);
+            },
+          });
+        }
+        for (const [anchor, run] of prev) {
+          const startedRecently = Date.now() - run.startedAt < 3000;
+          if (!(serverAnchors.has(anchor) || run.commentId)) {
+            next.set(anchor, run);
+          } else if (!serverAnchors.has(anchor) && startedRecently) {
+            next.set(anchor, run);
+          }
+        }
+        return next;
+      });
+    } catch {
+      // Keep the last-known run state on transient dev-server fetch failures.
+    }
+  }, [cancelServerAgentRun]);
+
   useEffect(() => {
     reloadComments().catch(ignorePromiseRejection);
-  }, [reloadComments]);
+    reloadAgentRuns().catch(ignorePromiseRejection);
+  }, [reloadComments, reloadAgentRuns]);
 
   useViteHmrReload(reloadComments);
+  useViteHmrReload(reloadAgentRuns);
+
+  useEffect(() => {
+    if (agentRunsByAnchor.size === 0) {
+      return;
+    }
+    const interval = window.setInterval(() => {
+      reloadAgentRuns().catch(ignorePromiseRejection);
+    }, 1500);
+    return () => window.clearInterval(interval);
+  }, [agentRunsByAnchor.size, reloadAgentRuns]);
 
   // After a successful submit, watch for the new comment to appear in the
   // refetched list, then auto-open its bubble. Clears the pending id once
@@ -574,7 +652,7 @@ export function CommentOverlay({
         {settings.enabled
           ? visibleAnchors.map((anchor) => (
               <CommentDot
-                agentWorking={agentRun?.anchor === anchor}
+                agentWorking={agentRunsByAnchor.has(anchor)}
                 anchor={anchor}
                 comments={grouped.get(anchor) ?? []}
                 hideOpenInstance={dockedOpen}
@@ -603,7 +681,7 @@ export function CommentOverlay({
           <OpenBubble
             activeVersionByComment={activeVersionByComment}
             agentModel={settings.model}
-            agentRun={agentRun?.anchor === openTarget.anchor ? agentRun : null}
+            agentRun={agentRunsByAnchor.get(openTarget.anchor) ?? null}
             autoAgent={pendingAgentRun}
             comments={grouped.get(openTarget.anchor) ?? []}
             onActiveVersionChange={(id, active) => {
@@ -618,7 +696,19 @@ export function CommentOverlay({
             }}
             onAgentModelChange={(model) => updateSettings({ model })}
             onAgentWorkingChange={(anchor, run, cancel) => {
-              setAgentRun(anchor && run ? { anchor, ...run, cancel } : null);
+              setAgentRunsByAnchor((prev) => {
+                if (!anchor) {
+                  return new Map();
+                }
+                const next = new Map(prev);
+                if (run) {
+                  next.set(anchor, { anchor, ...run, cancel });
+                } else {
+                  next.delete(anchor);
+                }
+                return next;
+              });
+              reloadAgentRuns().catch(ignorePromiseRejection);
             }}
             onAutoAgentStarted={() => setPendingAgentRun(null)}
             onClose={() => setOpenTarget(null)}
@@ -808,13 +898,7 @@ function OpenBubble({
   reanchorRequest,
 }: {
   activeVersionByComment: Map<string, number>;
-  agentRun: {
-    anchor: string;
-    cancel?: () => void;
-    count: number;
-    model: OverlaySettings["model"];
-    startedAt: number;
-  } | null;
+  agentRun: OverlayAgentRun | null;
   target: DotInstanceTarget;
   comments: CommentData[];
   agentModel: OverlaySettings["model"];
@@ -829,6 +913,7 @@ function OpenBubble({
   onAgentWorkingChange: (
     anchor: string | null,
     run?: {
+      commentId: string;
       count: number;
       model: OverlaySettings["model"];
       startedAt: number;

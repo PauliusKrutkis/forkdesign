@@ -3,6 +3,7 @@ import type { CommentData } from "../../types.ts";
 import { readApiError } from "./api.ts";
 import {
   anchorRenderSignature,
+  captureAndUploadVersionAfterHmr,
   captureAndUploadVersionNow,
   scheduleAgentVariantScreenshots,
 } from "./capture-iteration-screenshot.ts";
@@ -15,6 +16,14 @@ import {
 } from "./parse-iterate-stream.ts";
 
 export type AgentIterationOutcome = "ok" | "cancelled" | "failed";
+
+export async function cancelAgentIterationRequest(id: string): Promise<void> {
+  await fetch("/api/iterations/cancel", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ id }),
+  });
+}
 
 export async function runAgentIterationRequest(args: {
   lead: CommentData;
@@ -73,7 +82,18 @@ export async function runAgentIterationRequest(args: {
       onProgress: setIterateStatus,
       onProgressEvent: (event) => {
         if (event.stage === "snapshot" && typeof event.version === "number") {
-          Promise.resolve(reloadIterations()).catch(ignorePromiseRejection);
+          const reload = () =>
+            Promise.resolve(reloadIterations()).catch(ignorePromiseRejection);
+          reload();
+          if (event.capture) {
+            captureAndUploadVersionAfterHmr({
+              id: lead.id,
+              anchor: lead.anchor,
+              v: event.version,
+            })
+              .then(reload)
+              .catch(ignorePromiseRejection);
+          }
         }
       },
       signal,

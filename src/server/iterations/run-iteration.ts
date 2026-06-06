@@ -38,28 +38,37 @@ export interface NdjsonStream {
 
 export function createNdjsonStream(
   req: IncomingMessage,
-  res: ServerResponse
+  res: ServerResponse,
+  options: {
+    abortController?: AbortController;
+    abortOnClose?: boolean;
+  } = {}
 ): NdjsonStream {
-  const abortController = new AbortController();
-  let clientGone = false;
+  const abortController = options.abortController ?? new AbortController();
+  const abortOnClose = options.abortOnClose ?? true;
+  let disconnected = false;
   const onClose = () => {
-    if (clientGone) {
+    if (disconnected) {
       return;
     }
-    clientGone = true;
-    abortController.abort();
+    disconnected = true;
+    if (abortOnClose) {
+      abortController.abort();
+    }
   };
   req.on("close", onClose);
 
   const writeEvent = (event: object): void => {
-    if (clientGone || res.destroyed) {
+    if (disconnected || res.destroyed) {
       return;
     }
     try {
       res.write(`${JSON.stringify(event)}\n`);
     } catch {
-      clientGone = true;
-      abortController.abort();
+      disconnected = true;
+      if (abortOnClose) {
+        abortController.abort();
+      }
     }
   };
 
@@ -76,7 +85,7 @@ export function createNdjsonStream(
     writeEvent,
     endStream,
     abortController,
-    clientGone: () => clientGone,
+    clientGone: () => abortController.signal.aborted,
   };
 }
 
@@ -186,11 +195,72 @@ async function persistNewIterationSnapshot(
 export interface RunNewIterationInput {
   count: number;
   found: FoundComment;
+  hooks?: RunNewIterationHooks;
   id: string;
   model: AgentModel;
   projectRoot: string;
   skills: AgentSkill[];
   stream: NdjsonStream;
+}
+
+export interface RunNewIterationSourceAppliedEvent {
+  absolutePath: string;
+  active: number;
+  file: string;
+  id: string;
+}
+
+export interface RunNewIterationVariantCaptureEvent
+  extends RunNewIterationSourceAppliedEvent {
+  version: number;
+}
+
+export interface RunNewIterationHooks {
+  onInternalSourceWorkFinish?: (
+    event: RunNewIterationSourceAppliedEvent
+  ) => Promise<void> | void;
+  onInternalSourceWorkStart?: (
+    event: RunNewIterationSourceAppliedEvent
+  ) => Promise<void> | void;
+  onSourceApplied?: (event: RunNewIterationSourceAppliedEvent) => void;
+  onVariantScreenshotRequested?: (
+    event: RunNewIterationVariantCaptureEvent
+  ) => Promise<void> | void;
+}
+
+async function notifyInternalSourceWork(
+  hook:
+    | ((event: RunNewIterationSourceAppliedEvent) => Promise<void> | void)
+    | undefined,
+  event: RunNewIterationSourceAppliedEvent
+): Promise<void> {
+  try {
+    await hook?.(event);
+  } catch {
+    // Internal source watcher suppression is best-effort.
+  }
+}
+
+function notifyRunSourceApplied(
+  hooks: RunNewIterationHooks | undefined,
+  event: RunNewIterationSourceAppliedEvent
+): void {
+  try {
+    hooks?.onSourceApplied?.(event);
+  } catch {
+    // HMR notification is best-effort; the source rewrite already succeeded.
+  }
+}
+
+async function waitForVariantScreenshot(
+  hooks: RunNewIterationHooks | undefined,
+  event: RunNewIterationVariantCaptureEvent
+): Promise<void> {
+  try {
+    await hooks?.onVariantScreenshotRequested?.(event);
+  } catch {
+    // Screenshot capture is best-effort; keep generating remaining variants.
+  }
 }
 
 interface VariantRunOutcome {
@@ -412,6 +482,7 @@ type VariantStepResult =
 async function persistChangedVariant(args: {
   count: number;
   found: FoundComment;
+  hooks?: RunNewIterationHooks;
   id: string;
   iterDir: string;
   iterationRoots: string[];
@@ -427,6 +498,7 @@ async function persistChangedVariant(args: {
   const {
     count,
     found,
+    hooks,
     id,
     iterDir,
     iterationRoots,
@@ -491,6 +563,24 @@ async function persistChangedVariant(args: {
       : { action: "continue" };
   }
 
+  const captureEvent = {
+    absolutePath: found.absolutePath,
+    active: nextV,
+    file: found.relativePath,
+    id,
+    version: nextV,
+  };
+  notifyRunSourceApplied(hooks, captureEvent);
+  const screenshotUploaded = waitForVariantScreenshot(hooks, captureEvent);
+  stream.writeEvent({
+    type: "progress",
+    stage: "snapshot",
+    detail: `${variantPrefix}capturing v${nextV}.png`,
+    version: nextV,
+    capture: true,
+  });
+  await screenshotUploaded;
+
   recordRun({
     ok: true,
     stage: "done",
@@ -515,6 +605,7 @@ async function runVariantBatch(args: {
   beforeSource: string;
   count: number;
   found: FoundComment;
+  hooks?: RunNewIterationHooks;
   id: string;
   iterDir: string;
   iterationRoots: string[];
@@ -538,17 +629,36 @@ async function runVariantBatch(args: {
     }
 
     const variantStartedAt = Date.now();
-    const { result, lastAgentSummary } = await runSingleAgentVariant({
-      beforeSource: args.beforeSource,
-      count: args.count,
-      found: args.found,
-      model: args.model,
-      priorVariantApproaches,
-      projectRoot: args.projectRoot,
-      skills: args.skills,
-      stream: args.stream,
-      variantIndex,
-    });
+    const internalSourceEvent = {
+      absolutePath: args.found.absolutePath,
+      active: 0,
+      file: args.found.relativePath,
+      id: args.id,
+    };
+    await notifyInternalSourceWork(
+      args.hooks?.onInternalSourceWorkStart,
+      internalSourceEvent
+    );
+    let variantOutput: Awaited<ReturnType<typeof runSingleAgentVariant>>;
+    try {
+      variantOutput = await runSingleAgentVariant({
+        beforeSource: args.beforeSource,
+        count: args.count,
+        found: args.found,
+        model: args.model,
+        priorVariantApproaches,
+        projectRoot: args.projectRoot,
+        skills: args.skills,
+        stream: args.stream,
+        variantIndex,
+      });
+    } finally {
+      await notifyInternalSourceWork(
+        args.hooks?.onInternalSourceWorkFinish,
+        internalSourceEvent
+      );
+    }
+    const { result, lastAgentSummary } = variantOutput;
 
     if (args.stream.clientGone()) {
       break;
@@ -591,6 +701,7 @@ async function runVariantBatch(args: {
     const step = await persistChangedVariant({
       count: args.count,
       found: args.found,
+      hooks: args.hooks,
       id: args.id,
       iterDir: args.iterDir,
       iterationRoots: args.iterationRoots,
@@ -665,6 +776,7 @@ function finishNoVariants(args: {
 async function finishSuccessfulBatch(args: {
   agentStartedAt: number;
   found: FoundComment;
+  hooks?: RunNewIterationHooks;
   id: string;
   recordRun: RecordRunFn;
   state: VariantBatchState;
@@ -714,6 +826,13 @@ async function finishSuccessfulBatch(args: {
     return;
   }
 
+  notifyRunSourceApplied(args.hooks, {
+    absolutePath: args.found.absolutePath,
+    active: lastV,
+    file: args.found.relativePath,
+    id: args.id,
+  });
+
   if (args.stream.clientGone()) {
     return;
   }
@@ -738,7 +857,7 @@ async function finishSuccessfulBatch(args: {
 export async function runNewIteration(
   input: RunNewIterationInput
 ): Promise<void> {
-  const { projectRoot, found, id, model, count, skills, stream } = input;
+  const { projectRoot, found, hooks, id, model, count, skills, stream } = input;
 
   const agentStartedAt = Date.now();
   const runCreatedAt = new Date(agentStartedAt).toISOString();
@@ -779,6 +898,7 @@ export async function runNewIteration(
     beforeSource,
     count,
     found,
+    hooks,
     id,
     iterDir,
     iterationRoots,
@@ -805,6 +925,7 @@ export async function runNewIteration(
   await finishSuccessfulBatch({
     agentStartedAt,
     found,
+    hooks,
     id,
     recordRun,
     state,

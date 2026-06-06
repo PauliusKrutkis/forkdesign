@@ -105,6 +105,7 @@ describe("runNewIteration multi-variant", () => {
 
   it("creates multiple independent snapshots and activates the last", async () => {
     let call = 0;
+    const sourceAppliedEvents: object[] = [];
     runAgentMock.mockImplementation(() => {
       call += 1;
       writeFileSync(
@@ -128,6 +129,11 @@ describe("runNewIteration multi-variant", () => {
       id: commentId,
       model: "composer-2.5-fast",
       count: 2,
+      hooks: {
+        onSourceApplied: (event) => {
+          sourceAppliedEvents.push(event);
+        },
+      },
       skills: [],
       stream,
     });
@@ -152,6 +158,28 @@ describe("runNewIteration multi-variant", () => {
       commentId,
       active: 2,
     });
+    expect(sourceAppliedEvents).toEqual([
+      {
+        absolutePath: sourcePath,
+        active: 1,
+        file: "src/Widget.tsx",
+        id: commentId,
+        version: 1,
+      },
+      {
+        absolutePath: sourcePath,
+        active: 2,
+        file: "src/Widget.tsx",
+        id: commentId,
+        version: 2,
+      },
+      {
+        absolutePath: sourcePath,
+        active: 2,
+        file: "src/Widget.tsx",
+        id: commentId,
+      },
+    ]);
 
     const done = events.at(-1) as {
       type: string;
@@ -193,6 +221,66 @@ describe("runNewIteration multi-variant", () => {
       skills: [],
       stream,
     });
+
+    expect(runAgentMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("waits for each variant screenshot before restoring baseline", async () => {
+    let call = 0;
+    let screenshotResolved = false;
+    let resolveScreenshot: () => void = () => {
+      throw new Error("screenshot capture was not requested");
+    };
+    const screenshotRequested: number[] = [];
+
+    runAgentMock.mockImplementation(() => {
+      call += 1;
+      if (call === 2) {
+        expect(screenshotResolved).toBe(true);
+      }
+      writeFileSync(
+        sourcePath,
+        `${baselineSource}\n// variant ${call}`,
+        "utf8"
+      );
+      return Promise.resolve({
+        ok: true,
+        modelUsed: "composer-2.5-fast",
+        turnsUsed: 1,
+        toolCalls: 1,
+        attempts: [],
+      });
+    });
+
+    const { stream } = createTestStream();
+    const runPromise = runNewIteration({
+      projectRoot,
+      found,
+      id: commentId,
+      model: "composer-2.5-fast",
+      count: 2,
+      hooks: {
+        onVariantScreenshotRequested: (event) => {
+          screenshotRequested.push(event.version);
+          if (event.version === 1) {
+            return new Promise<void>((resolve) => {
+              resolveScreenshot = resolve;
+            });
+          }
+        },
+      },
+      skills: [],
+      stream,
+    });
+
+    await vi.waitFor(() => {
+      expect(screenshotRequested).toEqual([1]);
+    });
+    expect(runAgentMock).toHaveBeenCalledTimes(1);
+
+    screenshotResolved = true;
+    resolveScreenshot();
+    await runPromise;
 
     expect(runAgentMock).toHaveBeenCalledTimes(2);
   });

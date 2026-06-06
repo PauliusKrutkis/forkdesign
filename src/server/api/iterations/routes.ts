@@ -21,8 +21,18 @@ import {
 import {
   createNdjsonStream,
   openNdjsonResponse,
+  type RunNewIterationVariantCaptureEvent,
   runNewIteration,
 } from "../../iterations/run-iteration.ts";
+import {
+  activeIterationRunVisibleActive,
+  cancelIterationRun,
+  finishIterationRun,
+  listActiveIterationRuns,
+  startIterationRun,
+  updateIterationRunStatus,
+  updateIterationRunVisibleActive,
+} from "../../iterations/runs.ts";
 import { atomicWriteBytes } from "../../platform/atomic-write.ts";
 import {
   errorMessage,
@@ -38,6 +48,84 @@ import {
   parseNewIterationBody,
   parseScreenshotBody,
 } from "./parse-body.ts";
+
+export interface IterationSourceAppliedEvent {
+  absolutePath: string;
+  active: number;
+  file: string;
+  id: string;
+}
+
+export interface IterationRouteHooks {
+  onInternalSourceWorkFinish?: (
+    event: IterationSourceAppliedEvent
+  ) => Promise<void> | void;
+  onInternalSourceWorkStart?: (
+    event: IterationSourceAppliedEvent
+  ) => Promise<void> | void;
+  onSourceApplied?: (event: IterationSourceAppliedEvent) => void;
+}
+
+interface IterationProgressEvent {
+  detail?: string;
+  tool?: string;
+  type?: string;
+}
+
+const VARIANT_SCREENSHOT_TIMEOUT_MS = 10_000;
+const screenshotWaiters = new Map<string, Set<() => void>>();
+
+function screenshotWaiterKey(id: string, v: number): string {
+  return `${id}:${v}`;
+}
+
+function waitForVariantScreenshotUpload(
+  event: RunNewIterationVariantCaptureEvent
+): Promise<void> {
+  updateIterationRunVisibleActive(event.id, event.version);
+  return new Promise((resolve) => {
+    const key = screenshotWaiterKey(event.id, event.version);
+    let timeout: ReturnType<typeof setTimeout> | undefined;
+
+    const done = () => {
+      if (timeout) {
+        clearTimeout(timeout);
+      }
+      const waiters = screenshotWaiters.get(key);
+      waiters?.delete(done);
+      if (waiters?.size === 0) {
+        screenshotWaiters.delete(key);
+      }
+      resolve();
+    };
+
+    const waiters = screenshotWaiters.get(key) ?? new Set<() => void>();
+    waiters.add(done);
+    screenshotWaiters.set(key, waiters);
+    timeout = setTimeout(done, VARIANT_SCREENSHOT_TIMEOUT_MS);
+  });
+}
+
+function notifyVariantScreenshotUploaded(id: string, v: number): void {
+  const waiters = screenshotWaiters.get(screenshotWaiterKey(id, v));
+  if (!waiters) {
+    return;
+  }
+  for (const done of [...waiters]) {
+    done();
+  }
+}
+
+function notifySourceApplied(
+  hooks: IterationRouteHooks,
+  event: IterationSourceAppliedEvent
+): void {
+  try {
+    hooks.onSourceApplied?.(event);
+  } catch {
+    // HMR notification is best-effort; the source rewrite already succeeded.
+  }
+}
 
 /**
  * GET /api/iterations?id=<comment-id>
@@ -92,7 +180,8 @@ export async function handleIterationsList(
     };
   });
 
-  const active = found.comment.active ?? 0;
+  const active =
+    activeIterationRunVisibleActive(id) ?? found.comment.active ?? 0;
 
   sendJson(res, {
     id,
@@ -118,6 +207,31 @@ export function iterationsSubpath(reqUrl: string): string {
   return sub;
 }
 
+export function handleIterationsRuns(
+  _req: IncomingMessage,
+  res: ServerResponse
+): void {
+  sendJson(res, { runs: listActiveIterationRuns() });
+}
+
+export async function handleIterationsCancel(
+  req: IncomingMessage,
+  res: ServerResponse
+): Promise<void> {
+  const body = await readJsonBody(req);
+  if (!body.ok) {
+    sendError(res, 400, body.reason);
+    return;
+  }
+  const id = (body.value as { id?: unknown }).id;
+  if (typeof id !== "string" || !id.trim()) {
+    sendError(res, 400, "missing field: id");
+    return;
+  }
+  const cancelled = cancelIterationRun(id);
+  sendJson(res, { ok: true, cancelled });
+}
+
 /**
  * POST /api/iterations/activate { id, v }
  *
@@ -131,7 +245,8 @@ export async function handleIterationsActivate(
   req: IncomingMessage,
   res: ServerResponse,
   projectRoot: string,
-  excludeSrcPrefixes: string[]
+  excludeSrcPrefixes: string[],
+  hooks: IterationRouteHooks = {}
 ): Promise<void> {
   const body = await readJsonBody(req);
   if (!body.ok) {
@@ -166,6 +281,13 @@ export async function handleIterationsActivate(
     return;
   }
 
+  notifySourceApplied(hooks, {
+    absolutePath: ctx.found.absolutePath,
+    active: v,
+    file: ctx.found.relativePath,
+    id,
+  });
+
   sendJson(res, {
     ok: true,
     id,
@@ -185,7 +307,8 @@ export async function handleIterationsDelete(
   req: IncomingMessage,
   res: ServerResponse,
   projectRoot: string,
-  excludeSrcPrefixes: string[]
+  excludeSrcPrefixes: string[],
+  hooks: IterationRouteHooks = {}
 ): Promise<void> {
   const body = await readJsonBody(req);
   if (!body.ok) {
@@ -239,6 +362,12 @@ export async function handleIterationsDelete(
       sendError(res, applied.status, applied.message);
       return;
     }
+    notifySourceApplied(hooks, {
+      absolutePath: found.absolutePath,
+      active: targetActive,
+      file: found.relativePath,
+      id,
+    });
   }
 
   try {
@@ -276,7 +405,8 @@ export async function handleIterationsNew(
   req: IncomingMessage,
   res: ServerResponse,
   projectRoot: string,
-  excludeSrcPrefixes: string[]
+  excludeSrcPrefixes: string[],
+  hooks: IterationRouteHooks = {}
 ): Promise<void> {
   const parsed = await readAndParse(req, parseNewIterationBody);
   if (!parsed.ok) {
@@ -298,17 +428,56 @@ export async function handleIterationsNew(
     return;
   }
 
-  openNdjsonResponse(res);
-  const stream = createNdjsonStream(req, res);
-  await runNewIteration({
-    projectRoot,
-    found: ctx.found,
-    id,
+  const startedAt = Date.now();
+  const abortController = startIterationRun({
+    anchor: ctx.found.comment.anchor,
+    commentId: id,
     count,
     model,
-    stream,
-    skills,
+    startedAt,
   });
+
+  openNdjsonResponse(res);
+  const stream = createNdjsonStream(req, res, {
+    abortController,
+    abortOnClose: false,
+  });
+  const originalWriteEvent = stream.writeEvent;
+  stream.writeEvent = (event: object) => {
+    updateIterationRunStatus(id, iterationProgressStatus(event));
+    originalWriteEvent(event);
+  };
+  try {
+    await runNewIteration({
+      projectRoot,
+      found: ctx.found,
+      hooks: {
+        ...hooks,
+        onInternalSourceWorkFinish: hooks.onInternalSourceWorkFinish,
+        onInternalSourceWorkStart: hooks.onInternalSourceWorkStart,
+        onVariantScreenshotRequested: waitForVariantScreenshotUpload,
+      },
+      id,
+      count,
+      model,
+      stream,
+      skills,
+    });
+  } finally {
+    finishIterationRun(id, abortController);
+  }
+}
+
+function iterationProgressStatus(event: object): string | undefined {
+  const progress = event as IterationProgressEvent;
+  if (progress.type !== "progress") {
+    return;
+  }
+  const { detail, tool } = progress;
+  if (tool && detail) {
+    return `${tool} ${detail}`;
+  }
+  return tool ?? detail ?? "Agent working...";
 }
 
 /**
@@ -361,6 +530,7 @@ export async function handleIterationsScreenshot(
     sendError(res, 500, errorMessage(err));
     return;
   }
+  notifyVariantScreenshotUploaded(id, v);
 
   const mtimeMs = pngMtimeMs(ctx.iterationRoots, v);
 

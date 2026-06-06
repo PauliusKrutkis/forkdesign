@@ -1,5 +1,5 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
-import type { Plugin } from "vite";
+import type { Plugin, ViteDevServer } from "vite";
 import { configureAgentRuntime } from "../agent/config.ts";
 import type { AgentModel } from "../agent/models.ts";
 import type { AgentSkill } from "../agent/skills.ts";
@@ -11,10 +11,13 @@ import {
 } from "../api/comments/routes.ts";
 import {
   handleIterationsActivate,
+  handleIterationsCancel,
   handleIterationsDelete,
   handleIterationsList,
   handleIterationsNew,
+  handleIterationsRuns,
   handleIterationsScreenshot,
+  type IterationSourceAppliedEvent,
   iterationsSubpath,
 } from "../api/iterations/routes.ts";
 import { errorMessage, sendError, wrapApiHandler } from "../platform/http.ts";
@@ -24,6 +27,17 @@ const INJECT_MARKER = "<!-- vite-plugin-comments injected -->";
 const AUTO_MOUNT_MARKER = "<!-- redline overlay auto-mount -->";
 const VIRTUAL_CLIENT_ID = "virtual:redline/client";
 const RESOLVED_VIRTUAL_CLIENT_ID = `\0${VIRTUAL_CLIENT_ID}`;
+
+interface SourceChangeController {
+  onInternalSourceWorkFinish: (event: IterationSourceAppliedEvent) => void;
+  onInternalSourceWorkStart: (event: IterationSourceAppliedEvent) => void;
+  onSourceApplied: (event: IterationSourceAppliedEvent) => void;
+}
+
+const sourceChangeControllers = new WeakMap<
+  ViteDevServer,
+  SourceChangeController
+>();
 
 function redlineClientModule(): string {
   return `
@@ -65,9 +79,11 @@ function handleIterationsMiddleware(
   res: ServerResponse,
   projectRoot: string,
   excludeSrcPrefixes: string[],
+  server: ViteDevServer,
   next: () => void
 ): void {
   const sub = iterationsSubpath(req.url ?? "");
+  const sourceChanges = sourceChangeController(server);
 
   if (req.method === "GET" && (sub === "" || sub === "/")) {
     wrapApiHandler((r, s) =>
@@ -75,18 +91,30 @@ function handleIterationsMiddleware(
     )(req, res);
     return;
   }
+  if (req.method === "GET" && sub === "/runs") {
+    wrapApiHandler(handleIterationsRuns)(req, res);
+    return;
+  }
   if (req.method === "POST" && sub === "/activate") {
     wrapApiHandler((r, s) =>
-      handleIterationsActivate(r, s, projectRoot, excludeSrcPrefixes)
+      handleIterationsActivate(r, s, projectRoot, excludeSrcPrefixes, {
+        onSourceApplied: sourceChanges.onSourceApplied,
+      })
     )(req, res);
     return;
   }
   if (req.method === "POST" && sub === "/new") {
-    handleIterationsNew(req, res, projectRoot, excludeSrcPrefixes).catch(
-      (err: unknown) => {
-        sendIterationsStreamError(res, err);
-      }
-    );
+    handleIterationsNew(req, res, projectRoot, excludeSrcPrefixes, {
+      onInternalSourceWorkFinish: sourceChanges.onInternalSourceWorkFinish,
+      onInternalSourceWorkStart: sourceChanges.onInternalSourceWorkStart,
+      onSourceApplied: sourceChanges.onSourceApplied,
+    }).catch((err: unknown) => {
+      sendIterationsStreamError(res, err);
+    });
+    return;
+  }
+  if (req.method === "POST" && sub === "/cancel") {
+    wrapApiHandler(handleIterationsCancel)(req, res);
     return;
   }
   if (req.method === "POST" && sub === "/screenshot") {
@@ -97,11 +125,53 @@ function handleIterationsMiddleware(
   }
   if (req.method === "POST" && sub === "/delete") {
     wrapApiHandler((r, s) =>
-      handleIterationsDelete(r, s, projectRoot, excludeSrcPrefixes)
+      handleIterationsDelete(r, s, projectRoot, excludeSrcPrefixes, {
+        onSourceApplied: sourceChanges.onSourceApplied,
+      })
     )(req, res);
     return;
   }
   next();
+}
+
+function sourceChangeController(server: ViteDevServer): SourceChangeController {
+  const existing = sourceChangeControllers.get(server);
+  if (existing) {
+    return existing;
+  }
+
+  const suppressed = new Set<string>();
+  const originalEmit = server.watcher.emit.bind(server.watcher);
+  server.watcher.emit = ((eventName: string | symbol, ...args: unknown[]) => {
+    const file = args[0];
+    if (
+      (eventName === "add" ||
+        eventName === "change" ||
+        eventName === "unlink") &&
+      typeof file === "string" &&
+      suppressed.has(file)
+    ) {
+      return false;
+    }
+    return originalEmit(eventName, ...args);
+  }) as typeof server.watcher.emit;
+
+  const controller: SourceChangeController = {
+    onInternalSourceWorkFinish: (event) => {
+      suppressed.delete(event.absolutePath);
+    },
+    onInternalSourceWorkStart: (event) => {
+      suppressed.add(event.absolutePath);
+    },
+    onSourceApplied: (event) => {
+      suppressed.delete(event.absolutePath);
+      // The source file is rewritten from an API request, and watcher delivery can
+      // be flaky with atomic renames. Emit the change explicitly so Vite runs HMR.
+      server.watcher.emit("change", event.absolutePath);
+    },
+  };
+  sourceChangeControllers.set(server, controller);
+  return controller;
 }
 
 function sendIterationsStreamError(res: ServerResponse, err: unknown): void {
@@ -219,6 +289,7 @@ export function comments(options: CommentsPluginOptions = {}): Plugin {
           res,
           projectRoot,
           excludeSrcPrefixes,
+          server,
           next
         );
       });
