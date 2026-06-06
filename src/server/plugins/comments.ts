@@ -274,8 +274,12 @@ export interface RedlinePluginOptions extends CommentsPluginOptions {
       };
 }
 
+export type RedlinePluginOption = { name: string } | RedlinePluginOption[];
+
 /** Streamlined dev setup: source locations + API middleware + overlay mount. */
-export function redline(options: RedlinePluginOptions = {}): Plugin[] {
+export function redline(
+  options: RedlinePluginOptions = {}
+): RedlinePluginOption {
   const {
     sourceLoc: sourceLocOptions,
     mountOverlay = true,

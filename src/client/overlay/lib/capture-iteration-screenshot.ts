@@ -58,12 +58,14 @@ async function waitForVersionRender(args: {
   previousSignature?: string | null;
 }): Promise<void> {
   const hot = import.meta.hot;
+  const hasHotEvents =
+    typeof hot?.on === "function" && typeof hot.off === "function";
   let hmrSeen = false;
   const onHmr = () => {
     hmrSeen = true;
   };
 
-  if (hot) {
+  if (hasHotEvents) {
     hot.on("vite:afterUpdate", onHmr);
   }
 
@@ -91,7 +93,9 @@ async function waitForVersionRender(args: {
       await delay(RENDER_POLL_MS);
     }
   } finally {
-    hot?.off("vite:afterUpdate", onHmr);
+    if (hasHotEvents) {
+      hot.off("vite:afterUpdate", onHmr);
+    }
   }
 
   await waitForStableRender(args.anchor);
@@ -231,6 +235,13 @@ export async function captureAgentVariantScreenshots(args: {
   }
 
   const others = agentVersions.filter((v) => v !== args.activeV);
+
+  if (!(await activateIterationVersion(args.id, args.activeV))) {
+    console.warn(
+      `[CommentBubble] failed to activate v${args.activeV} for screenshot capture`
+    );
+    return;
+  }
 
   await captureAndUploadVersionAfterHmr({
     id: args.id,

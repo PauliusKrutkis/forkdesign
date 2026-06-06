@@ -9,6 +9,7 @@ import {
   type ComposerMode,
 } from "./comment-composer-bar.tsx";
 import { HotkeyTip } from "./hotkey-tip.tsx";
+import { cssEscape } from "./lib/css-escape.ts";
 import { toErrorMessage } from "./lib/errors.ts";
 import { ignorePromiseRejection } from "./lib/ignore-promise-rejection.ts";
 import { isOverlayElement } from "./lib/overlay-dom.ts";
@@ -71,6 +72,12 @@ interface PickerCandidate {
   el: HTMLElement;
   key: string;
   label: string;
+  occurrenceRects: Array<{
+    height: number;
+    left: number;
+    top: number;
+    width: number;
+  }>;
   rect: {
     height: number;
     left: number;
@@ -488,6 +495,10 @@ function PickerPreview({
   // level above you" affordance; the rest of the stack stays hidden so the
   // selected box reads cleanly.
   const parent = picker.candidates[picker.selectedIndex + 1];
+  const siblingOccurrenceRects = selected.occurrenceRects.filter(
+    (rect) => !sameRect(rect, selected.rect)
+  );
+  const occurrenceCount = selected.occurrenceRects.length;
 
   // Breadcrumbs read naturally outermost › … › deepest (left → right), the
   // reverse of the deepest-first candidate stack.
@@ -518,6 +529,23 @@ function PickerPreview({
           }}
         />
       ) : null}
+      {siblingOccurrenceRects.map((rect) => (
+        <div
+          aria-hidden
+          className="pointer-events-none fixed z-[9298] transition-[left,top,width,height] duration-75"
+          data-comment-overlay="true"
+          key={`${selected.key}:occurrence:${rectKey(rect)}`}
+          style={{
+            left: rect.left,
+            top: rect.top,
+            width: rect.width,
+            height: rect.height,
+            background: "color-mix(in oklch, var(--ring) 7%, transparent)",
+            outline:
+              "1px solid color-mix(in oklch, var(--ring) 45%, transparent)",
+          }}
+        />
+      ))}
       <div
         aria-hidden
         className="pointer-events-none fixed z-[9300] transition-[left,top,width,height] duration-75"
@@ -549,7 +577,9 @@ function PickerPreview({
             </div>
           </div>
           <div className="shrink-0 rounded-full border bg-background px-2 py-1 font-mono text-[10px] text-muted-foreground">
-            {picker.selectedIndex + 1}/{picker.candidates.length}
+            {occurrenceCount > 1
+              ? `${occurrenceCount} matches`
+              : `${picker.selectedIndex + 1}/${picker.candidates.length}`}
           </div>
         </div>
         <div className="flex min-w-0 items-center gap-0.5 overflow-hidden px-3 py-2">
@@ -581,7 +611,11 @@ function PickerPreview({
           ))}
         </div>
         <div className="flex items-center justify-between border-t px-3 py-1.5 font-mono text-[9px] text-muted-foreground">
-          <span>↑↓ levels · ←→ siblings</span>
+          <span>
+            {occurrenceCount > 1
+              ? "comment applies to all matches"
+              : "↑↓ levels · ←→ siblings"}
+          </span>
           <span>↵ or click to pick</span>
         </div>
       </div>
@@ -879,6 +913,7 @@ function toCandidate(el: HTMLElement): PickerCandidate {
     el,
     key: `${label}:${el.getAttribute("data-source-loc") ?? ""}:${rect.left}:${rect.top}:${rect.width}:${rect.height}`,
     label,
+    occurrenceRects: findSourceOccurrenceRects(el),
     rect: {
       left: rect.left,
       top: rect.top,
@@ -886,6 +921,44 @@ function toCandidate(el: HTMLElement): PickerCandidate {
       height: rect.height,
     },
   };
+}
+
+function findSourceOccurrenceRects(
+  el: HTMLElement
+): PickerCandidate["occurrenceRects"] {
+  const sourceLoc = el.getAttribute("data-source-loc");
+  if (!sourceLoc) {
+    return [rectSnapshot(el.getBoundingClientRect())];
+  }
+  const matches = document.querySelectorAll<HTMLElement>(
+    `[data-source-loc="${cssEscape(sourceLoc)}"]`
+  );
+  return Array.from(matches)
+    .filter((match) => !isOverlayElement(match))
+    .map((match) => rectSnapshot(match.getBoundingClientRect()))
+    .filter((rect) => rect.width > 0 && rect.height > 0);
+}
+
+function rectSnapshot(rect: DOMRect): PickerCandidate["rect"] {
+  return {
+    left: rect.left,
+    top: rect.top,
+    width: rect.width,
+    height: rect.height,
+  };
+}
+
+function sameRect(a: PickerCandidate["rect"], b: PickerCandidate["rect"]) {
+  return (
+    a.left === b.left &&
+    a.top === b.top &&
+    a.width === b.width &&
+    a.height === b.height
+  );
+}
+
+function rectKey(rect: PickerCandidate["rect"]): string {
+  return `${rect.left}:${rect.top}:${rect.width}:${rect.height}`;
 }
 
 /** Returns the topmost raw DOM hit so capture mode can suppress app clicks. */

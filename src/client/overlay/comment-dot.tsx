@@ -229,36 +229,40 @@ export function CommentDot({
 
   const state = pinState(comments, unresolvedRecent);
   const count = comments.length;
+  const primaryInstance =
+    openTarget?.anchor === anchor
+      ? (instances.find((item) => item.instance === openTarget.instance) ??
+        instances[0])
+      : instances[0];
+
+  if (!primaryInstance) {
+    return null;
+  }
+
+  const { left, top } = dotRect(
+    { right: primaryInstance.rect.right, top: primaryInstance.rect.top },
+    viewport
+  );
+  const isOpen =
+    openTarget?.anchor === anchor &&
+    openTarget.instance === primaryInstance.instance;
+  if (hideOpenInstance && isOpen) {
+    return null;
+  }
 
   return (
-    <>
-      {instances.map(({ instance, rect }) => {
-        const { left, top } = dotRect(
-          { right: rect.right, top: rect.top },
-          viewport
-        );
-        const isOpen =
-          openTarget?.anchor === anchor && openTarget.instance === instance;
-        if (hideOpenInstance && isOpen) {
-          return null;
-        }
-        return (
-          <PinInstanceButton
-            agentWorking={agentWorking}
-            anchor={anchor}
-            author={lead.author}
-            count={count}
-            instance={instance}
-            isOpen={isOpen}
-            key={`${anchor}-${instance}`}
-            left={left}
-            onHover={onHover}
-            onOpen={onOpen}
-            state={state}
-            top={top}
-          />
-        );
-      })}
-    </>
+    <PinInstanceButton
+      agentWorking={agentWorking}
+      anchor={anchor}
+      author={lead.author}
+      count={count}
+      instance={primaryInstance.instance}
+      isOpen={isOpen}
+      left={left}
+      onHover={onHover}
+      onOpen={onOpen}
+      state={state}
+      top={top}
+    />
   );
 }

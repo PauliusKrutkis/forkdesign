@@ -1,10 +1,18 @@
 # redline
 
-**Why not Onlook / v0 / Builder Visual Copilot?** Those tools keep design history in their platform — redline stores feedback as `{/* @comment … */}` markers inline in your real `.tsx` source and saves per-comment iteration snapshots on disk next to your repo, so design history lives in git with your code, not in a SaaS.
+Dev-only comments for **Vite + React design playgrounds**. Click an element,
+leave feedback, and optionally let an agent generate source-backed iterations.
 
-Dev-only overlay for **Vite + React design playgrounds** — click a component, leave a note, optionally let an agent iterate on it. Not a general visual editor.
+Redline stores feedback in your repo: comment markers live in `.tsx` files and
+iteration snapshots live under `designs/`.
 
-> **0.x scope:** React 19 + Vite 8 + React Router 7 peer deps. Tailwind required in the host app. API may change between minors until 1.0.
+> 0.x scope: React 19, Vite 8, and React Router 7. APIs may change before 1.0.
+
+## Screenshots
+
+![Redline comment composer over a Vite React design playground](./docs/assets/redline-commenting.png)
+
+![Redline agent iteration thread with version previews](./docs/assets/redline-agent-iterations.png)
 
 ## Install
 
@@ -13,43 +21,22 @@ pnpm add -D redline
 # or: npm install --save-dev redline
 ```
 
-From GitHub (before npm publish):
+Before npm publish:
 
 ```sh
 pnpm add -D github:PauliusKrutkis/redline
 ```
 
-**Peer dependencies:** `react`, `react-dom`, `react-router-dom`, `vite`.
+Peer dependencies: `react`, `react-dom`, `react-router-dom`, `vite`.
 
-**AI iteration** uses a **preferred model + automatic fallback chain**:
+## Quick Start
 
-- **Preferred model** — set in overlay Settings → Preferred model (default: `composer-2.5-fast`).
-- **Fallback order** — `composer-2.5-fast` → `composer-2.5` → `claude-sonnet-4-6` → `default`, skipping models unavailable in your environment (Composer ids are probed via `agent models`).
-- **Claude** — [Claude Agent SDK](https://www.npmjs.com/package/@anthropic-ai/claude-agent-sdk); `ANTHROPIC_API_KEY` or Claude Code login.
-- **Composer** — [Cursor CLI](https://cursor.com/docs/cli) (`agent`); `agent login` or `CURSOR_API_KEY`.
-
-Override the chain with `redline({ agentModelPriority: [...] })`. The `done` event includes `modelUsed` and `durationMs`.
-
-## Security and trust boundary
-
-Redline is intended for local development only. Its Vite middleware can read and
-write `.tsx` files under your app's `src/` tree, writes screenshots and
-iteration files under `designs/`, and may run a local AI agent when you choose
-Agent mode.
-
-Do not expose a Vite dev server running redline to an untrusted network. If AI
-iteration is enabled, prompts can include selected source context, comments,
-screenshots, and design feedback, and that data is sent to whichever agent
-provider you configure through Claude Code/SDK or Cursor CLI. Add `designs/` and
-`public/designs/` to the host app's `.gitignore` if iteration artifacts may
-contain private UI, customer data, or unreleased product work.
-
-## Quick start
+Add the Vite plugin:
 
 ```ts
 // vite.config.ts
-import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
+import { defineConfig } from "vite";
 import { redline } from "redline/plugin";
 
 export default defineConfig({
@@ -57,46 +44,15 @@ export default defineConfig({
 });
 ```
 
-`redline()` is dev-only. It stamps JSX source locations, installs the comment/iteration API middleware, imports `redline/styles.css`, and mounts the overlay automatically.
+That is the only setup for the default path. `redline()` runs in dev only,
+stamps JSX source locations, installs the comment/iteration API, imports the
+compiled overlay CSS, and mounts the overlay. Your app does not need to scan
+redline with Tailwind.
 
-Scan redline so utility classes (`bg-background`, `text-primary`, …) are emitted.
+## Using Redline
 
-**Tailwind v4** — add `@source` for redline dist (or linked `src`):
-
-```css
-@import "tailwindcss";
-@source "../node_modules/redline/dist/**/*.{js,mjs}";
-```
-
-**Tailwind v3** — import the preset and content paths:
-
-```js
-import { tailwindContent } from "redline/tailwind.content";
-import redlinePreset from "redline/tailwind.preset";
-
-export default {
-  presets: [redlinePreset],
-  content: ["./index.html", "./src/**/*.{js,ts,jsx,tsx}", ...tailwindContent],
-};
-```
-
-**Linked local dev (`pnpm link:../redline`)** — resolve the built package (default), not raw `source` exports. The published `dist` bundles Radix/lucide so Vite does not pull a second copy of React from `redline/node_modules` (that mismatch blanks the page in Firefox/Zen). Run `pnpm dev` in the redline checkout for overlay HMR, then refresh the host app. If you still see “Invalid hook call”, add `resolve.dedupe: ["react", "react-dom"]` in the host `vite.config.ts` and use `http://127.0.0.1:5173` instead of `localhost` in Zen.
-
-Optional author override for new comments:
-
-```html
-<script>window.__COMMENT_AUTHOR__ = "you@example.com";</script>
-```
-
-## How it works
-
-1. **`sourceLoc`** — dev-only Vite plugin stamps host JSX elements with `data-source-loc="src/…/File.tsx:line:col"`.
-2. **`comments`** — dev-only Vite middleware reads/writes `{/* @comment id="…" anchor="…" text="…" … */}` markers in `.tsx` files under `src/`.
-3. **`CommentOverlay`** — React UI: dots on anchored elements, composer, version switcher, optional AI iterate.
-
-On create, redline saves a screenshot to `public/designs/iterations/<comment-id>/v0.png`. Each AI iteration writes `designs/iterations/<comment-id>/v{N}.{tsx,png}` on disk. Symlink `public/designs` → `designs` if you want snapshots served as static assets.
-
-Comment markers in source look like:
+Open your app in dev, click the redline button, then click an element to leave a
+comment. New comments are written as JSX markers:
 
 ```tsx
 <button data-comment-anchor="550e8400-e29b-41d4-a716-446655440000">
@@ -105,35 +61,49 @@ Comment markers in source look like:
 {/* @comment id="550e8400-e29b-41d4-a716-446655440000" anchor="550e8400-e29b-41d4-a716-446655440000" text="Too heavy" author="you@example.com" date="2026-05-26T12:00:00.000Z" */}
 ```
 
-### Dev API (`comments()` middleware)
+Screenshots and agent iterations are written under `designs/`. Add `designs/`
+and `public/designs/` to the host app's `.gitignore` if those artifacts should
+stay local.
 
-| Method | Path | Body | Purpose |
-|--------|------|------|---------|
-| `GET` | `/api/comments` | — | List all comment markers |
-| `GET` | `/api/comments?file=src/…/Page.tsx` | — | Comments in one file |
-| `POST` | `/api/comments` | `{ file, line, column, text, author, … }` | Create marker |
-| `PATCH` | `/api/comments/:id` | `{ text }`, `{ reply: { text, author } }`, or `{ resolved: true \| false }` | Edit body, append reply, or toggle resolved |
-| `DELETE` | `/api/comments/:id` | — | Remove marker; optional `?revert=baseline` restores v0 before delete |
+## AI Iteration
 
-## Plugin options
+Agent mode uses your configured local tools:
+
+- Cursor CLI (`agent`): run `agent login` or set `CURSOR_API_KEY`.
+- Claude: set `ANTHROPIC_API_KEY` or use Claude Code login.
+
+Default model order:
+
+```txt
+composer-2.5-fast -> composer-2.5 -> claude-sonnet-4-6 -> default
+```
+
+Override it in `vite.config.ts`:
 
 ```ts
 redline({
-  // Skip comment read/write under these project-relative prefixes:
-  excludeSrcPrefixes: ["src/dev/"],
-  // Optional: path to Cursor CLI when `agent` is not on PATH
-  cursorAgentPath: "/usr/local/bin/agent",
-  // Optional: override agent fallback order (preferred model still goes first)
-  agentModelPriority: ["composer-2.5-fast", "composer-2.5", "claude-sonnet-4-6", "default"],
-  // Optional: prompt skills for agent runs (defaults to frontend design guidance)
-  agentSkills: ["frontend-design"], // pass [] to disable
+  agentModelPriority: ["composer-2.5-fast", "claude-sonnet-4-6", "default"],
+  agentSkills: ["frontend-design"], // pass [] to disable skill guidance
 });
 ```
 
-Use the lower-level plugins when you want to mount the overlay yourself:
+## Options
+
+```ts
+redline({
+  excludeSrcPrefixes: ["src/dev/"],
+  cursorAgentPath: "/usr/local/bin/agent",
+  agentModelPriority: ["composer-2.5-fast", "composer-2.5", "default"],
+  agentSkills: ["frontend-design"],
+});
+```
+
+If you want to mount the overlay yourself, use the lower-level plugins:
 
 ```ts
 // vite.config.ts
+import react from "@vitejs/plugin-react";
+import { defineConfig } from "vite";
 import { comments, sourceLoc } from "redline/plugin";
 
 export default defineConfig({
@@ -142,7 +112,6 @@ export default defineConfig({
 ```
 
 ```tsx
-// App.tsx
 import { CommentOverlay } from "redline";
 import "redline/styles.css";
 
@@ -156,85 +125,29 @@ export function App() {
 }
 ```
 
-## Comment overlay options
+## Safety
 
-```tsx
-import { CommentOverlay } from "redline";
-import { useNavigate } from "react-router-dom";
+Redline is a local development tool. Its Vite middleware can read and write app
+source files, write screenshots and iteration artifacts, and run configured AI
+agents. Do not expose a Vite dev server running redline to an untrusted network.
 
-const navigate = useNavigate();
-
-<CommentOverlay
-  navigate={navigate}
-  fileToRoute={(file, { view }) => {
-    // Optional: map source files to routes for legacy comments without `route`
-    if (file === "src/pages/Home.tsx") return "/";
-    return null;
-  }}
-/>
-```
-
-New comments store the current URL on the `@comment` marker (`route="/path?query#hash"`). The comment list uses that to **Go to page** for off-page rows. **Minimal** mode (Settings → Interface) hides floating buttons; use `C` comment, `L` list, `,` settings, `Esc` close.
-
-## Multi-frame prototypes
-
-Wrap distinct views in `<section data-view="empty">…</section>`. Single-view pages need no wrapper.
-
-## Theming
-
-The overlay uses shadcn semantic tokens (`--background`, `--primary`, `--muted`, etc.) defined in [`src/styles.css`](./src/styles.css). Override `:root` variables in your app after importing `redline/styles.css` to retheme the overlay chrome.
+When AI iteration is enabled, selected source context, comments, screenshots,
+and feedback may be sent to your configured provider. See [`SECURITY.md`](./SECURITY.md).
 
 ## Public API
 
-| Export | Description |
-|--------|-------------|
-| `CommentOverlay` | Root React component (mount once, gate on `import.meta.env.DEV`) |
-| `comments()` | Vite plugin — `/api/comments`, `/api/iterations` |
-| `sourceLoc()` | Vite plugin — `data-source-loc` transform |
-| `redline/styles.css` | Shadcn zinc theme + pin animations |
-| `redline/tailwind.content` | Tailwind `content` globs — required for overlay utilities |
+| Import | Exports |
+| --- | --- |
+| `redline` | `CommentOverlay` and public types |
+| `redline/plugin` | `redline()`, `comments()`, `sourceLoc()` |
+| `redline/styles.css` | Compiled overlay CSS |
 
-Types: `CommentData`, `RegisteredComment`, `OverlaySettings`, etc. from the main entry.
-
-## Linked local development
-
-When a host app depends on a sibling checkout (`"redline": "link:../redline"`), use this loop:
-
-**One-time host setup** (e.g. `seo-analysis`):
-
-```json
-// package.json
-"redline": "link:../redline"
-```
-
-```ts
-// vite.config.ts — load redline source + watch the linked folder for HMR
-resolve: { conditions: ["source", "module", "browser", "development|production"] },
-optimizeDeps: { exclude: ["redline"] },
-server: { watch: { ignored: ["!../redline/**"] } },
-```
-
-```js
-// tailwind.config.js — emit overlay utility classes
-import { tailwindContent } from "redline/tailwind.content";
-content: ["./src/**/*.{js,ts,jsx,tsx}", ...tailwindContent],
-```
-
-```tsx
-// main.tsx
-import "redline/styles.css";
-```
-
-Then `pnpm install` in the host and start its dev server (`pnpm dev`).
-
-**Day-to-day:** edit files under `redline/src/`. With the config above, React/CSS changes hot-reload in the host. **Restart the host dev server** after changes to redline's Vite plugins (`src/server/plugins/comments.ts`, `src/server/plugins/source-loc.ts`) or after editing `package.json` exports — those load at startup.
-
-You do **not** need `pnpm build` in redline for UI work; the host reads `redline/src` directly via the `source` export condition.
-
-## Local development (this repo)
+## Development
 
 ```sh
 pnpm install
+pnpm check
+pnpm typecheck
 pnpm test
 pnpm build
 ```

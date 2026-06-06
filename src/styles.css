@@ -1,7 +1,6 @@
 /**
  * Redline overlay theme — shadcn zinc tokens (plain CSS variables).
- * Works with Tailwind v3 hosts via redline/tailwind.preset.js, or Tailwind v4
- * when semantic colors are mapped in @theme.
+ * Bundled into redline/styles.css with the overlay's generated utilities.
  */
 :root {
   --radius: 0.5rem;

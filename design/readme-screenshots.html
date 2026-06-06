@@ -1,0 +1,806 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Redline README screenshots</title>
+    <style>
+      :root {
+        --background: oklch(1 0 0);
+        --foreground: oklch(0.141 0.005 285.823);
+        --muted: oklch(0.967 0.001 286.375);
+        --muted-foreground: oklch(0.552 0.016 285.938);
+        --border: oklch(0.92 0.004 286.32);
+        --border-strong: oklch(0.84 0.006 286);
+        --primary: oklch(0.21 0.006 285.885);
+        --agent: oklch(0.52 0.2 280);
+        --agent-soft: oklch(0.955 0.032 285);
+        --live: oklch(0.58 0.13 155);
+        --live-soft: oklch(0.95 0.05 155);
+        --shadow: 0 28px 80px -36px rgb(15 23 42 / 0.45),
+          0 1px 2px rgb(15 23 42 / 0.08),
+          0 0 0 1px rgb(15 23 42 / 0.04);
+        --sans: "Hanken Grotesk", "Aptos", "Segoe UI", ui-sans-serif, system-ui,
+          sans-serif;
+        --mono: "Geist Mono", "SF Mono", "Cascadia Code", ui-monospace,
+          monospace;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        width: 100%;
+        min-width: 1440px;
+        height: 100%;
+        min-height: 900px;
+        margin: 0;
+      }
+
+      body {
+        overflow: hidden;
+        font-family: var(--sans);
+        color: var(--foreground);
+        background:
+          radial-gradient(
+            1100px 520px at 88% -12%,
+            oklch(0.955 0.034 280),
+            transparent
+          ),
+          radial-gradient(
+            900px 520px at -5% 105%,
+            oklch(0.965 0.028 205),
+            transparent
+          ),
+          linear-gradient(135deg, oklch(0.992 0.002 286), oklch(0.97 0.004 286));
+        -webkit-font-smoothing: antialiased;
+        text-rendering: optimizeLegibility;
+      }
+
+      .scene {
+        position: relative;
+        width: 1440px;
+        height: 900px;
+        overflow: hidden;
+      }
+
+      .scene::before {
+        position: absolute;
+        inset: 0;
+        content: "";
+        background-image:
+          linear-gradient(rgb(24 24 27 / 0.035) 1px, transparent 1px),
+          linear-gradient(90deg, rgb(24 24 27 / 0.035) 1px, transparent 1px);
+        background-size: 42px 42px;
+        mask-image: linear-gradient(to bottom, transparent, #000 18%, #000 82%, transparent);
+        pointer-events: none;
+      }
+
+      .stage {
+        position: absolute;
+        inset: 56px 72px 64px;
+        overflow: hidden;
+        background: color-mix(in oklch, var(--background) 86%, transparent);
+        border: 1px solid var(--border);
+        border-radius: 30px;
+        box-shadow: 0 38px 110px -68px rgb(15 23 42 / 0.65);
+      }
+
+      .browser-bar {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        height: 46px;
+        padding: 0 18px;
+        background: linear-gradient(var(--background), oklch(0.988 0.002 286));
+        border-bottom: 1px solid var(--border);
+      }
+
+      .dot {
+        width: 11px;
+        height: 11px;
+        background: var(--border-strong);
+        border-radius: 50%;
+      }
+
+      .url {
+        display: flex;
+        align-items: center;
+        height: 26px;
+        padding: 0 12px;
+        margin-left: 12px;
+        font: 500 11px / 1 var(--mono);
+        color: var(--muted-foreground);
+        background: var(--muted);
+        border: 1px solid var(--border);
+        border-radius: 999px;
+      }
+
+      .page {
+        position: absolute;
+        inset: 46px 0 0;
+        padding: 44px 58px;
+      }
+
+      .nav {
+        display: flex;
+        align-items: center;
+        gap: 28px;
+        color: var(--muted-foreground);
+        font-size: 14px;
+        font-weight: 600;
+      }
+
+      .mark {
+        width: 28px;
+        height: 28px;
+        background: var(--foreground);
+        border-radius: 9px;
+      }
+
+      .nav-spacer {
+        flex: 1;
+      }
+
+      .nav-button {
+        padding: 10px 16px;
+        color: var(--background);
+        background: var(--foreground);
+        border-radius: 999px;
+      }
+
+      .hero {
+        width: 560px;
+        margin-top: 86px;
+      }
+
+      .eyebrow {
+        width: max-content;
+        padding: 7px 11px;
+        margin-bottom: 18px;
+        font: 700 11px / 1 var(--mono);
+        color: var(--agent);
+        text-transform: uppercase;
+        letter-spacing: 0.09em;
+        background: var(--agent-soft);
+        border: 1px solid color-mix(in oklch, var(--agent) 22%, transparent);
+        border-radius: 999px;
+      }
+
+      h1 {
+        margin: 0;
+        font-size: 64px;
+        line-height: 0.97;
+        letter-spacing: -0.055em;
+      }
+
+      .hero p {
+        width: 470px;
+        margin: 22px 0 0;
+        color: var(--muted-foreground);
+        font-size: 19px;
+        line-height: 1.55;
+      }
+
+      .cta-row {
+        display: flex;
+        gap: 12px;
+        margin-top: 30px;
+      }
+
+      .cta {
+        padding: 14px 20px;
+        font-weight: 750;
+        background: var(--foreground);
+        color: var(--background);
+        border-radius: 14px;
+      }
+
+      .cta.secondary {
+        color: var(--foreground);
+        background: var(--muted);
+        border: 1px solid var(--border);
+      }
+
+      .preview-card {
+        position: absolute;
+        top: 162px;
+        right: 86px;
+        width: 400px;
+        padding: 22px;
+        background: var(--background);
+        border: 1px solid var(--border);
+        border-radius: 24px;
+        box-shadow: 0 26px 72px -48px rgb(15 23 42 / 0.56);
+      }
+
+      .card-image {
+        height: 210px;
+        background:
+          radial-gradient(120px 90px at 72% 24%, oklch(0.82 0.08 280), transparent),
+          linear-gradient(145deg, oklch(0.98 0.002 286), oklch(0.92 0.012 286));
+        border: 1px solid var(--border);
+        border-radius: 18px;
+      }
+
+      .line {
+        height: 12px;
+        margin-top: 18px;
+        background: var(--border);
+        border-radius: 999px;
+      }
+
+      .line.short {
+        width: 58%;
+      }
+
+      .line.medium {
+        width: 78%;
+      }
+
+      .redline-pin {
+        position: absolute;
+        display: grid;
+        place-items: center;
+        width: 28px;
+        height: 28px;
+        font: 700 10px / 1 var(--mono);
+        color: white;
+        background: var(--foreground);
+        border: 3px solid var(--background);
+        border-radius: 50%;
+        box-shadow: 0 10px 22px -12px rgb(0 0 0 / 0.7);
+      }
+
+      .redline-pin::before {
+        position: absolute;
+        inset: -9px;
+        content: "";
+        border: 2px solid color-mix(in oklch, var(--agent) 48%, transparent);
+        border-radius: inherit;
+      }
+
+      .pin-hero {
+        top: 318px;
+        left: 584px;
+      }
+
+      .pin-card {
+        top: 428px;
+        right: 434px;
+      }
+
+      .pick-outline {
+        position: absolute;
+        top: 307px;
+        left: 127px;
+        width: 515px;
+        height: 128px;
+        border: 2px dashed var(--agent);
+        border-radius: 20px;
+        box-shadow: 0 0 0 4px color-mix(in oklch, var(--agent) 13%, transparent);
+      }
+
+      .composer {
+        position: absolute;
+        top: 486px;
+        left: 498px;
+        width: 410px;
+        overflow: hidden;
+        background: var(--background);
+        border: 1px solid var(--border);
+        border-radius: 18px;
+        box-shadow: var(--shadow);
+      }
+
+      .composer-head,
+      .bubble-head {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 12px 14px;
+        background: linear-gradient(var(--background), oklch(0.99 0.001 286));
+        border-bottom: 1px solid var(--border);
+      }
+
+      .crumb {
+        padding: 5px 8px;
+        font: 650 11px / 1 var(--mono);
+        color: var(--foreground);
+        background: var(--muted);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+      }
+
+      .subtle {
+        color: var(--muted-foreground);
+      }
+
+      .composer textarea {
+        width: 100%;
+        min-height: 94px;
+        padding: 15px 16px 10px;
+        font: 500 15px / 1.5 var(--sans);
+        color: var(--foreground);
+        resize: none;
+        background: transparent;
+        border: 0;
+        outline: 0;
+      }
+
+      .composer-tools {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 0 12px 12px;
+      }
+
+      .mode-pill {
+        display: flex;
+        gap: 2px;
+        padding: 3px;
+        background: var(--muted);
+        border: 1px solid var(--border);
+        border-radius: 11px;
+      }
+
+      .mode {
+        padding: 7px 10px;
+        font: 700 11px / 1 var(--mono);
+        color: var(--muted-foreground);
+        border-radius: 8px;
+      }
+
+      .mode.active {
+        color: var(--agent);
+        background: var(--background);
+        box-shadow: 0 1px 2px rgb(15 23 42 / 0.12);
+      }
+
+      .send {
+        margin-left: auto;
+        padding: 10px 13px;
+        font: 750 12px / 1 var(--mono);
+        color: white;
+        background: var(--agent);
+        border-radius: 10px;
+      }
+
+      .dock {
+        position: absolute;
+        right: 28px;
+        bottom: 28px;
+        display: flex;
+        gap: 8px;
+        padding: 8px;
+        background: color-mix(in oklch, var(--background) 92%, transparent);
+        border: 1px solid var(--border);
+        border-radius: 18px;
+        box-shadow: var(--shadow);
+      }
+
+      .dock-button {
+        padding: 10px 13px;
+        font: 750 12px / 1 var(--mono);
+        border-radius: 12px;
+      }
+
+      .dock-button.primary {
+        color: white;
+        background: var(--foreground);
+      }
+
+      .dock-button.light {
+        color: var(--muted-foreground);
+        background: var(--muted);
+      }
+
+      .bubble {
+        position: absolute;
+        top: 132px;
+        left: 468px;
+        width: 480px;
+        overflow: hidden;
+        background: var(--background);
+        border: 1px solid var(--border);
+        border-radius: 20px;
+        box-shadow: var(--shadow);
+      }
+
+      .bubble-head {
+        justify-content: space-between;
+      }
+
+      .icon-row {
+        display: flex;
+        gap: 6px;
+      }
+
+      .icon {
+        width: 28px;
+        height: 28px;
+        background: var(--muted);
+        border: 1px solid var(--border);
+        border-radius: 9px;
+      }
+
+      .transcript {
+        display: flex;
+        flex-direction: column;
+        gap: 20px;
+        padding: 18px 18px 12px;
+      }
+
+      .entry {
+        display: flex;
+        gap: 12px;
+      }
+
+      .avatar {
+        display: grid;
+        flex: none;
+        place-items: center;
+        width: 30px;
+        height: 30px;
+        font: 750 10px / 1 var(--mono);
+        color: white;
+        background: var(--foreground);
+        border-radius: 50%;
+      }
+
+      .avatar.agent {
+        color: var(--agent);
+        background: var(--agent-soft);
+        border: 1px solid color-mix(in oklch, var(--agent) 22%, transparent);
+      }
+
+      .meta {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-bottom: 5px;
+        font: 700 12px / 1 var(--mono);
+      }
+
+      .time {
+        color: var(--muted-foreground);
+        font-weight: 500;
+      }
+
+      .tag {
+        padding: 4px 6px;
+        color: var(--agent);
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        background: var(--agent-soft);
+        border: 1px solid color-mix(in oklch, var(--agent) 24%, transparent);
+        border-radius: 7px;
+        font-size: 9px;
+      }
+
+      .said {
+        margin: 0;
+        font-size: 14px;
+        line-height: 1.52;
+      }
+
+      .agent-note {
+        margin: 0 0 11px;
+        color: var(--muted-foreground);
+        font: 500 12px / 1.55 var(--mono);
+      }
+
+      .variants {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 10px;
+      }
+
+      .variant {
+        overflow: hidden;
+        background: var(--background);
+        border: 1px solid var(--border);
+        border-radius: 14px;
+      }
+
+      .variant.live {
+        border-color: var(--live);
+        box-shadow: 0 0 0 1px var(--live);
+      }
+
+      .variant-preview {
+        display: grid;
+        place-items: center;
+        height: 92px;
+        background: linear-gradient(135deg, oklch(0.985 0.003 286), oklch(0.955 0.007 286));
+        border-bottom: 1px solid var(--border);
+      }
+
+      .mini-button {
+        padding: 10px 18px;
+        color: white;
+        font-size: 11px;
+        font-weight: 800;
+        background: var(--foreground);
+        border-radius: 13px;
+      }
+
+      .mini-button.agent {
+        background: var(--agent);
+        border-radius: 10px;
+      }
+
+      .mini-button.warm {
+        background: oklch(0.48 0.18 24);
+        border-radius: 8px;
+      }
+
+      .mini-button.base {
+        padding: 8px 14px;
+        background: oklch(0.61 0.01 286);
+        border-radius: 8px;
+        font-size: 10px;
+      }
+
+      .variant-foot {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 9px 10px;
+        color: var(--muted-foreground);
+        font: 700 10px / 1 var(--mono);
+      }
+
+      .live-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        color: var(--live);
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+      }
+
+      .live-dot {
+        width: 7px;
+        height: 7px;
+        background: var(--live);
+        border-radius: 50%;
+        box-shadow: 0 0 0 3px var(--live-soft);
+      }
+
+      .composer-mini {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 12px;
+        background: linear-gradient(oklch(0.99 0.001 286), var(--background));
+        border-top: 1px solid var(--border);
+      }
+
+      .input-ghost {
+        flex: 1;
+        padding: 11px 12px;
+        color: var(--muted-foreground);
+        font-size: 13px;
+        background: var(--muted);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+      }
+
+      .agent-scene .pin-hero,
+      .agent-scene .pick-outline,
+      .agent-scene .composer {
+        display: none;
+      }
+
+      body[data-scene="comment"] .agent-scene,
+      body[data-scene="agent"] .comment-scene {
+        display: none;
+      }
+    </style>
+  </head>
+  <body data-scene="comment">
+    <main class="scene comment-scene" aria-label="Redline comment placement screenshot">
+      <section class="stage">
+        <div class="browser-bar">
+          <span class="dot"></span>
+          <span class="dot"></span>
+          <span class="dot"></span>
+          <span class="url">localhost:5173/design-playground</span>
+        </div>
+        <div class="page">
+          <nav class="nav">
+            <div class="mark"></div>
+            <span>Product</span>
+            <span>Pricing</span>
+            <span>Docs</span>
+            <span>Changelog</span>
+            <div class="nav-spacer"></div>
+            <span class="nav-button">Try the demo</span>
+          </nav>
+
+          <section class="hero">
+            <div class="eyebrow">Design playground</div>
+            <h1>Ship the interface you meant.</h1>
+            <p>
+              Leave feedback directly on the running app. Redline writes the
+              comment back into your source so design history stays with the code.
+            </p>
+            <div class="cta-row">
+              <div class="cta">Get started</div>
+              <div class="cta secondary">View docs</div>
+            </div>
+          </section>
+
+          <aside class="preview-card">
+            <div class="card-image"></div>
+            <div class="line short"></div>
+            <div class="line medium"></div>
+            <div class="line"></div>
+          </aside>
+        </div>
+
+        <div class="pick-outline"></div>
+        <div class="redline-pin pin-hero">1</div>
+        <div class="redline-pin pin-card">2</div>
+
+        <section class="composer" aria-label="Redline composer">
+          <div class="composer-head">
+            <span class="crumb">section.hero</span>
+            <span class="crumb subtle">h1</span>
+          </div>
+          <textarea readonly>Can we make this headline feel more confident and reduce the line break?</textarea>
+          <div class="composer-tools">
+            <div class="mode-pill">
+              <span class="mode">Comment</span>
+              <span class="mode active">Agent</span>
+            </div>
+            <span class="send">Iterate</span>
+          </div>
+        </section>
+
+        <div class="dock">
+          <span class="dock-button primary">Comment</span>
+          <span class="dock-button light">List</span>
+          <span class="dock-button light">Settings</span>
+        </div>
+      </section>
+    </main>
+
+    <main class="scene agent-scene" aria-label="Redline agent iteration screenshot">
+      <section class="stage">
+        <div class="browser-bar">
+          <span class="dot"></span>
+          <span class="dot"></span>
+          <span class="dot"></span>
+          <span class="url">localhost:5173/design-playground</span>
+        </div>
+        <div class="page">
+          <nav class="nav">
+            <div class="mark"></div>
+            <span>Product</span>
+            <span>Pricing</span>
+            <span>Docs</span>
+            <span>Changelog</span>
+            <div class="nav-spacer"></div>
+            <span class="nav-button">Try the demo</span>
+          </nav>
+
+          <section class="hero">
+            <div class="eyebrow">Design playground</div>
+            <h1>Ship the interface you meant.</h1>
+            <p>
+              Leave feedback directly on the running app. Redline writes the
+              comment back into your source so design history stays with the code.
+            </p>
+            <div class="cta-row">
+              <div class="cta">Get started</div>
+              <div class="cta secondary">View docs</div>
+            </div>
+          </section>
+
+          <aside class="preview-card">
+            <div class="card-image"></div>
+            <div class="line short"></div>
+            <div class="line medium"></div>
+            <div class="line"></div>
+          </aside>
+        </div>
+
+        <div class="redline-pin pin-card">1</div>
+
+        <section class="bubble" aria-label="Redline comment thread">
+          <div class="bubble-head">
+            <span class="crumb">button.cta-primary</span>
+            <span class="icon-row">
+              <span class="icon"></span>
+              <span class="icon"></span>
+            </span>
+          </div>
+          <div class="transcript">
+            <article class="entry">
+              <div class="avatar">PK</div>
+              <div>
+                <div class="meta">
+                  <span>you</span>
+                  <span class="time">14:02</span>
+                </div>
+                <p class="said">
+                  The primary CTA feels timid. Make it bolder, increase contrast,
+                  and round the corners a little more.
+                </p>
+              </div>
+            </article>
+            <article class="entry">
+              <div class="avatar agent">AI</div>
+              <div>
+                <div class="meta">
+                  <span>agent</span>
+                  <span class="tag">fix - 3 variants</span>
+                  <span class="time">14:03</span>
+                </div>
+                <p class="agent-note">
+                  Rewrote the selected CTA and saved each version with a preview.
+                </p>
+                <div class="variants">
+                  <div class="variant live">
+                    <div class="variant-preview">
+                      <span class="mini-button">Get started</span>
+                    </div>
+                    <div class="variant-foot">
+                      <span>v2</span>
+                      <span class="live-badge"><i class="live-dot"></i> live</span>
+                    </div>
+                  </div>
+                  <div class="variant">
+                    <div class="variant-preview">
+                      <span class="mini-button agent">Get started -></span>
+                    </div>
+                    <div class="variant-foot">
+                      <span>v3</span>
+                      <span>use</span>
+                    </div>
+                  </div>
+                  <div class="variant">
+                    <div class="variant-preview">
+                      <span class="mini-button warm">Start now</span>
+                    </div>
+                    <div class="variant-foot">
+                      <span>v4</span>
+                      <span>use</span>
+                    </div>
+                  </div>
+                  <div class="variant">
+                    <div class="variant-preview">
+                      <span class="mini-button base">baseline</span>
+                    </div>
+                    <div class="variant-foot">
+                      <span>v0</span>
+                      <span>restore</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </article>
+          </div>
+          <div class="composer-mini">
+            <span class="input-ghost">Ask for another pass...</span>
+            <span class="send">Send</span>
+          </div>
+        </section>
+
+        <div class="dock">
+          <span class="dock-button light">Comment</span>
+          <span class="dock-button primary">List</span>
+          <span class="dock-button light">Settings</span>
+        </div>
+      </section>
+    </main>
+    <script>
+      const scene = new URLSearchParams(window.location.search).get("scene");
+      document.body.dataset.scene = scene === "agent" ? "agent" : "comment";
+    </script>
+  </body>
+</html>

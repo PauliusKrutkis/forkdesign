@@ -1,16 +1,16 @@
 {
   "$schema": "https://unpkg.com/knip@6/schema.json",
-  "project": ["src/**/*.{ts,tsx}", "tailwind.*.js"],
-  "ignoreDependencies": ["@biomejs/biome"],
-  "ignore": ["src/client/ui/**"],
+  "project": ["src/**/*.{ts,tsx,css}"],
+  "ignoreDependencies": ["@biomejs/biome", "tailwindcss"],
+  "ignore": ["src/client/ui/**", "src/redline.css", "src/styles.css"],
   "ignoreIssues": {
-    "tailwind.content.js": ["duplicates"],
     "src/client/overlay/comment-thumb.tsx": ["exports"],
     "src/client/settings.ts": ["exports"],
     "src/server/agent/index.ts": ["exports", "types"],
     "src/server/agent/config.ts": ["exports"],
     "src/server/agent/cursor-models.ts": ["exports"],
     "src/server/agent/models.ts": ["exports"],
+    "src/server/plugins/comments.ts": ["types"],
     "src/server/iterations/manifest.ts": ["exports"],
     "src/server/api/comments/parse-body.ts": ["types"]
   }
