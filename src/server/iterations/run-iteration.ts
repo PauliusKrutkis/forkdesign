@@ -203,7 +203,7 @@ export interface RunNewIterationInput {
   stream: NdjsonStream;
 }
 
-export interface RunNewIterationSourceAppliedEvent {
+interface RunNewIterationSourceAppliedEvent {
   absolutePath: string;
   active: number;
   file: string;
@@ -215,7 +215,7 @@ export interface RunNewIterationVariantCaptureEvent
   version: number;
 }
 
-export interface RunNewIterationHooks {
+interface RunNewIterationHooks {
   onInternalSourceWorkFinish?: (
     event: RunNewIterationSourceAppliedEvent
   ) => Promise<void> | void;
