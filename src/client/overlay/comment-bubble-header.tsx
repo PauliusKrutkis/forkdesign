@@ -1,4 +1,12 @@
-import { CheckCircle2, GripVertical, Trash2, X } from "lucide-react";
+import {
+  CheckCircle2,
+  Eye,
+  GripVertical,
+  PanelRightClose,
+  PanelRightOpen,
+  Trash2,
+  X,
+} from "lucide-react";
 import type { PointerEvent } from "react";
 import { Button } from "../ui/button.tsx";
 import { cn } from "../ui/cn.ts";
@@ -6,33 +14,89 @@ import { HotkeyTip } from "./hotkey-tip.tsx";
 import { withCtrl } from "./shortcut-hint.tsx";
 
 interface CommentBubbleHeaderProps {
+  docked: boolean;
   height: number;
   onClose: () => void;
   onDragStart: (e: PointerEvent<HTMLDivElement>) => void;
+  /** Press-and-hold: fade the panel so the design shows through underneath. */
+  onPeekStart: () => void;
   onRequestDelete?: () => void;
   onResolve?: () => void;
+  onToggleDock: () => void;
   resolved: boolean;
 }
 
 export function CommentBubbleHeader({
+  docked,
   height,
   resolved,
   onResolve,
   onRequestDelete,
   onClose,
   onDragStart,
+  onPeekStart,
+  onToggleDock,
 }: CommentBubbleHeaderProps) {
   return (
     <div
-      className="relative flex shrink-0 cursor-grab items-center gap-0.5 border-b pr-1 pl-2 active:cursor-grabbing"
+      className={cn(
+        "relative flex shrink-0 items-center gap-0.5 border-b pr-1 pl-2",
+        // The whole header is the drag handle in float posture; docked panels
+        // are edge-snapped, so dragging is disabled there (resize only).
+        docked ? "cursor-default" : "cursor-grab active:cursor-grabbing"
+      )}
       onPointerDown={onDragStart}
       style={{ height }}
     >
       <GripVertical
         aria-hidden
-        className="pointer-events-none h-4 w-4 shrink-0 text-muted-foreground"
+        className={cn(
+          "pointer-events-none h-4 w-4 shrink-0 text-muted-foreground",
+          docked && "opacity-30"
+        )}
       />
       <div className="flex-1" />
+      <HotkeyTip
+        keys={withCtrl("E")}
+        label="Hold to peek through"
+        side="bottom"
+      >
+        <Button
+          aria-label="Hold to peek through"
+          className="h-7 w-7 shrink-0"
+          // Momentary: fade while held, restore on release (even off-button).
+          onPointerDown={(e) => {
+            e.stopPropagation();
+            onPeekStart();
+          }}
+          size="icon"
+          type="button"
+          variant="ghost"
+        >
+          <Eye className="h-4 w-4" />
+        </Button>
+      </HotkeyTip>
+      <HotkeyTip
+        keys={withCtrl("D")}
+        label={docked ? "Float" : "Dock to edge"}
+        side="bottom"
+      >
+        <Button
+          aria-label={docked ? "Float panel" : "Dock panel to edge"}
+          aria-pressed={docked}
+          className={cn("h-7 w-7 shrink-0", docked && "text-primary")}
+          onClick={onToggleDock}
+          size="icon"
+          type="button"
+          variant="ghost"
+        >
+          {docked ? (
+            <PanelRightClose className="h-4 w-4" />
+          ) : (
+            <PanelRightOpen className="h-4 w-4" />
+          )}
+        </Button>
+      </HotkeyTip>
       {onResolve ? (
         <HotkeyTip
           keys={resolved ? undefined : withCtrl("R")}

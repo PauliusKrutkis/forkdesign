@@ -2,8 +2,8 @@ import { defineConfig } from "tsup";
 
 export default defineConfig({
   entry: {
-    index: "src/client/overlay/comment-overlay.tsx",
-    "plugin/index": "src/server/plugins/comments.ts",
+    index: "src/index.ts",
+    "plugin/index": "src/plugin/index.ts",
   },
   format: ["esm", "cjs"],
   dts: true,

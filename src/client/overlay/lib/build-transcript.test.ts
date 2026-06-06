@@ -20,7 +20,7 @@ const baseArgs = {
 };
 
 describe("buildTranscript", () => {
-  it("returns a single comment turn with no runs when there are no fixes", () => {
+  it("returns a single comment turn with no runs when there are no agent runs", () => {
     const { turns, baseline } = buildTranscript({
       ...baseArgs,
       versions: [version({ v: 0 })],
@@ -31,7 +31,7 @@ describe("buildTranscript", () => {
     expect(baseline?.v).toBe(0);
   });
 
-  it("attaches an auto-fix run to the original comment turn", () => {
+  it("attaches an auto-agent run to the original comment turn", () => {
     const { turns } = buildTranscript({
       ...baseArgs,
       versions: [
@@ -56,6 +56,42 @@ describe("buildTranscript", () => {
     });
     expect(turns[0]?.runs).toHaveLength(1);
     expect(turns[0]?.runs[0]?.versions.map((v) => v.v)).toEqual([1, 2, 3]);
+  });
+
+  it("groups versions from one run by runId", () => {
+    const { turns } = buildTranscript({
+      ...baseArgs,
+      versions: [
+        version({ v: 0, createdAt: "2026-01-01T10:00:00.000Z" }),
+        version({
+          v: 1,
+          createdAt: "2026-01-01T10:05:00.000Z",
+          runId: "run-a",
+        }),
+        version({
+          v: 2,
+          createdAt: "2026-01-01T10:06:00.000Z",
+          runId: "run-a",
+        }),
+      ],
+    });
+    expect(turns[0]?.runs).toHaveLength(1);
+    expect(turns[0]?.runs[0]?.versions.map((v) => v.v)).toEqual([1, 2]);
+  });
+
+  it("groups adjacent legacy versions saved close together", () => {
+    const { turns } = buildTranscript({
+      ...baseArgs,
+      versions: [
+        version({ v: 0, createdAt: "2026-01-01T10:00:00.000Z" }),
+        version({ v: 1, createdAt: "2026-01-01T10:05:00.000Z" }),
+        version({ v: 2, createdAt: "2026-01-01T10:06:30.000Z" }),
+        version({ v: 3, createdAt: "2026-01-01T10:20:00.000Z" }),
+      ],
+    });
+    expect(turns[0]?.runs).toHaveLength(2);
+    expect(turns[0]?.runs[0]?.versions.map((v) => v.v)).toEqual([1, 2]);
+    expect(turns[0]?.runs[1]?.versions.map((v) => v.v)).toEqual([3]);
   });
 
   it("pairs each reply with the run it triggered", () => {

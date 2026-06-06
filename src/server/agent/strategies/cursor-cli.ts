@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { getFixRuntimeConfig } from "../config.ts";
+import { getAgentRuntimeConfig } from "../config.ts";
 import { isComposerModel } from "../models.ts";
 import {
   type CursorCliStreamEvent,
@@ -9,14 +9,18 @@ import {
   projectCursorCliProgress,
 } from "../progress/cursor-cli.ts";
 import { buildIteratePrompt } from "../prompt.ts";
-import type { FixAttemptResult, FixInput, FixStrategy } from "../types.ts";
+import type {
+  AgentAttemptResult,
+  AgentInput,
+  AgentStrategy,
+} from "../types.ts";
 
-export const cursorCliStrategy: FixStrategy = {
+export const cursorCliStrategy: AgentStrategy = {
   id: "cursor-cli",
-  run: runCursorCliFix,
+  run: runCursorCliAgent,
 };
 
-function runCursorCliFix(input: FixInput): Promise<FixAttemptResult> {
+function runCursorCliAgent(input: AgentInput): Promise<AgentAttemptResult> {
   if (!isComposerModel(input.model)) {
     return Promise.resolve({
       ok: false,
@@ -25,22 +29,22 @@ function runCursorCliFix(input: FixInput): Promise<FixAttemptResult> {
   }
 
   const agentPath =
-    getFixRuntimeConfig().cursorAgentPath ??
+    getAgentRuntimeConfig().cursorAgentPath ??
     process.env.CURSOR_AGENT_PATH ??
     "agent";
   const prompt = buildIteratePrompt(input);
 
   // eslint-disable-next-line no-console
-  console.info(`[fix/cursor-cli] model=${input.model}`);
+  console.info(`[agent/cursor-cli] model=${input.model}`);
 
   let turnsUsed = 0;
   let toolCalls = 0;
   let sawResult = false;
   let resultOk = true;
 
-  return new Promise<FixAttemptResult>((resolve) => {
+  return new Promise<AgentAttemptResult>((resolve) => {
     let settled = false;
-    const finish = (result: FixAttemptResult) => {
+    const finish = (result: AgentAttemptResult) => {
       if (settled) {
         return;
       }

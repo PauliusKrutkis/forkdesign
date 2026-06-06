@@ -24,7 +24,7 @@
   --border: oklch(0.92 0.004 286.32);
   --input: oklch(0.92 0.004 286.32);
   --ring: oklch(0.705 0.015 286.067);
-  /* Agent / fix accent — matches design explorations */
+  /* Agent accent — matches design explorations */
   --agent: oklch(0.52 0.2 280);
   --agent-soft: oklch(0.95 0.03 285);
 }
@@ -116,7 +116,7 @@
   animation: tooltip-in 0.12s ease-out;
 }
 
-/* Streaming fix skeletons — a quiet sweep while the agent produces variants. */
+/* Streaming agent skeletons — a quiet sweep while the agent produces variants. */
 @keyframes redline-shimmer {
   from {
     background-position: 200% 0;
@@ -137,13 +137,67 @@
   animation: redline-shimmer 1.3s ease-in-out infinite;
 }
 
+/* Bubble entrance — a quiet lift as the thread opens. */
+@keyframes redline-bubble-in {
+  from {
+    opacity: 0;
+    transform: scale(0.97) translateY(3px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+/* No fill-forwards: once the entrance ends, opacity/transform revert to the
+   element's own inline styles so the peek fade can take over. */
+.animate-redline-bubble-in {
+  animation: redline-bubble-in 0.17s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* Leader line — drawn from a detached (dragged/docked) or peeked bubble back
+   to its anchor dot, so the spatial link survives even when the pointer arrow
+   can't. A slow marching-ants dash keeps it legible without shouting. */
+@keyframes redline-leader-dash {
+  to {
+    stroke-dashoffset: -64;
+  }
+}
+
+.redline-leader-line {
+  opacity: 0.4;
+  fill: none;
+  stroke: var(--foreground);
+  stroke-width: 1;
+  stroke-dasharray: 2 5;
+  animation: redline-leader-dash 9s linear infinite;
+}
+
+.redline-leader-dot {
+  opacity: 0.55;
+  fill: var(--foreground);
+}
+
+/* Collapsed-history expander chevron. */
+.redline-chevron {
+  transition: transform 0.2s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.redline-chevron-open {
+  transform: rotate(180deg);
+}
+
 @media (prefers-reduced-motion: reduce) {
   .animate-pin-pulse,
   .animate-pin-agent-ping,
   .animate-dock-in,
   .animate-dock-row-in,
   .animate-tooltip-in,
+  .animate-redline-bubble-in,
+  .redline-leader-line,
+  .redline-chevron,
   .redline-shimmer {
+    transition: none;
     animation: none;
   }
 }

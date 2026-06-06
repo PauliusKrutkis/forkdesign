@@ -94,7 +94,7 @@ export function CommentSettingsPanel({ settings, onChange }: Props) {
           ))}
         </select>
         <p className="m-0 mt-1 text-muted-foreground text-xs">
-          Tried first on Fix, then falls back through faster models
+          Tried first by the agent, then falls back through faster models
           automatically. Composer requires `agent login` or `CURSOR_API_KEY`.
         </p>
       </Section>

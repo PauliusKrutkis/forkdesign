@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { DEFAULT_FIX_VERSION_COUNT } from "../../shared/fix-version-count.ts";
+import { DEFAULT_AGENT_VERSION_COUNT } from "../../shared/agent-version-count.ts";
 import {
   loadSettings,
   type OverlaySettings,
@@ -74,6 +74,7 @@ export function CommentOverlay({
 }: CommentOverlayProps = {}) {
   const [comments, setComments] = useState<CommentData[]>([]);
   const [openTarget, setOpenTarget] = useState<DotInstanceTarget | null>(null);
+  const [reanchorRequest, setReanchorRequest] = useState(0);
   const [hoveredTarget, setHoveredTarget] = useState<DotInstanceTarget | null>(
     null
   );
@@ -108,15 +109,24 @@ export function CommentOverlay({
    * (via `pendingOpenId`), the bubble runs the agent once with `count`
    * variants. Cleared as soon as the bubble fires the run.
    */
-  const [pendingFix, setPendingFix] = useState<{
+  const [pendingAgentRun, setPendingAgentRun] = useState<{
     id: string;
     count: number;
     model: OverlaySettings["model"];
   } | null>(null);
-  /** Anchor whose thread currently has an in-flight agent run (pin loading). */
-  const [agentWorkingAnchor, setAgentWorkingAnchor] = useState<string | null>(
-    null
-  );
+  /** In-flight agent run metadata. Kept above the bubble so close/reopen preserves UI state. */
+  const [agentRun, setAgentRun] = useState<{
+    anchor: string;
+    cancel?: () => void;
+    count: number;
+    model: OverlaySettings["model"];
+    startedAt: number;
+  } | null>(null);
+  const [activeVersionByComment, setActiveVersionByComment] = useState<
+    Map<string, number>
+  >(() => new Map());
+  /** True while the open thread is docked — its pin is hidden (ring stands in). */
+  const [dockedOpen, setDockedOpen] = useState(false);
   /** After navigation, open the bubble once the anchor appears in the DOM. */
   const [pendingOpen, setPendingOpen] = useState<{
     anchor: string;
@@ -236,10 +246,7 @@ export function CommentOverlay({
     setSettings((prev) => ({ ...prev, ...patch }));
   }, []);
 
-  // Recompute the set of in-DOM anchor uuids whenever the comments list
-  // changes. A MutationObserver would be more reactive but the bulk list is
-  // already keyed off HMR, so this scoped scan matches the existing model.
-  useEffect(() => {
+  const syncInDomAnchors = useCallback(() => {
     if (typeof document === "undefined") {
       setInDomAnchors(new Set());
       return;
@@ -252,8 +259,33 @@ export function CommentOverlay({
         next.add(v);
       }
     }
-    setInDomAnchors(next);
+    setInDomAnchors((prev) => (setsEqual(prev, next) ? prev : next));
   }, []);
+
+  // Keep the list's on-page rows aligned with the live DOM. This makes rows
+  // opened from the `L` hotkey jump straight into their comment bubble after
+  // HMR writes, route changes, or delayed renders.
+  useEffect(() => {
+    syncInDomAnchors();
+  }, [syncInDomAnchors]);
+
+  useEffect(() => {
+    if (
+      typeof document === "undefined" ||
+      typeof MutationObserver === "undefined"
+    ) {
+      return;
+    }
+    syncInDomAnchors();
+    const mutationObserver = new MutationObserver(syncInDomAnchors);
+    mutationObserver.observe(document.body, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: ["data-comment-anchor"],
+    });
+    return () => mutationObserver.disconnect();
+  }, [syncInDomAnchors]);
 
   // Group by anchor.
   const grouped = useMemo(() => {
@@ -310,9 +342,9 @@ export function CommentOverlay({
       if (result.id) {
         setPendingOpenId(result.id);
         if (entry.runAgent) {
-          setPendingFix({
+          setPendingAgentRun({
             id: result.id,
-            count: entry.versionCount ?? DEFAULT_FIX_VERSION_COUNT,
+            count: entry.versionCount ?? DEFAULT_AGENT_VERSION_COUNT,
             model: entry.model ?? settings.model,
           });
         }
@@ -440,6 +472,21 @@ export function CommentOverlay({
     [comments]
   );
 
+  const handleOpenDot = useCallback(
+    (target: DotInstanceTarget) => {
+      if (
+        openTarget &&
+        openTarget.anchor === target.anchor &&
+        openTarget.instance === target.instance
+      ) {
+        setReanchorRequest((current) => current + 1);
+        return;
+      }
+      setOpenTarget(target);
+    },
+    [openTarget]
+  );
+
   const handleGoToPage = useCallback(
     (comment: CommentData & { file?: string }) => {
       const route = resolveCommentRoute(comment);
@@ -527,20 +574,13 @@ export function CommentOverlay({
         {settings.enabled
           ? visibleAnchors.map((anchor) => (
               <CommentDot
-                agentWorking={agentWorkingAnchor === anchor}
+                agentWorking={agentRun?.anchor === anchor}
                 anchor={anchor}
                 comments={grouped.get(anchor) ?? []}
+                hideOpenInstance={dockedOpen}
                 key={anchor}
                 onHover={setHoveredTarget}
-                onOpen={(target) =>
-                  setOpenTarget((prev) =>
-                    prev &&
-                    prev.anchor === target.anchor &&
-                    prev.instance === target.instance
-                      ? null
-                      : target
-                  )
-                }
+                onOpen={handleOpenDot}
                 openTarget={openTarget}
               />
             ))
@@ -561,18 +601,34 @@ export function CommentOverlay({
         {/* Open bubble. */}
         {settings.enabled && openTarget ? (
           <OpenBubble
-            autoFix={pendingFix}
+            activeVersionByComment={activeVersionByComment}
+            agentModel={settings.model}
+            agentRun={agentRun?.anchor === openTarget.anchor ? agentRun : null}
+            autoAgent={pendingAgentRun}
             comments={grouped.get(openTarget.anchor) ?? []}
-            fixModel={settings.model}
-            onAgentWorkingChange={setAgentWorkingAnchor}
-            onAutoFixStarted={() => setPendingFix(null)}
+            onActiveVersionChange={(id, active) => {
+              setActiveVersionByComment((prev) => {
+                if (prev.get(id) === active) {
+                  return prev;
+                }
+                const next = new Map(prev);
+                next.set(id, active);
+                return next;
+              });
+            }}
+            onAgentModelChange={(model) => updateSettings({ model })}
+            onAgentWorkingChange={(anchor, run, cancel) => {
+              setAgentRun(anchor && run ? { anchor, ...run, cancel } : null);
+            }}
+            onAutoAgentStarted={() => setPendingAgentRun(null)}
             onClose={() => setOpenTarget(null)}
             onDelete={handleDelete}
+            onDockedChange={setDockedOpen}
             onEdit={handleEdit}
             onEditReply={handleEditReply}
-            onFixModelChange={(model) => updateSettings({ model })}
             onResolve={handleResolve}
             onSubmitReply={handleSubmitReply}
+            reanchorRequest={reanchorRequest}
             skipDeleteConfirmation={settings.skipDeleteConfirmation}
             target={openTarget}
           />
@@ -582,9 +638,9 @@ export function CommentOverlay({
         {settings.enabled ? (
           <CommentComposer
             active={composerActive}
-            fixModel={settings.model}
+            agentModel={settings.model}
+            onAgentModelChange={(model) => updateSettings({ model })}
             onCancel={() => setComposerActive(false)}
-            onFixModelChange={(model) => updateSettings({ model })}
             onSubmit={handleSubmit}
           />
         ) : null}
@@ -601,7 +657,7 @@ export function CommentOverlay({
           onToggleSettings={() => toggleShell("settings")}
           position={settings.position}
           shell={shell}
-          show={settings.showFloatingControls}
+          show={settings.showFloatingControls && !dockedOpen}
           totalCount={comments.length}
         />
 
@@ -642,6 +698,18 @@ export function CommentOverlay({
       </div>
     </TooltipProvider>
   );
+}
+
+function setsEqual<T>(a: Set<T>, b: Set<T>): boolean {
+  if (a.size !== b.size) {
+    return false;
+  }
+  for (const item of a) {
+    if (!b.has(item)) {
+      return false;
+    }
+  }
+  return true;
 }
 
 const PREVIEW_WIDTH = 240;
@@ -719,34 +787,57 @@ function HoverPreview({
 }
 
 function OpenBubble({
+  activeVersionByComment,
+  agentRun,
   target,
   comments,
-  fixModel,
-  onFixModelChange,
+  agentModel,
+  onAgentModelChange,
   skipDeleteConfirmation,
-  autoFix,
+  autoAgent,
+  onActiveVersionChange,
   onAgentWorkingChange,
-  onAutoFixStarted,
+  onAutoAgentStarted,
   onClose,
+  onDockedChange,
   onResolve,
   onDelete,
   onEdit,
   onSubmitReply,
   onEditReply,
+  reanchorRequest,
 }: {
+  activeVersionByComment: Map<string, number>;
+  agentRun: {
+    anchor: string;
+    cancel?: () => void;
+    count: number;
+    model: OverlaySettings["model"];
+    startedAt: number;
+  } | null;
   target: DotInstanceTarget;
   comments: CommentData[];
-  fixModel: OverlaySettings["model"];
-  onFixModelChange: (model: OverlaySettings["model"]) => void;
+  agentModel: OverlaySettings["model"];
+  onAgentModelChange: (model: OverlaySettings["model"]) => void;
   skipDeleteConfirmation: boolean;
-  autoFix: {
+  autoAgent: {
     id: string;
     count: number;
     model: OverlaySettings["model"];
   } | null;
-  onAgentWorkingChange: (anchor: string | null) => void;
-  onAutoFixStarted: () => void;
+  onActiveVersionChange: (id: string, active: number) => void;
+  onAgentWorkingChange: (
+    anchor: string | null,
+    run?: {
+      count: number;
+      model: OverlaySettings["model"];
+      startedAt: number;
+    },
+    cancel?: () => void
+  ) => void;
+  onAutoAgentStarted: () => void;
   onClose: () => void;
+  onDockedChange: (docked: boolean) => void;
   onResolve: (id: string) => void | Promise<void>;
   onDelete: (
     id: string,
@@ -755,6 +846,7 @@ function OpenBubble({
   onEdit: (id: string, text: string) => Promise<void>;
   onSubmitReply: (id: string, text: string, v?: number) => Promise<void>;
   onEditReply: (id: string, replyIndex: number, text: string) => Promise<void>;
+  reanchorRequest: number;
 }) {
   const instances = useAnchorRects(target.anchor);
   const rect = findAnchorInstanceRect(instances, target.instance);
@@ -762,23 +854,32 @@ function OpenBubble({
     // Anchor not in DOM — future: render a "removed in v<n>" floater.
     return null;
   }
-  // Only auto-run the agent when the pending fix matches the open comment.
+  // Only auto-run the agent when the pending agent run matches the open comment.
   const lead = comments[0];
-  const pendingAutoFix = autoFix && lead?.id === autoFix.id ? autoFix : null;
+  const pendingAutoAgent =
+    autoAgent && lead?.id === autoAgent.id ? autoAgent : null;
   return (
     <CommentBubble
-      autoFixCount={pendingAutoFix?.count ?? null}
+      agentModel={pendingAutoAgent?.model ?? agentRun?.model ?? agentModel}
+      agentRun={agentRun}
+      agentWorking={Boolean(agentRun)}
+      autoAgentCount={pendingAutoAgent?.count ?? null}
       comments={comments}
-      fixModel={pendingAutoFix?.model ?? fixModel}
+      initialActiveVersion={
+        lead ? activeVersionByComment.get(lead.id) : undefined
+      }
+      onActiveVersionChange={onActiveVersionChange}
+      onAgentModelChange={onAgentModelChange}
       onAgentWorkingChange={onAgentWorkingChange}
-      onAutoFixStarted={onAutoFixStarted}
+      onAutoAgentStarted={onAutoAgentStarted}
       onClose={onClose}
       onDelete={onDelete}
+      onDockedChange={onDockedChange}
       onEdit={onEdit}
       onEditReply={onEditReply}
-      onFixModelChange={onFixModelChange}
       onResolve={onResolve}
       onSubmitReply={onSubmitReply}
+      reanchorRequest={reanchorRequest}
       rect={rect}
       skipDeleteConfirmation={skipDeleteConfirmation}
     />
@@ -797,11 +898,3 @@ function scrollToDataView(view: string) {
     .querySelector(`[data-view="${escaped}"]`)
     ?.scrollIntoView({ block: "nearest", behavior: "smooth" });
 }
-
-export type { OverlaySettings } from "../settings.ts";
-export type {
-  CommentData,
-  CommentProps,
-  CommentReply,
-  RegisteredComment,
-} from "../types.ts";

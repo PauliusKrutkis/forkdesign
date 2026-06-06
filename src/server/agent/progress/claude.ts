@@ -1,6 +1,6 @@
-import type { FixProgress } from "../types.ts";
+import type { AgentProgress } from "../types.ts";
 
-export function projectClaudeProgress(event: unknown): FixProgress | null {
+export function projectClaudeProgress(event: unknown): AgentProgress | null {
   if (!event || typeof event !== "object") {
     return null;
   }

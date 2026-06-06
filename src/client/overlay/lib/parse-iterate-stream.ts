@@ -1,17 +1,19 @@
 import {
   formatProgress,
   type IterateDoneEvent,
+  type IterateProgressEvent,
   type IterateStreamEvent,
 } from "./bubble-formatters.ts";
 
 export interface ParseIterateStreamCallbacks {
   onProgress: (detail: string) => void;
+  onProgressEvent?: (event: IterateProgressEvent) => void;
   signal?: AbortSignal;
 }
 
 function parseIterateLine(
   line: string,
-  onProgress: ParseIterateStreamCallbacks["onProgress"]
+  callbacks: ParseIterateStreamCallbacks
 ): IterateDoneEvent | "continue" {
   if (!line) {
     return "continue";
@@ -23,7 +25,8 @@ function parseIterateLine(
     return "continue";
   }
   if (event.type === "progress") {
-    onProgress(formatProgress(event));
+    callbacks.onProgress(formatProgress(event));
+    callbacks.onProgressEvent?.(event);
     return "continue";
   }
   if (event.type === "done") {
@@ -34,7 +37,7 @@ function parseIterateLine(
 
 function drainBufferLines(
   buffer: string,
-  onProgress: ParseIterateStreamCallbacks["onProgress"]
+  callbacks: ParseIterateStreamCallbacks
 ): { buffer: string; done: IterateDoneEvent | null } {
   let rest = buffer;
   let nl = rest.indexOf("\n");
@@ -42,7 +45,7 @@ function drainBufferLines(
     const line = rest.slice(0, nl).trim();
     rest = rest.slice(nl + 1);
     nl = rest.indexOf("\n");
-    const parsed = parseIterateLine(line, onProgress);
+    const parsed = parseIterateLine(line, callbacks);
     if (parsed !== "continue") {
       return { buffer: rest, done: parsed };
     }
@@ -58,7 +61,7 @@ export async function readIterateStream(
   const decoder = new TextDecoder();
   let buffer = "";
   let done: IterateDoneEvent | null = null;
-  const { signal, onProgress } = callbacks;
+  const { signal } = callbacks;
 
   const onAbort = () => {
     reader.cancel().catch(() => {
@@ -80,7 +83,7 @@ export async function readIterateStream(
         break;
       }
       buffer += decoder.decode(value, { stream: true });
-      const drained = drainBufferLines(buffer, onProgress);
+      const drained = drainBufferLines(buffer, callbacks);
       buffer = drained.buffer;
       if (drained.done) {
         done = drained.done;

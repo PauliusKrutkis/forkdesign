@@ -1,12 +1,12 @@
-# Fix-speed optimization plan
+# Agent-speed optimization plan
 
-Goal: make the "Fix with AI" flow feel faster without giving up the robustness
+Goal: make the "Agent with AI" flow feel faster without giving up the robustness
 it has today. This doc captures the diagnosis, a measurement step that is now
 wired up, and a phased plan so we change things in the right order.
 
 ## TL;DR
 
-The fix task is tiny ("change one className on the element with this anchor"),
+The agent task is tiny ("change one className on the element with this anchor"),
 but it currently runs as a **full agentic loop**: an agent CLI is spawned, it
 `Read`s the file, then `Edit`s it, across up to 8 turns. Most of the wall-clock
 is process startup + serial Read→Edit round-trips, not the model thinking.
@@ -16,23 +16,23 @@ The biggest win is a **single-shot edit strategy** that reuses the file we
 code — with the existing agent loop kept as a fallback. But we **measure first**
 (logging is now in place) so we know whether we're shaving 4s→1s or 1.5s→1s.
 
-## How a fix runs today
+## How an agent runs today
 
-Client `Fix` button → `POST /api/iterations/new` → `runNewIteration`
-(`src/server/iterations/run-iteration.ts`) → `runFix`
-(`src/server/fix/index.ts`) → a strategy:
+Client `Agent` button → `POST /api/iterations/new` → `runNewIteration`
+(`src/server/iterations/run-iteration.ts`) → `runAgent`
+(`src/server/agent/index.ts`) → a strategy:
 
-- `claudeStrategy` (`src/server/fix/strategies/claude.ts`) — Claude Agent SDK
+- `claudeStrategy` (`src/server/agent/strategies/claude.ts`) — Claude Agent SDK
   `query()` with `maxTurns: 8`, `allowedTools: ["Read", "Edit"]`.
-- `cursorCliStrategy` (`src/server/fix/strategies/cursor-cli.ts`) — Cursor CLI
+- `cursorCliStrategy` (`src/server/agent/strategies/cursor-cli.ts`) — Cursor CLI
   `agent` subprocess (Composer models).
 
-Default model chain (`src/server/fix/models.ts`):
+Default model chain (`src/server/agent/models.ts`):
 `composer-2.5-fast → composer-2.5 → claude-sonnet-4-6 → default`.
 
 ### Where the latency comes from
 
-1. **Agent/subprocess spin-up** — every fix launches an agent CLI and loads its
+1. **Agent/subprocess spin-up** — every agent launches an agent CLI and loads its
    system prompt + project context.
 2. **Serial Read→Edit** — turn 1 the agent `Read`s the file, turn 2 it `Edit`s.
    The second turn cannot start until the first returns.
@@ -44,20 +44,20 @@ Default model chain (`src/server/fix/models.ts`):
 
 ## Phase 0 — Instrument & measure (DONE)
 
-Each fix run now appends one JSON line to:
+Each agent run now appends one JSON line to:
 
 ```
-<projectRoot>/designs/logs/fix-runs.jsonl
+<projectRoot>/designs/logs/agent-runs.jsonl
 ```
 
 (`projectRoot` is the **host** app being edited, not this package. Consumers who
 don't want it in git should add `designs/logs/` to their `.gitignore`.)
 
-Module: `src/server/fix/run-log.ts` (`appendFixRunLog`). Written from
+Module: `src/server/agent/run-log.ts` (`appendAgentRunLog`). Written from
 `runNewIteration` at every terminal point via the local `recordRun` helper.
-Logging is best-effort — it never throws and never blocks the fix.
+Logging is best-effort — it never throws and never blocks the agent.
 
-Each record (`FixRunLogEntry`):
+Each record (`AgentRunLogEntry`):
 
 | field | meaning |
 | --- | --- |
@@ -79,7 +79,7 @@ Each record (`FixRunLogEntry`):
 
 ### How to read it back
 
-Run several fixes, then inspect. The key questions:
+Run several agent iterations, then inspect. The key questions:
 
 - What's the median `durationMs`, and what's the spread?
 - `attempts` — is time lost to **fallback** (first model fails, second runs)?
@@ -91,10 +91,10 @@ Run several fixes, then inspect. The key questions:
 
 ```bash
 # quick look: model used, duration, turns, tools, changed
-cat designs/logs/fix-runs.jsonl | jq -c '{ms:.durationMs, model:.modelUsed, turns:.turnsUsed, tools:.toolCalls, changed, attempts}'
+cat designs/logs/agent-runs.jsonl | jq -c '{ms:.durationMs, model:.modelUsed, turns:.turnsUsed, tools:.toolCalls, changed, attempts}'
 
 # median-ish: sorted durations
-cat designs/logs/fix-runs.jsonl | jq '.durationMs' | sort -n
+cat designs/logs/agent-runs.jsonl | jq '.durationMs' | sort -n
 ```
 
 **Decision gate:** if median `durationMs` is already low (~1–1.5s) and `turnsUsed`
@@ -129,7 +129,7 @@ Notes / risks:
 
 ## Phase 2 — Prompt caching
 
-Cache the stable parts (system prompt + file context) so repeated fixes on the
+Cache the stable parts (system prompt + file context) so repeated agent runs on the
 same comment/file reuse them. Helps most during iteration (v1 → v2 → v3).
 Works with either architecture; pairs naturally with Phase 1's single call.
 
@@ -142,7 +142,7 @@ Works with either architecture; pairs naturally with Phase 1's single call.
 
 ## Sequencing
 
-1. Phase 0 (done) → collect data over a handful of real fixes.
-2. Read `fix-runs.jsonl`, confirm where the time goes.
+1. Phase 0 (done) → collect data over a handful of real agent runs.
+2. Read `agent-runs.jsonl`, confirm where the time goes.
 3. If warranted, build Phase 1 behind a flag, compare in the log, then promote.
 4. Layer Phase 2, then Phase 3 cleanups.

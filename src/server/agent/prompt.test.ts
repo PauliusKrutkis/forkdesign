@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   buildIteratePrompt,
   shouldIncludeScreenshotInPrompt,
-  summarizeFixSourceDiff,
+  summarizeAgentSourceDiff,
 } from "./prompt.ts";
 
 describe("buildIteratePrompt", () => {
@@ -54,6 +54,16 @@ describe("buildIteratePrompt", () => {
       view: "hero",
     });
     expect(prompt).toContain('data-view="hero"');
+  });
+
+  it("includes frontend-design guidance when selected", () => {
+    const prompt = buildIteratePrompt({
+      ...base,
+      skills: ["frontend-design"],
+    });
+    expect(prompt).toContain("## Skill: frontend-design");
+    expect(prompt).toContain("intentional visual direction");
+    expect(prompt).toContain("Keep the edit scoped to the anchored UI");
   });
 
   it("includes version-scoped replies for the active version", () => {
@@ -118,9 +128,9 @@ describe("buildIteratePrompt", () => {
   });
 });
 
-describe("summarizeFixSourceDiff", () => {
+describe("summarizeAgentSourceDiff", () => {
   it("describes changed lines", () => {
-    const summary = summarizeFixSourceDiff(
+    const summary = summarizeAgentSourceDiff(
       '<div className="text-sm">',
       '<div className="text-sm text-blue-500">'
     );

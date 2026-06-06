@@ -1,22 +1,23 @@
 import { copyFile, readFile } from "node:fs/promises";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import path from "node:path";
+import { getAgentRuntimeConfig } from "../agent/config.ts";
+import { runAgent } from "../agent/index.ts";
+import {
+  type AgentModel,
+  buildAgentModelChain,
+  DEFAULT_AGENT_MODEL_PRIORITY,
+} from "../agent/models.ts";
+import {
+  shouldIncludeScreenshotInPrompt,
+  summarizeAgentSourceDiff,
+} from "../agent/prompt.ts";
+import { appendAgentRunLog } from "../agent/run-log.ts";
+import type { AgentSkill } from "../agent/skills.ts";
+import type { AgentAttemptTiming } from "../agent/types.ts";
 import type { FoundComment } from "../comments/find-comment.ts";
 import { updateCommentActive } from "../comments/writer.ts";
 import { WriteError } from "../comments/writer-errors.ts";
-import { getFixRuntimeConfig } from "../fix/config.ts";
-import { runFix } from "../fix/index.ts";
-import {
-  buildFixModelChain,
-  DEFAULT_FIX_MODEL_PRIORITY,
-  type FixModel,
-} from "../fix/models.ts";
-import {
-  shouldIncludeScreenshotInPrompt,
-  summarizeFixSourceDiff,
-} from "../fix/prompt.ts";
-import { appendFixRunLog } from "../fix/run-log.ts";
-import type { FixAttemptTiming } from "../fix/types.ts";
 import { atomicWriteText } from "../platform/atomic-write.ts";
 import { errorMessage } from "../platform/http.ts";
 import {
@@ -106,7 +107,12 @@ async function persistNewIterationSnapshot(
   iterationRoots: string[],
   lastAgentSummary: string | undefined,
   stream: NdjsonStream,
-  options: { setActive: boolean; variantPrefix: string }
+  options: {
+    createdAt: string;
+    runId: string;
+    setActive: boolean;
+    variantPrefix: string;
+  }
 ): Promise<{ ok: true; png: string } | { ok: false; error: string }> {
   const nextTsx = path.join(iterDir, `v${nextV}.tsx`);
   const nextPng = path.join(iterDir, `v${nextV}.png`);
@@ -153,10 +159,17 @@ async function persistNewIterationSnapshot(
   }
 
   try {
-    const summary = lastAgentSummary?.trim() || `Fix v${nextV}`;
+    const summary = lastAgentSummary?.trim() || `Agent v${nextV}`;
     await patchIterationsManifest(iterDir, nextV, {
       summary,
-      createdAt: new Date().toISOString(),
+      createdAt: options.createdAt,
+      runId: options.runId,
+    });
+    stream.writeEvent({
+      type: "progress",
+      stage: "snapshot",
+      detail: `${options.variantPrefix}persisted v${nextV}`,
+      version: nextV,
     });
   } catch (manifestErr) {
     console.warn(
@@ -174,30 +187,32 @@ export interface RunNewIterationInput {
   count: number;
   found: FoundComment;
   id: string;
-  model: FixModel;
+  model: AgentModel;
   projectRoot: string;
+  skills: AgentSkill[];
   stream: NdjsonStream;
 }
 
 interface VariantRunOutcome {
   afterSource?: string;
-  attempts?: FixAttemptTiming[];
+  attempts?: AgentAttemptTiming[];
   changed: boolean;
   error?: string;
-  modelUsed?: FixModel;
+  modelUsed?: AgentModel;
   ok: boolean;
   stage: string;
   toolCalls?: number;
   turnsUsed?: number;
 }
 
-async function runSingleFixVariant(args: {
+async function runSingleAgentVariant(args: {
   beforeSource: string;
   count: number;
   found: FoundComment;
-  model: FixModel;
+  model: AgentModel;
   priorVariantApproaches: string[];
   projectRoot: string;
+  skills: AgentSkill[];
   stream: NdjsonStream;
   variantIndex: number;
 }): Promise<{ result: VariantRunOutcome; lastAgentSummary?: string }> {
@@ -208,6 +223,7 @@ async function runSingleFixVariant(args: {
     model,
     priorVariantApproaches,
     projectRoot,
+    skills,
     stream,
     variantIndex,
   } = args;
@@ -233,7 +249,7 @@ async function runSingleFixVariant(args: {
   });
 
   let lastAgentSummary: string | undefined;
-  const agentResult = await runFix({
+  const agentResult = await runAgent({
     projectRoot,
     file: found.relativePath,
     anchor: found.comment.anchor,
@@ -243,6 +259,7 @@ async function runSingleFixVariant(args: {
     activeVersion: found.comment.active ?? 0,
     replies: found.comment.replies,
     model,
+    skills,
     variantIndex,
     variantCount: count,
     priorVariantApproaches:
@@ -335,28 +352,28 @@ type RecordRunFn = (outcome: {
   stage: string;
   changed?: boolean | null;
   error?: string;
-  modelUsed?: FixModel;
-  modelsTried?: FixModel[];
+  modelUsed?: AgentModel;
+  modelsTried?: AgentModel[];
   turnsUsed?: number | null;
   toolCalls?: number | null;
-  attempts?: FixAttemptTiming[];
+  attempts?: AgentAttemptTiming[];
   variantIndex?: number;
   durationMs?: number;
 }) => void;
 
-function createFixRunRecorder(args: {
+function createAgentRunRecorder(args: {
   count: number;
-  fixStartedAt: number;
+  agentStartedAt: number;
   found: FoundComment;
   id: string;
-  model: FixModel;
-  modelChain: FixModel[];
+  model: AgentModel;
+  modelChain: AgentModel[];
   projectRoot: string;
 }): RecordRunFn {
-  const { projectRoot, found, id, model, modelChain, fixStartedAt, count } =
+  const { projectRoot, found, id, model, modelChain, agentStartedAt, count } =
     args;
   return (outcome) => {
-    appendFixRunLog(projectRoot, {
+    appendAgentRunLog(projectRoot, {
       ts: new Date().toISOString(),
       comment: id,
       file: found.relativePath,
@@ -367,7 +384,7 @@ function createFixRunRecorder(args: {
         shouldIncludeScreenshotInPrompt(found.comment.text),
       modelRequested: model,
       modelChain,
-      durationMs: outcome.durationMs ?? Date.now() - fixStartedAt,
+      durationMs: outcome.durationMs ?? Date.now() - agentStartedAt,
       variantIndex: outcome.variantIndex,
       variantCount: count,
       ...outcome,
@@ -379,7 +396,7 @@ interface VariantBatchState {
   createdVersions: number[];
   hadAgentFailure: boolean;
   lastAgentError?: string;
-  lastModelUsed?: FixModel;
+  lastModelUsed?: AgentModel;
   lastPng?: string;
   lastSuccessfulSource?: string;
   lastToolCalls?: number;
@@ -400,6 +417,8 @@ async function persistChangedVariant(args: {
   iterationRoots: string[];
   lastAgentSummary: string | undefined;
   recordRun: RecordRunFn;
+  runCreatedAt: string;
+  runId: string;
   result: VariantRunOutcome;
   stream: NdjsonStream;
   variantIndex: number;
@@ -413,6 +432,8 @@ async function persistChangedVariant(args: {
     iterationRoots,
     lastAgentSummary,
     recordRun,
+    runCreatedAt,
+    runId,
     result,
     stream,
     variantIndex,
@@ -449,7 +470,7 @@ async function persistChangedVariant(args: {
     iterationRoots,
     lastAgentSummary,
     stream,
-    { setActive: false, variantPrefix }
+    { createdAt: runCreatedAt, runId, setActive: false, variantPrefix }
   );
 
   if (!persisted.ok) {
@@ -497,9 +518,12 @@ async function runVariantBatch(args: {
   id: string;
   iterDir: string;
   iterationRoots: string[];
-  model: FixModel;
+  model: AgentModel;
   projectRoot: string;
   recordRun: RecordRunFn;
+  runCreatedAt: string;
+  runId: string;
+  skills: AgentSkill[];
   stream: NdjsonStream;
 }): Promise<VariantBatchState> {
   const state: VariantBatchState = {
@@ -514,13 +538,14 @@ async function runVariantBatch(args: {
     }
 
     const variantStartedAt = Date.now();
-    const { result, lastAgentSummary } = await runSingleFixVariant({
+    const { result, lastAgentSummary } = await runSingleAgentVariant({
       beforeSource: args.beforeSource,
       count: args.count,
       found: args.found,
       model: args.model,
       priorVariantApproaches,
       projectRoot: args.projectRoot,
+      skills: args.skills,
       stream: args.stream,
       variantIndex,
     });
@@ -571,6 +596,8 @@ async function runVariantBatch(args: {
       iterationRoots: args.iterationRoots,
       lastAgentSummary,
       recordRun: args.recordRun,
+      runCreatedAt: args.runCreatedAt,
+      runId: args.runId,
       result,
       stream: args.stream,
       variantIndex,
@@ -595,7 +622,7 @@ async function runVariantBatch(args: {
 
     const approachSummary =
       lastAgentSummary?.trim() ||
-      summarizeFixSourceDiff(args.beforeSource, step.afterSource);
+      summarizeAgentSourceDiff(args.beforeSource, step.afterSource);
     priorVariantApproaches.push(`Variant ${variantIndex}: ${approachSummary}`);
   }
 
@@ -604,7 +631,7 @@ async function runVariantBatch(args: {
 
 function finishNoVariants(args: {
   count: number;
-  fixStartedAt: number;
+  agentStartedAt: number;
   id: string;
   recordRun: RecordRunFn;
   state: VariantBatchState;
@@ -620,7 +647,7 @@ function finishNoVariants(args: {
     stage: "done",
     changed: false,
     modelUsed: args.state.lastModelUsed,
-    durationMs: Date.now() - args.fixStartedAt,
+    durationMs: Date.now() - args.agentStartedAt,
   });
   args.stream.endStream({
     type: "done",
@@ -628,7 +655,7 @@ function finishNoVariants(args: {
     id: args.id,
     changed: false,
     modelUsed: args.state.lastModelUsed,
-    durationMs: Date.now() - args.fixStartedAt,
+    durationMs: Date.now() - args.agentStartedAt,
     ...(args.count > 1 && args.state.hadAgentFailure && lastAgentError
       ? { error: lastAgentError }
       : {}),
@@ -636,7 +663,7 @@ function finishNoVariants(args: {
 }
 
 async function finishSuccessfulBatch(args: {
-  fixStartedAt: number;
+  agentStartedAt: number;
   found: FoundComment;
   id: string;
   recordRun: RecordRunFn;
@@ -657,7 +684,7 @@ async function finishSuccessfulBatch(args: {
       error: errorMessage(err),
       modelUsed: args.state.lastModelUsed,
       changed: true,
-      durationMs: Date.now() - args.fixStartedAt,
+      durationMs: Date.now() - args.agentStartedAt,
     });
     args.stream.endStream({
       type: "done",
@@ -681,7 +708,7 @@ async function finishSuccessfulBatch(args: {
       error: message,
       modelUsed: args.state.lastModelUsed,
       changed: true,
-      durationMs: Date.now() - args.fixStartedAt,
+      durationMs: Date.now() - args.agentStartedAt,
     });
     args.stream.endStream({ type: "done", ok: false, error: message });
     return;
@@ -691,7 +718,7 @@ async function finishSuccessfulBatch(args: {
     return;
   }
 
-  const durationMs = Date.now() - args.fixStartedAt;
+  const durationMs = Date.now() - args.agentStartedAt;
   args.stream.endStream({
     type: "done",
     ok: true,
@@ -711,19 +738,21 @@ async function finishSuccessfulBatch(args: {
 export async function runNewIteration(
   input: RunNewIterationInput
 ): Promise<void> {
-  const { projectRoot, found, id, model, count, stream } = input;
+  const { projectRoot, found, id, model, count, skills, stream } = input;
 
-  const fixStartedAt = Date.now();
+  const agentStartedAt = Date.now();
+  const runCreatedAt = new Date(agentStartedAt).toISOString();
+  const runId = `${id}:${agentStartedAt}`;
   const priority =
-    getFixRuntimeConfig().fixModelPriority ?? DEFAULT_FIX_MODEL_PRIORITY;
-  const modelChain = buildFixModelChain(model, priority);
-  const recordRun = createFixRunRecorder({
+    getAgentRuntimeConfig().agentModelPriority ?? DEFAULT_AGENT_MODEL_PRIORITY;
+  const modelChain = buildAgentModelChain(model, priority);
+  const recordRun = createAgentRunRecorder({
     projectRoot,
     found,
     id,
     model,
     modelChain,
-    fixStartedAt,
+    agentStartedAt,
     count,
   });
 
@@ -741,7 +770,7 @@ export async function runNewIteration(
   }
 
   console.info(
-    `[vite-plugin-comments] dispatching fix model=${model} chain=[${modelChain.join(", ")}] count=${count} comment=${id} file=${found.relativePath}`
+    `[vite-plugin-comments] dispatching agent model=${model} chain=[${modelChain.join(", ")}] count=${count} comment=${id} file=${found.relativePath}`
   );
 
   const iterDir = path.join(projectRoot, "designs", "iterations", id);
@@ -756,6 +785,9 @@ export async function runNewIteration(
     model,
     projectRoot,
     recordRun,
+    runCreatedAt,
+    runId,
+    skills,
     stream,
   });
 
@@ -765,13 +797,13 @@ export async function runNewIteration(
 
   if (stream.clientGone() || state.createdVersions.length === 0) {
     if (state.createdVersions.length === 0 && !stream.clientGone()) {
-      finishNoVariants({ count, fixStartedAt, id, recordRun, state, stream });
+      finishNoVariants({ count, agentStartedAt, id, recordRun, state, stream });
     }
     return;
   }
 
   await finishSuccessfulBatch({
-    fixStartedAt,
+    agentStartedAt,
     found,
     id,
     recordRun,

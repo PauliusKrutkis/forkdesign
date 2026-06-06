@@ -7,6 +7,7 @@ import { useViteHmrReload } from "./use-vite-hmr-reload.ts";
 export interface IterationVersion {
   createdAt?: string;
   png: string;
+  runId?: string;
   summary?: string;
   tsx: string;
   v: number;

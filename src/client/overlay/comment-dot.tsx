@@ -12,10 +12,15 @@ export interface DotInstanceTarget {
 }
 
 interface CommentDotProps {
-  /** True while an agent fix/iterate run is in flight for this anchor. */
+  /** True while an agent iteration run is in flight for this anchor. */
   agentWorking?: boolean;
   anchor: string;
   comments: CommentData[];
+  /**
+   * Hide the pin for the currently-open instance. Set while that thread is
+   * docked to an edge so the pin doesn't poke out beside the drawer.
+   */
+  hideOpenInstance?: boolean;
   onHover: (target: DotInstanceTarget | null) => void;
   onOpen: (target: DotInstanceTarget) => void;
   openTarget: DotInstanceTarget | null;
@@ -195,6 +200,7 @@ export function CommentDot({
   anchor,
   agentWorking = false,
   comments,
+  hideOpenInstance = false,
   openTarget,
   onOpen,
   onHover,
@@ -233,6 +239,9 @@ export function CommentDot({
         );
         const isOpen =
           openTarget?.anchor === anchor && openTarget.instance === instance;
+        if (hideOpenInstance && isOpen) {
+          return null;
+        }
         return (
           <PinInstanceButton
             agentWorking={agentWorking}

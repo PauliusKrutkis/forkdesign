@@ -19,7 +19,7 @@ export function resetCursorModelCache(): void {
 /**
  * List Composer model ids available to the Cursor CLI for this binary.
  * On probe failure, returns a conservative fallback set containing only
- * `composer-2.5` so Fix can still attempt the standard tier.
+ * `composer-2.5` so the agent can still attempt the standard tier.
  */
 export async function listAvailableCursorModels(
   agentPath: string

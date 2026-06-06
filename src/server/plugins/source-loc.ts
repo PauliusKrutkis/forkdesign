@@ -25,17 +25,21 @@ const traverse = ((
 interface SourceLocOptions {
   /** Skip stamping JSX in files under these project-relative prefixes. */
   excludeSrcPrefixes?: string[];
-  projectRoot: string;
+  projectRoot?: string;
 }
 
 export function sourceLoc({
   projectRoot,
   excludeSrcPrefixes = [],
-}: SourceLocOptions): Plugin {
+}: SourceLocOptions = {}): Plugin {
+  let root = projectRoot ?? process.cwd();
   return {
     name: "vite-plugin-source-loc",
     apply: "serve",
     enforce: "pre",
+    configResolved(config) {
+      root = projectRoot ?? config.root;
+    },
     transform(code, id) {
       // Vite suffixes module ids with `?t=<timestamp>` (HMR) and other params;
       // strip the query before doing extension/path checks.
@@ -51,7 +55,7 @@ export function sourceLoc({
         return null;
       }
       const relFromRoot = path
-        .relative(projectRoot, cleanId)
+        .relative(root, cleanId)
         .split(path.sep)
         .join("/");
       if (excludeSrcPrefixes.some((prefix) => relFromRoot.startsWith(prefix))) {
@@ -65,7 +69,7 @@ export function sourceLoc({
         return null;
       }
 
-      const rel = path.relative(projectRoot, cleanId).split(path.sep).join("/");
+      const rel = path.relative(root, cleanId).split(path.sep).join("/");
       if (rel.startsWith("..")) {
         return null;
       }

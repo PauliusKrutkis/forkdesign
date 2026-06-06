@@ -44,6 +44,8 @@ const entryInteractiveClass = cn(
 );
 
 interface TranscriptHumanEntryProps {
+  agentModel: OverlayModel;
+  agentVersionCount: number;
   ariaLabel: string;
   author: string;
   /** Optional badge shown in the meta row (e.g. `Re: v2` for replies). */
@@ -52,12 +54,10 @@ interface TranscriptHumanEntryProps {
   defaultEditMode: ComposerMode;
   editingEntryKey: string | null;
   entryKey: string;
-  fixModel: OverlayModel;
-  fixVersionCount: number;
   iterating: boolean;
+  onAgentModelChange: (model: OverlayModel) => void;
   onEditingEntryKeyChange: (key: string | null) => void;
   onEditSubmit?: (payload: TranscriptEditSubmit) => Promise<void>;
-  onFixModelChange: (model: OverlayModel) => void;
   onInteraction?: () => void;
   text: string;
 }
@@ -99,9 +99,9 @@ export function TranscriptHumanEntry({
   editingEntryKey,
   onEditingEntryKeyChange,
   defaultEditMode,
-  fixModel,
-  fixVersionCount,
-  onFixModelChange,
+  agentModel,
+  agentVersionCount,
+  onAgentModelChange,
   iterating,
   onEditSubmit,
   onInteraction,
@@ -125,14 +125,14 @@ export function TranscriptHumanEntry({
   if (editing && onEditSubmit) {
     body = (
       <TranscriptEntryComposer
+        agentModel={agentModel}
+        agentVersionCount={agentVersionCount}
         defaultMode={defaultEditMode}
         disabled={false}
-        fixModel={fixModel}
-        fixVersionCount={fixVersionCount}
         initialText={text}
         iterating={iterating}
+        onAgentModelChange={onAgentModelChange}
         onCancel={endEditing}
-        onFixModelChange={onFixModelChange}
         onSubmit={async (payload) => {
           await onEditSubmit(payload);
           endEditing();

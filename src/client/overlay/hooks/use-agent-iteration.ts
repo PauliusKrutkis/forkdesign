@@ -1,21 +1,25 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { OverlayModel } from "../../settings.ts";
 import type { CommentData } from "../../types.ts";
+import { runAgentIterationRequest } from "../lib/agent-iteration-request.ts";
 import { ignorePromiseRejection } from "../lib/ignore-promise-rejection.ts";
-import { runIterateFixRequest } from "../lib/iterate-fix-request.ts";
 
-export function useIterateFix(args: {
+export function useAgentIteration(args: {
   lead: CommentData | undefined;
-  fixModel: OverlayModel;
-  fixVersionCount: number;
+  agentModel: OverlayModel;
+  agentVersionCount: number;
   reloadIterations: () => void | Promise<void>;
   /** Pin loading — survives bubble close until the run finishes. */
-  onAgentWorkingChange?: (anchor: string | null) => void;
+  onAgentWorkingChange?: (
+    anchor: string | null,
+    run?: { count: number; model: OverlayModel; startedAt: number },
+    cancel?: () => void
+  ) => void;
 }) {
   const {
     lead,
-    fixModel,
-    fixVersionCount,
+    agentModel,
+    agentVersionCount,
     reloadIterations,
     onAgentWorkingChange,
   } = args;
@@ -40,28 +44,37 @@ export function useIterateFix(args: {
 
   const handleIterate = useCallback(
     async (overrides?: {
-      fixModel?: OverlayModel;
-      fixVersionCount?: number;
+      agentModel?: OverlayModel;
+      agentVersionCount?: number;
     }) => {
       if (!lead || iterating) {
         return;
       }
-      const runModel = overrides?.fixModel ?? fixModel;
-      const runCount = overrides?.fixVersionCount ?? fixVersionCount;
+      const runModel = overrides?.agentModel ?? agentModel;
+      const runCount = overrides?.agentVersionCount ?? agentVersionCount;
       const abortController = new AbortController();
       abortRef.current = abortController;
 
+      const startedAt = Date.now();
       setIterating(true);
-      onAgentWorkingChange?.(lead.anchor);
+      onAgentWorkingChange?.(
+        lead.anchor,
+        {
+          count: runCount,
+          model: runModel,
+          startedAt,
+        },
+        () => abortController.abort()
+      );
       setIterateError(null);
       setIterateStatus(null);
-      setIterateStartedAt(Date.now());
-      setIterateNow(Date.now());
+      setIterateStartedAt(startedAt);
+      setIterateNow(startedAt);
 
-      const outcome = await runIterateFixRequest({
+      const outcome = await runAgentIterationRequest({
         lead,
-        fixModel: runModel,
-        fixVersionCount: runCount,
+        agentModel: runModel,
+        agentVersionCount: runCount,
         signal: abortController.signal,
         reloadIterations,
         setIterateError,
@@ -82,8 +95,8 @@ export function useIterateFix(args: {
     [
       lead,
       iterating,
-      fixModel,
-      fixVersionCount,
+      agentModel,
+      agentVersionCount,
       reloadIterations,
       onAgentWorkingChange,
     ]

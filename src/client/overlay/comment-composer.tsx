@@ -1,7 +1,7 @@
 import { toPng } from "html-to-image";
 import { SquareDashedMousePointer, X } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
-import { DEFAULT_FIX_VERSION_COUNT } from "../../shared/fix-version-count.ts";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { DEFAULT_AGENT_VERSION_COUNT } from "../../shared/agent-version-count.ts";
 import type { OverlayModel } from "../settings.ts";
 import { Button } from "../ui/button.tsx";
 import {
@@ -13,13 +13,14 @@ import { toErrorMessage } from "./lib/errors.ts";
 import { ignorePromiseRejection } from "./lib/ignore-promise-rejection.ts";
 import { isOverlayElement } from "./lib/overlay-dom.ts";
 import { effectiveBackgroundColor } from "./lib/screenshot.ts";
+import { findSourceLoc } from "./lib/source-loc.ts";
 
 export interface ComposerSubmission {
   /** anchor uuid assigned to the targeted element */
   anchor: string;
   /** anchor point (page x/y of the click) for positioning the panel */
   clickPoint: { x: number; y: number };
-  /** Fix model when `runAgent` is set; defaults to overlay settings. */
+  /** Agent model when `runAgent` is set; defaults to overlay settings. */
   model?: OverlayModel;
   /** submitted in Agent mode — create the comment, then run the agent on it */
   runAgent?: boolean;
@@ -49,10 +50,10 @@ export type ComposerSubmitResult = { ok: true } | { ok: false; error: string };
 interface CommentComposerProps {
   /** when true, the composer mode is active (highlight + capture next click) */
   active: boolean;
-  fixModel: OverlayModel;
+  agentModel: OverlayModel;
+  onAgentModelChange: (model: OverlayModel) => void;
   /** turn composer mode off */
   onCancel: () => void;
-  onFixModelChange: (model: OverlayModel) => void;
   /**
    * Invoked when the user submits a comment. Returns a Promise so the
    * composer can show inline "saving"/"saved"/"error" states. On a failed
@@ -64,6 +65,25 @@ interface CommentComposerProps {
 
 const PANEL_WIDTH = 400;
 const VIEWPORT_PADDING = 12;
+const MAX_PICKER_CRUMBS = 5;
+
+interface PickerCandidate {
+  el: HTMLElement;
+  key: string;
+  label: string;
+  rect: {
+    height: number;
+    left: number;
+    top: number;
+    width: number;
+  };
+}
+
+interface PickerState {
+  candidates: PickerCandidate[];
+  point: { x: number; y: number };
+  selectedIndex: number;
+}
 
 /**
  * Two-phase capture:
@@ -76,8 +96,8 @@ const VIEWPORT_PADDING = 12;
  */
 export function CommentComposer({
   active,
-  fixModel,
-  onFixModelChange,
+  agentModel,
+  onAgentModelChange,
   onCancel,
   onSubmit,
 }: CommentComposerProps) {
@@ -86,18 +106,52 @@ export function CommentComposer({
     clickPoint: { x: number; y: number };
   } | null>(null);
   const [text, setText] = useState("");
-  const highlightRef = useRef<HTMLDivElement | null>(null);
+  const [picker, setPickerState] = useState<PickerState | null>(null);
+  const pickerRef = useRef<PickerState | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+
+  const setPicker = useCallback((next: PickerState | null) => {
+    pickerRef.current = next;
+    setPickerState(next);
+  }, []);
+
+  // Hovering a breadcrumb previews that ancestor (and locks the depth to it);
+  // clicking one commits it as the target. Both give the mouse a direct path
+  // to any level without precise hovering over tiny nested elements.
+  const previewIndex = useCallback(
+    (index: number) => {
+      const state = pickerRef.current;
+      if (!state || index < 0 || index >= state.candidates.length) {
+        return;
+      }
+      setPicker({ ...state, selectedIndex: index });
+    },
+    [setPicker]
+  );
+
+  const commitIndex = useCallback(
+    (index: number) => {
+      const state = pickerRef.current;
+      const candidate = state?.candidates[index];
+      if (!(state && candidate)) {
+        return;
+      }
+      setPicker(null);
+      setTarget({ el: candidate.el, clickPoint: { ...state.point } });
+    },
+    [setPicker]
+  );
 
   // Reset state whenever composer mode flips off.
   useEffect(() => {
     if (!active) {
       setTarget(null);
       setText("");
+      setPicker(null);
     }
-  }, [active]);
+  }, [active, setPicker]);
 
-  // Capture: highlight hovered element, suppress click on real UI, freeze on click.
+  // Capture: preview the target stack, suppress real UI clicks, freeze on click.
   useEffect(() => {
     if (!active || target) {
       return;
@@ -106,30 +160,72 @@ export function CommentComposer({
       return;
     }
 
-    const highlight = (el: HTMLElement | null) => {
-      const node = highlightRef.current;
-      if (!node) {
-        return;
+    const updatePicker = (x: number, y: number): HTMLElement | null => {
+      const elements = pickTargetStack(x, y);
+      if (elements.length === 0) {
+        setPicker(null);
+        return null;
       }
-      if (!el) {
-        node.style.display = "none";
-        return;
-      }
-      const r = el.getBoundingClientRect();
-      node.style.display = "block";
-      node.style.left = `${r.left}px`;
-      node.style.top = `${r.top}px`;
-      node.style.width = `${r.width}px`;
-      node.style.height = `${r.height}px`;
+
+      // Depth-locked: keep the same ancestor offset (index 0 = deepest hit)
+      // as the cursor moves, clamped to the new stack. Locking by depth rather
+      // than by element identity means a small mouse jitter no longer snaps the
+      // selection back to the deepest child — the user stays N levels up.
+      const prev = pickerRef.current;
+      const selectedIndex = prev
+        ? Math.min(prev.selectedIndex, elements.length - 1)
+        : 0;
+
+      const candidates = elements.map(toCandidate);
+      const next = { candidates, point: { x, y }, selectedIndex };
+      setPicker(next);
+      return candidates[selectedIndex]?.el ?? null;
     };
 
     const onMove = (e: MouseEvent) => {
-      const el = pickTarget(e.clientX, e.clientY);
-      if (el && !isOverlayElement(el)) {
-        highlight(el);
-      } else {
-        highlight(null);
+      // Don't recompute while the cursor is over our own chrome (the picker
+      // chip / breadcrumbs) — otherwise reaching for a crumb would shift the
+      // selection to whatever page element sits behind the chip.
+      if (isOverlayElement(document.elementFromPoint(e.clientX, e.clientY))) {
+        return;
       }
+      updatePicker(e.clientX, e.clientY);
+    };
+
+    // Walk the ancestor chain by a relative step, clamped (no wrap — wrapping
+    // a tree is disorienting). Positive = toward ancestors (up the tree).
+    const step = (direction: number) => {
+      const state = pickerRef.current;
+      if (!state || state.candidates.length < 2) {
+        return;
+      }
+      const selectedIndex = Math.min(
+        Math.max(state.selectedIndex + direction, 0),
+        state.candidates.length - 1
+      );
+      if (selectedIndex !== state.selectedIndex) {
+        setPicker({ ...state, selectedIndex });
+      }
+    };
+
+    // Jump to the previous / next source-locatable sibling of the currently
+    // highlighted element, re-rooting the stack at that sibling. Keyboard-only
+    // — lets you sweep across a row of cards without re-aiming the mouse.
+    const stepSibling = (direction: number) => {
+      const state = pickerRef.current;
+      const current = state?.candidates[state.selectedIndex]?.el ?? null;
+      if (!(state && current)) {
+        return;
+      }
+      const elements = siblingStack(current, direction);
+      if (!elements?.length) {
+        return;
+      }
+      setPicker({
+        candidates: elements.map(toCandidate),
+        point: state.point,
+        selectedIndex: 0,
+      });
     };
 
     // Block navigation/app-level handlers (react-router Link, button onClick,
@@ -137,11 +233,17 @@ export function CommentComposer({
     // might use to initiate them. We use `stopImmediatePropagation` so any
     // other capture-phase listener on the same target also gets skipped.
     const swallow = (e: Event): boolean => {
-      const target =
+      // Clicks/taps that land on our own chrome (breadcrumb crumbs) must flow
+      // through to their React handlers, not be suppressed or treated as a
+      // page hit.
+      if (isOverlayElement(e.target as Element | null)) {
+        return false;
+      }
+      const targetEl =
         e instanceof MouseEvent
-          ? pickTarget(e.clientX, e.clientY)
+          ? pickHitTarget(e.clientX, e.clientY)
           : (e.target as HTMLElement | null);
-      if (!target || isOverlayElement(target)) {
+      if (!targetEl || isOverlayElement(targetEl)) {
         return false;
       }
       e.preventDefault();
@@ -149,16 +251,28 @@ export function CommentComposer({
       return true;
     };
 
+    // Freeze the currently highlighted candidate as the composer target.
+    // `clickPoint` positions the panel; defaults to the last cursor position
+    // (used by the Enter hotkey, which has no event coordinates).
+    const commitCurrent = (clickPoint?: { x: number; y: number }): boolean => {
+      const state = pickerRef.current;
+      const el = state?.candidates[state.selectedIndex]?.el ?? null;
+      if (!(el && state)) {
+        return false;
+      }
+      setPicker(null);
+      setTarget({ el, clickPoint: clickPoint ?? { ...state.point } });
+      return true;
+    };
+
     const onClick = (e: MouseEvent) => {
       if (!swallow(e)) {
         return;
       }
-      const el = pickTarget(e.clientX, e.clientY);
-      if (!el) {
-        return;
+      if (!pickerRef.current) {
+        updatePicker(e.clientX, e.clientY);
       }
-      highlight(null);
-      setTarget({ el, clickPoint: { x: e.clientX, y: e.clientY } });
+      commitCurrent({ x: e.clientX, y: e.clientY });
     };
 
     const onMouseDown = (e: MouseEvent) => {
@@ -169,9 +283,43 @@ export function CommentComposer({
       swallow(e);
     };
 
+    const onWheel = (e: WheelEvent) => {
+      const state = pickerRef.current;
+      if (!state || state.candidates.length < 2) {
+        return;
+      }
+      // Scrolling up reaches for the parent (outer) element; down dives back
+      // toward the child. Suppress page scroll while a target is being picked.
+      e.preventDefault();
+      step(e.deltaY < 0 ? 1 : -1);
+    };
+
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         onCancel();
+        return;
+      }
+      // Enter commits the currently highlighted element — lets a keyboard user
+      // who walked the tree with the arrows / scroll lock it in without
+      // reaching for the mouse.
+      if (e.key === "Enter") {
+        if (commitCurrent()) {
+          e.preventDefault();
+        }
+        return;
+      }
+      // ArrowUp / ArrowDown walk parent / child (keep [ ] as aliases);
+      // ArrowLeft / ArrowRight sweep across siblings.
+      const walk = walkDirection(e.key);
+      if (walk !== 0) {
+        e.preventDefault();
+        step(walk);
+        return;
+      }
+      const sibling = siblingDirection(e.key);
+      if (sibling !== 0) {
+        e.preventDefault();
+        stepSibling(sibling);
       }
     };
 
@@ -179,6 +327,10 @@ export function CommentComposer({
     document.addEventListener("pointerdown", onPointerDown, true);
     document.addEventListener("mousedown", onMouseDown, true);
     document.addEventListener("click", onClick, true);
+    document.addEventListener("wheel", onWheel, {
+      capture: true,
+      passive: false,
+    });
     document.addEventListener("keydown", onKey);
 
     return () => {
@@ -186,10 +338,11 @@ export function CommentComposer({
       document.removeEventListener("pointerdown", onPointerDown, true);
       document.removeEventListener("mousedown", onMouseDown, true);
       document.removeEventListener("click", onClick, true);
+      document.removeEventListener("wheel", onWheel, true);
       document.removeEventListener("keydown", onKey);
-      highlight(null);
+      setPicker(null);
     };
-  }, [active, target, onCancel]);
+  }, [active, target, onCancel, setPicker]);
 
   // Auto-focus textarea once a target is picked.
   useEffect(() => {
@@ -204,23 +357,22 @@ export function CommentComposer({
 
   return (
     <>
-      {/* hover highlight; absolute over the page using viewport coordinates */}
-      <div
-        aria-hidden
-        className="pointer-events-none fixed z-[9300] hidden outline-dashed outline-2 outline-ring outline-offset-2"
-        data-comment-overlay="true"
-        ref={highlightRef}
-        style={{ display: "none" }}
-      />
+      {picker ? (
+        <PickerPreview
+          onCommitIndex={commitIndex}
+          onPreviewIndex={previewIndex}
+          picker={picker}
+        />
+      ) : null}
       {target ? (
         <ComposerPanel
+          agentModel={agentModel}
           clickPoint={target.clickPoint}
-          fixModel={fixModel}
+          onAgentModelChange={onAgentModelChange}
           onCancel={() => {
             setTarget(null);
             setText("");
           }}
-          onFixModelChange={onFixModelChange}
           onSaved={() => {
             // Defer the reset slightly so the "saved" pill is visible.
             window.setTimeout(() => {
@@ -263,6 +415,193 @@ export function CommentComposer({
   );
 }
 
+/**
+ * Four L-shaped corner ticks drawn just outside the selected element's box —
+ * a design-tool / camera-reticle selection cue that reads as precise
+ * "redlining" rather than a soft glowing rectangle, echoing the sharp-cornered
+ * comment pin. The arms overhang the box by 1px so they sit flush on the
+ * 1px outline.
+ */
+function SelectionReticle() {
+  const arm = "h-2.5 w-2.5";
+  const stroke =
+    "1.5px solid color-mix(in oklch, var(--foreground) 85%, transparent)";
+  const corners = [
+    { id: "tl", top: -1, left: -1, borderTop: stroke, borderLeft: stroke },
+    { id: "tr", top: -1, right: -1, borderTop: stroke, borderRight: stroke },
+    {
+      id: "bl",
+      bottom: -1,
+      left: -1,
+      borderBottom: stroke,
+      borderLeft: stroke,
+    },
+    {
+      id: "br",
+      bottom: -1,
+      right: -1,
+      borderBottom: stroke,
+      borderRight: stroke,
+    },
+  ];
+  return (
+    <>
+      {corners.map(({ id, ...style }) => (
+        <span
+          aria-hidden
+          className={`pointer-events-none absolute ${arm}`}
+          key={id}
+          style={style}
+        />
+      ))}
+    </>
+  );
+}
+
+function PickerPreview({
+  picker,
+  onPreviewIndex,
+  onCommitIndex,
+}: {
+  picker: PickerState;
+  onPreviewIndex: (index: number) => void;
+  onCommitIndex: (index: number) => void;
+}) {
+  const selected = picker.candidates[picker.selectedIndex];
+  if (!selected) {
+    return null;
+  }
+
+  const viewportW = typeof window === "undefined" ? 1024 : window.innerWidth;
+  const viewportH = typeof window === "undefined" ? 768 : window.innerHeight;
+  const chipWidth = 340;
+  const chipLeft = Math.max(
+    VIEWPORT_PADDING,
+    Math.min(picker.point.x + 14, viewportW - chipWidth - VIEWPORT_PADDING)
+  );
+  const chipTop =
+    picker.point.y + 96 > viewportH
+      ? Math.max(VIEWPORT_PADDING, picker.point.y - 92)
+      : picker.point.y + 18;
+
+  // The immediate parent (next index up) gets a faint outline as a "there's a
+  // level above you" affordance; the rest of the stack stays hidden so the
+  // selected box reads cleanly.
+  const parent = picker.candidates[picker.selectedIndex + 1];
+
+  // Breadcrumbs read naturally outermost › … › deepest (left → right), the
+  // reverse of the deepest-first candidate stack.
+  const visible = visiblePickerCandidates(picker, selected);
+  const truncated = visible.length < picker.candidates.length;
+  const crumbs = visible
+    .map((candidate) => ({
+      candidate,
+      index: picker.candidates.indexOf(candidate),
+    }))
+    .reverse();
+
+  return (
+    <>
+      {parent ? (
+        <div
+          aria-hidden
+          className="pointer-events-none fixed z-[9299] transition-[left,top,width,height] duration-75"
+          data-comment-overlay="true"
+          style={{
+            left: parent.rect.left,
+            top: parent.rect.top,
+            width: parent.rect.width,
+            height: parent.rect.height,
+            outline:
+              "1px dashed color-mix(in oklch, var(--ring) 50%, transparent)",
+            opacity: 0.55,
+          }}
+        />
+      ) : null}
+      <div
+        aria-hidden
+        className="pointer-events-none fixed z-[9300] transition-[left,top,width,height] duration-75"
+        data-comment-overlay="true"
+        style={{
+          left: selected.rect.left,
+          top: selected.rect.top,
+          width: selected.rect.width,
+          height: selected.rect.height,
+          background: "color-mix(in oklch, var(--foreground) 6%, transparent)",
+          outline:
+            "1px solid color-mix(in oklch, var(--foreground) 35%, transparent)",
+        }}
+      >
+        <SelectionReticle />
+      </div>
+      <div
+        className="pointer-events-auto fixed z-[9310] w-[340px] select-none overflow-hidden rounded-xl border bg-popover/95 text-popover-foreground shadow-[0_18px_40px_-18px_rgba(0,0,0,0.45),0_0_0_1px_rgba(255,255,255,0.04)] backdrop-blur"
+        data-comment-overlay="true"
+        style={{ left: chipLeft, top: chipTop }}
+      >
+        <div className="flex items-center justify-between gap-3 border-b px-3 py-2">
+          <div className="min-w-0">
+            <div className="font-mono text-[9px] text-muted-foreground uppercase tracking-[0.16em]">
+              target
+            </div>
+            <div className="truncate font-mono font-semibold text-[11px] text-foreground">
+              {selected.label}
+            </div>
+          </div>
+          <div className="shrink-0 rounded-full border bg-background px-2 py-1 font-mono text-[10px] text-muted-foreground">
+            {picker.selectedIndex + 1}/{picker.candidates.length}
+          </div>
+        </div>
+        <div className="flex min-w-0 items-center gap-0.5 overflow-hidden px-3 py-2">
+          {truncated ? (
+            <span className="shrink-0 px-0.5 font-mono text-[10px] text-muted-foreground">
+              …›
+            </span>
+          ) : null}
+          {crumbs.map(({ candidate, index }, i) => (
+            <span className="flex min-w-0 items-center" key={candidate.key}>
+              {i > 0 ? (
+                <span className="shrink-0 px-0.5 font-mono text-[10px] text-muted-foreground/60">
+                  ›
+                </span>
+              ) : null}
+              <button
+                className={
+                  index === picker.selectedIndex
+                    ? "min-w-0 truncate rounded-md bg-foreground px-1.5 py-1 font-mono text-[10px] text-background"
+                    : "min-w-0 truncate rounded-md bg-muted px-1.5 py-1 font-mono text-[10px] text-muted-foreground transition-colors hover:bg-muted-foreground/20 hover:text-foreground"
+                }
+                onClick={() => onCommitIndex(index)}
+                onMouseEnter={() => onPreviewIndex(index)}
+                type="button"
+              >
+                {candidate.label}
+              </button>
+            </span>
+          ))}
+        </div>
+        <div className="flex items-center justify-between border-t px-3 py-1.5 font-mono text-[9px] text-muted-foreground">
+          <span>↑↓ levels · ←→ siblings</span>
+          <span>↵ or click to pick</span>
+        </div>
+      </div>
+    </>
+  );
+}
+
+function visiblePickerCandidates(
+  picker: PickerState,
+  selected: PickerCandidate
+): PickerCandidate[] {
+  if (picker.candidates.length <= MAX_PICKER_CRUMBS) {
+    return picker.candidates;
+  }
+  if (picker.selectedIndex < MAX_PICKER_CRUMBS) {
+    return picker.candidates.slice(0, MAX_PICKER_CRUMBS);
+  }
+  return [...picker.candidates.slice(0, MAX_PICKER_CRUMBS - 1), selected];
+}
+
 type ComposerPanelStatus =
   | { kind: "idle" }
   | { kind: "saving" }
@@ -274,8 +613,8 @@ function ComposerPanel({
   clickPoint,
   text,
   textareaRef,
-  fixModel,
-  onFixModelChange,
+  agentModel,
+  onAgentModelChange,
   onTextChange,
   onCancel,
   onSubmit,
@@ -285,8 +624,8 @@ function ComposerPanel({
   clickPoint: { x: number; y: number };
   text: string;
   textareaRef: React.RefObject<HTMLTextAreaElement | null>;
-  fixModel: OverlayModel;
-  onFixModelChange: (model: OverlayModel) => void;
+  agentModel: OverlayModel;
+  onAgentModelChange: (model: OverlayModel) => void;
   onTextChange: (v: string) => void;
   onCancel: () => void;
   onSubmit: (opts: {
@@ -298,7 +637,7 @@ function ComposerPanel({
 }) {
   const [status, setStatus] = useState<ComposerPanelStatus>({ kind: "idle" });
   const [mode, setMode] = useState<ComposerMode>("agent");
-  const [versionCount, setVersionCount] = useState(DEFAULT_FIX_VERSION_COUNT);
+  const [versionCount, setVersionCount] = useState(DEFAULT_AGENT_VERSION_COUNT);
 
   // Anchor the composer panel to the user's click point, not to the target
   // element's bounding box — for page-wide elements whose `bottom` is below
@@ -346,7 +685,7 @@ function ComposerPanel({
       result = await onSubmit({
         runAgent: mode === "agent",
         versionCount,
-        model: fixModel,
+        model: agentModel,
       });
     } catch (err) {
       setStatus({ kind: "error", message: toErrorMessage(err) });
@@ -403,15 +742,15 @@ function ComposerPanel({
       </div>
 
       <CommentComposerBar
+        agentModel={agentModel}
+        agentVersionCount={versionCount}
         busy={submitting}
         error={status.kind === "error" ? status.message : null}
-        fixModel={fixModel}
-        fixVersionCount={versionCount}
         iterating={false}
         mode={mode}
+        onAgentModelChange={onAgentModelChange}
+        onAgentVersionCountChange={setVersionCount}
         onChange={onTextChange}
-        onFixModelChange={onFixModelChange}
-        onFixVersionCountChange={setVersionCount}
         onModeChange={setMode}
         onSubmit={() => {
           submit().catch(ignorePromiseRejection);
@@ -439,8 +778,118 @@ function describeElement(el: HTMLElement): string {
   return tag;
 }
 
-/** Returns the topmost element under the cursor that isn't part of overlay chrome. */
-function pickTarget(x: number, y: number): HTMLElement | null {
+/** Maps a key to an ancestor-walk step: +1 toward parent, -1 toward child, 0 otherwise. */
+function walkDirection(key: string): number {
+  if (key === "ArrowUp" || key === "[") {
+    return 1;
+  }
+  if (key === "ArrowDown" || key === "]") {
+    return -1;
+  }
+  return 0;
+}
+
+/** Maps a key to a sibling step: +1 next, -1 previous, 0 otherwise. */
+function siblingDirection(key: string): number {
+  if (key === "ArrowRight") {
+    return 1;
+  }
+  if (key === "ArrowLeft") {
+    return -1;
+  }
+  return 0;
+}
+
+/** Source-locatable elements from `start` up through its ancestors (deepest first). */
+function ancestorStack(start: Element): HTMLElement[] {
+  const picked: HTMLElement[] = [];
+  const add = (node: Element | null) => {
+    if (!(node instanceof HTMLElement)) {
+      return;
+    }
+    const sourceEl = findSourceLoc(node)?.element;
+    if (
+      !sourceEl ||
+      isOverlayElement(sourceEl) ||
+      sourceEl === document.body ||
+      sourceEl === document.documentElement ||
+      picked.includes(sourceEl)
+    ) {
+      return;
+    }
+    picked.push(sourceEl);
+  };
+  let cur: Element | null = start;
+  while (cur) {
+    add(cur);
+    cur = cur.parentElement;
+  }
+  return picked;
+}
+
+/** Returns source-locatable elements from the topmost hit up through ancestors. */
+function pickTargetStack(x: number, y: number): HTMLElement[] {
+  const stack = document.elementsFromPoint(x, y);
+  for (const node of stack) {
+    if (!isOverlayElement(node)) {
+      return ancestorStack(node);
+    }
+  }
+  return [];
+}
+
+/**
+ * The source-locatable siblings of `el` reachable by stepping `direction`
+ * (+1 next / -1 previous), returned as a fresh ancestor stack rooted at the
+ * chosen sibling. Only DOM siblings that are *themselves* a source node count
+ * (wrappers that resolve to an ancestor are skipped), and the step clamps at
+ * the ends. Returns null when there's nowhere to go.
+ */
+function siblingStack(
+  el: HTMLElement,
+  direction: number
+): HTMLElement[] | null {
+  const parent = el.parentElement;
+  if (!parent) {
+    return null;
+  }
+  const sibs: HTMLElement[] = [];
+  for (const child of Array.from(parent.children)) {
+    if (
+      child instanceof HTMLElement &&
+      !isOverlayElement(child) &&
+      findSourceLoc(child)?.element === child
+    ) {
+      sibs.push(child);
+    }
+  }
+  const i = sibs.indexOf(el);
+  if (i < 0 || sibs.length < 2) {
+    return null;
+  }
+  const next = sibs[Math.min(Math.max(i + direction, 0), sibs.length - 1)];
+  return next === el ? null : ancestorStack(next);
+}
+
+/** Snapshot an element's geometry + label into a picker candidate. */
+function toCandidate(el: HTMLElement): PickerCandidate {
+  const rect = el.getBoundingClientRect();
+  const label = describeElement(el);
+  return {
+    el,
+    key: `${label}:${el.getAttribute("data-source-loc") ?? ""}:${rect.left}:${rect.top}:${rect.width}:${rect.height}`,
+    label,
+    rect: {
+      left: rect.left,
+      top: rect.top,
+      width: rect.width,
+      height: rect.height,
+    },
+  };
+}
+
+/** Returns the topmost raw DOM hit so capture mode can suppress app clicks. */
+function pickHitTarget(x: number, y: number): HTMLElement | null {
   const stack = document.elementsFromPoint(x, y);
   for (const node of stack) {
     if (!(node instanceof HTMLElement)) {

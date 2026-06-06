@@ -7,7 +7,7 @@
  * where the page background should be — looks broken when displayed against
  * a different backdrop.
  *
- * Fix: walk up the DOM to find the nearest opaque-backgrounded ancestor and
+ * Walk up the DOM to find the nearest opaque-backgrounded ancestor and
  * pass that color as `backgroundColor` to `toPng`. The canvas fills with
  * that color before painting the element, so the resulting PNG reads as
  * "the element on its page background" rather than "the element on

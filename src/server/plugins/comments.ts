@@ -1,5 +1,8 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { Plugin } from "vite";
+import { configureAgentRuntime } from "../agent/config.ts";
+import type { AgentModel } from "../agent/models.ts";
+import type { AgentSkill } from "../agent/skills.ts";
 import {
   handleDelete,
   handleGet,
@@ -14,11 +17,48 @@ import {
   handleIterationsScreenshot,
   iterationsSubpath,
 } from "../api/iterations/routes.ts";
-import { configureFixRuntime } from "../fix/config.ts";
 import { errorMessage, sendError, wrapApiHandler } from "../platform/http.ts";
 import { sourceLoc as createSourceLocPlugin } from "./source-loc.ts";
 
 const INJECT_MARKER = "<!-- vite-plugin-comments injected -->";
+const AUTO_MOUNT_MARKER = "<!-- redline overlay auto-mount -->";
+const VIRTUAL_CLIENT_ID = "virtual:redline/client";
+const RESOLVED_VIRTUAL_CLIENT_ID = `\0${VIRTUAL_CLIENT_ID}`;
+
+function redlineClientModule(): string {
+  return `
+import { createElement } from "react";
+import { createRoot } from "react-dom/client";
+import { CommentOverlay } from "redline";
+import "redline/styles.css";
+
+const ROOT_ID = "redline-overlay-root";
+
+function mountRedlineOverlay() {
+  if (!import.meta.env.DEV || typeof document === "undefined") {
+    return;
+  }
+  if (document.getElementById(ROOT_ID)) {
+    return;
+  }
+  const host = document.body;
+  if (!host) {
+    return;
+  }
+  const root = document.createElement("div");
+  root.id = ROOT_ID;
+  root.setAttribute("data-comment-overlay", "true");
+  host.appendChild(root);
+  createRoot(root).render(createElement(CommentOverlay));
+}
+
+if (document.readyState === "loading") {
+  document.addEventListener("DOMContentLoaded", mountRedlineOverlay, { once: true });
+} else {
+  mountRedlineOverlay();
+}
+`;
+}
 
 function handleIterationsMiddleware(
   req: IncomingMessage,
@@ -91,6 +131,13 @@ function sendIterationsStreamError(res: ServerResponse, err: unknown): void {
  * dev server pipeline itself.
  */
 export interface CommentsPluginOptions {
+  /** Override the default Agent model priority order. */
+  agentModelPriority?: AgentModel[];
+  /**
+   * Skill guidance injected into generated agent prompts.
+   * Defaults to `["frontend-design"]`; pass `[]` to disable.
+   */
+  agentSkills?: AgentSkill[];
   /** Path to the Cursor CLI `agent` binary. Default: `"agent"` (must be on PATH). */
   cursorAgentPath?: string;
   /**
@@ -98,14 +145,20 @@ export interface CommentsPluginOptions {
    * (e.g. overlay infrastructure or dev-only routes in your app).
    */
   excludeSrcPrefixes?: string[];
-  /** Override the default Fix model priority order. */
-  fixModelPriority?: import("../fix/models.ts").FixModel[];
+  /**
+   * Inject and mount `<CommentOverlay />` automatically in dev. The low-level
+   * `comments()` middleware keeps this off by default; use `redline()` for the
+   * streamlined setup.
+   */
+  mountOverlay?: boolean;
 }
 
 export function comments(options: CommentsPluginOptions = {}): Plugin {
   const excludeSrcPrefixes = options.excludeSrcPrefixes ?? [];
   const cursorAgentPath = options.cursorAgentPath;
-  const fixModelPriority = options.fixModelPriority;
+  const agentModelPriority = options.agentModelPriority;
+  const agentSkills = options.agentSkills;
+  const mountOverlay = options.mountOverlay ?? false;
   let projectRoot = process.cwd();
 
   return {
@@ -114,9 +167,10 @@ export function comments(options: CommentsPluginOptions = {}): Plugin {
 
     configResolved(config) {
       projectRoot = config.root;
-      configureFixRuntime({
+      configureAgentRuntime({
         ...(cursorAgentPath ? { cursorAgentPath } : {}),
-        ...(fixModelPriority ? { fixModelPriority } : {}),
+        ...(agentModelPriority ? { agentModelPriority } : {}),
+        ...(agentSkills === undefined ? {} : { agentSkills }),
       });
     },
 
@@ -170,21 +224,80 @@ export function comments(options: CommentsPluginOptions = {}): Plugin {
       });
     },
 
+    resolveId(id) {
+      if (mountOverlay && id === VIRTUAL_CLIENT_ID) {
+        return RESOLVED_VIRTUAL_CLIENT_ID;
+      }
+      return null;
+    },
+
+    load(id) {
+      if (mountOverlay && id === RESOLVED_VIRTUAL_CLIENT_ID) {
+        return redlineClientModule();
+      }
+      return null;
+    },
+
     transformIndexHtml: {
       order: "pre",
       handler(html) {
-        if (html.includes(INJECT_MARKER)) {
-          return html;
+        let nextHtml = html;
+        if (!nextHtml.includes(INJECT_MARKER)) {
+          nextHtml = nextHtml.replace(
+            "</head>",
+            `  ${INJECT_MARKER}\n  </head>`
+          );
         }
-        return html.replace("</head>", `  ${INJECT_MARKER}\n  </head>`);
+        if (mountOverlay && !nextHtml.includes(AUTO_MOUNT_MARKER)) {
+          nextHtml = nextHtml.replace(
+            "</head>",
+            `  ${AUTO_MOUNT_MARKER}\n  <script type="module">import "${VIRTUAL_CLIENT_ID}";</script>\n  </head>`
+          );
+        }
+        return nextHtml;
       },
     },
   };
 }
 
+export interface RedlinePluginOptions extends CommentsPluginOptions {
+  /**
+   * Source-location stamping for DOM target picking. Enabled by default.
+   * Pass `false` only when you mount the overlay manually and provide another
+   * source-location strategy.
+   */
+  sourceLoc?:
+    | false
+    | {
+        excludeSrcPrefixes?: string[];
+        projectRoot?: string;
+      };
+}
+
+/** Streamlined dev setup: source locations + API middleware + overlay mount. */
+export function redline(options: RedlinePluginOptions = {}): Plugin[] {
+  const {
+    sourceLoc: sourceLocOptions,
+    mountOverlay = true,
+    ...commentsOptions
+  } = options;
+  const middleware = comments({ ...commentsOptions, mountOverlay });
+  if (sourceLocOptions === false) {
+    return [middleware];
+  }
+  return [
+    createSourceLocPlugin({
+      excludeSrcPrefixes:
+        sourceLocOptions?.excludeSrcPrefixes ?? options.excludeSrcPrefixes,
+      projectRoot: sourceLocOptions?.projectRoot,
+    }),
+    middleware,
+  ];
+}
+
 /** Re-exported for `redline/plugin` consumers configuring the dev source-loc stamper. */
 export function sourceLoc(
-  options: Parameters<typeof createSourceLocPlugin>[0]
+  options: Parameters<typeof createSourceLocPlugin>[0] = {}
 ): ReturnType<typeof createSourceLocPlugin> {
   return createSourceLocPlugin(options);
 }

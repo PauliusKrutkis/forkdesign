@@ -4,7 +4,7 @@
  * — this module is just a defensive (de)serializer over `localStorage`.
  */
 
-import type { FixModel } from "../shared/fix-model.ts";
+import type { AgentModel } from "../shared/agent-model.ts";
 
 export type OverlayPosition =
   | "bottom-right"
@@ -12,15 +12,15 @@ export type OverlayPosition =
   | "top-right"
   | "top-left";
 
-/** Models exposed in overlay settings (subset of FixModel). */
-export const OVERLAY_FIX_MODELS = [
+/** Models exposed in overlay settings (subset of AgentModel). */
+export const OVERLAY_AGENT_MODELS = [
   "composer-2.5-fast",
   "composer-2.5",
   "claude-sonnet-4-6",
   "claude-opus-4-7",
-] as const satisfies readonly FixModel[];
+] as const satisfies readonly AgentModel[];
 
-export type OverlayModel = (typeof OVERLAY_FIX_MODELS)[number];
+export type OverlayModel = (typeof OVERLAY_AGENT_MODELS)[number];
 
 /** Labels for settings UI and the inline composer model picker. */
 export const OVERLAY_MODEL_OPTIONS: ReadonlyArray<{
@@ -52,7 +52,9 @@ export const OVERLAY_MODEL_OPTIONS: ReadonlyArray<{
   },
 ];
 
-const VALID_OVERLAY_MODELS: ReadonlySet<FixModel> = new Set(OVERLAY_FIX_MODELS);
+const VALID_OVERLAY_MODELS: ReadonlySet<AgentModel> = new Set(
+  OVERLAY_AGENT_MODELS
+);
 
 export interface OverlaySettings {
   /** Override for window.__COMMENT_AUTHOR__. Empty string disables override. */
@@ -61,7 +63,7 @@ export interface OverlaySettings {
   enabled: boolean;
   /** When true, resolved pins and list rows are hidden from the overlay. */
   hideResolved: boolean;
-  /** Fix model — tried first, then the server fallback chain. */
+  /** Agent model — tried first, then the server fallback chain. */
   model: OverlayModel;
   /** Which corner the dock pill anchors to. */
   position: OverlayPosition;
@@ -142,7 +144,7 @@ export function loadSettings(): OverlaySettings {
       : DEFAULT_SETTINGS.hideResolved;
   const model =
     typeof obj.model === "string" &&
-    VALID_OVERLAY_MODELS.has(obj.model as FixModel)
+    VALID_OVERLAY_MODELS.has(obj.model as AgentModel)
       ? (obj.model as OverlayModel)
       : DEFAULT_SETTINGS.model;
 

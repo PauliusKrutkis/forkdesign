@@ -4,11 +4,102 @@ import { ignorePromiseRejection } from "./ignore-promise-rejection.ts";
 import { isOverlayElement } from "./overlay-dom.ts";
 import { effectiveBackgroundColor } from "./screenshot.ts";
 
-async function captureElementPng(anchor: string): Promise<string | null> {
+const FALLBACK_CAPTURE_DELAY_MS = 900;
+const RENDER_UPDATE_TIMEOUT_MS = 5000;
+const RENDER_POLL_MS = 50;
+const SETTLE_FRAME_LIMIT = 8;
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
+
+function nextFrame(): Promise<void> {
+  return new Promise((resolve) =>
+    window.requestAnimationFrame(() => resolve())
+  );
+}
+
+function anchorElement(anchor: string): HTMLElement | null {
   const el = document.querySelector(
     `[data-comment-anchor="${cssEscape(anchor)}"]`
   );
-  if (!(el instanceof HTMLElement)) {
+  return el instanceof HTMLElement ? el : null;
+}
+
+export function anchorRenderSignature(anchor: string): string | null {
+  const el = anchorElement(anchor);
+  if (!el) {
+    return null;
+  }
+  const rect = el.getBoundingClientRect();
+  return JSON.stringify({
+    html: el.outerHTML,
+    width: Math.round(rect.width * 100) / 100,
+    height: Math.round(rect.height * 100) / 100,
+  });
+}
+
+async function waitForStableRender(anchor: string): Promise<void> {
+  let previous = anchorRenderSignature(anchor);
+
+  for (let i = 0; i < SETTLE_FRAME_LIMIT; i += 1) {
+    await nextFrame();
+    const current = anchorRenderSignature(anchor);
+    if (current && current === previous) {
+      await nextFrame();
+      return;
+    }
+    previous = current;
+  }
+}
+
+async function waitForVersionRender(args: {
+  anchor: string;
+  previousSignature?: string | null;
+}): Promise<void> {
+  const hot = import.meta.hot;
+  let hmrSeen = false;
+  const onHmr = () => {
+    hmrSeen = true;
+  };
+
+  if (hot) {
+    hot.on("vite:afterUpdate", onHmr);
+  }
+
+  try {
+    const startedAt = Date.now();
+    while (Date.now() - startedAt < RENDER_UPDATE_TIMEOUT_MS) {
+      await nextFrame();
+      const currentSignature = anchorRenderSignature(args.anchor);
+      if (
+        args.previousSignature &&
+        currentSignature &&
+        currentSignature !== args.previousSignature
+      ) {
+        break;
+      }
+      if (!args.previousSignature && hmrSeen) {
+        break;
+      }
+      if (
+        !args.previousSignature &&
+        Date.now() - startedAt >= FALLBACK_CAPTURE_DELAY_MS
+      ) {
+        break;
+      }
+      await delay(RENDER_POLL_MS);
+    }
+  } finally {
+    hot?.off("vite:afterUpdate", onHmr);
+  }
+
+  await waitForStableRender(args.anchor);
+}
+
+async function captureElementPng(anchor: string): Promise<string | null> {
+  const el = anchorElement(anchor);
+  if (!el) {
     return null;
   }
   try {
@@ -78,20 +169,22 @@ export async function captureAndUploadVersionNow(args: {
 
 /**
  * After source changes (HMR), capture the element and upload PNG for version `v`.
- * Fix variants (v &gt; 0) use this so thumbnails match the applied design.
+ * Agent variants (v &gt; 0) use this so thumbnails match the applied design.
  */
-export function captureAndUploadVersionAfterHmr(args: {
+function captureAndUploadVersionAfterHmr(args: {
   id: string;
   anchor: string;
+  previousSignature?: string | null;
   v: number;
 }): Promise<boolean> {
-  const { id, anchor, v } = args;
+  const { id, anchor, previousSignature, v } = args;
 
   const captureNow = async (): Promise<boolean> => {
+    await waitForVersionRender({ anchor, previousSignature });
     const dataUrl = await captureElementPng(anchor);
     if (!dataUrl) {
       console.warn(
-        `[CommentBubble] post-fix capture: anchor ${anchor} not found; keeping placeholder v${v}.png`
+        `[CommentBubble] post-agent capture: anchor ${anchor} not found; keeping placeholder v${v}.png`
       );
       return false;
     }
@@ -99,75 +192,10 @@ export function captureAndUploadVersionAfterHmr(args: {
   };
 
   if (!import.meta.hot) {
-    return new Promise((resolve) => {
-      window.setTimeout(() => {
-        captureNow()
-          .then(resolve)
-          .catch(() => resolve(false));
-      }, 400);
-    });
+    return captureNow().catch(() => false);
   }
 
-  const hot = import.meta.hot;
-  return new Promise((resolve) => {
-    let done = false;
-    let timeoutId: number | undefined;
-    let debounceId: number | undefined;
-    let fallbackId: number | undefined;
-
-    const finish = (ok: boolean) => {
-      if (done) {
-        return;
-      }
-      done = true;
-      if (timeoutId !== undefined) {
-        window.clearTimeout(timeoutId);
-      }
-      if (debounceId !== undefined) {
-        window.clearTimeout(debounceId);
-      }
-      if (fallbackId !== undefined) {
-        window.clearTimeout(fallbackId);
-      }
-      hot.off("vite:afterUpdate", handler);
-      resolve(ok);
-    };
-
-    const run = () => {
-      captureNow()
-        .then(finish)
-        .catch(() => finish(false));
-    };
-
-    const scheduleCapture = () => {
-      if (done) {
-        return;
-      }
-      if (debounceId !== undefined) {
-        window.clearTimeout(debounceId);
-      }
-      debounceId = window.setTimeout(() => {
-        window.requestAnimationFrame(() => {
-          window.requestAnimationFrame(run);
-        });
-      }, 150);
-    };
-
-    const handler = () => {
-      if (!done) {
-        scheduleCapture();
-      }
-    };
-
-    hot.on("vite:afterUpdate", handler);
-    fallbackId = window.setTimeout(scheduleCapture, 400);
-    timeoutId = window.setTimeout(() => {
-      console.warn(
-        `[CommentBubble] post-fix capture: HMR did not fire within 5s; keeping placeholder v${v}.png`
-      );
-      finish(false);
-    }, 5000);
-  });
+  return captureNow().catch(() => false);
 }
 
 async function activateIterationVersion(
@@ -187,29 +215,32 @@ async function activateIterationVersion(
 }
 
 /**
- * Replace v0-placeholder PNGs for each fix variant with a capture of that
+ * Replace v0-placeholder PNGs for each agent variant with a capture of that
  * version on the page. Baseline (v0) is never touched here.
  */
-export async function captureFixVariantScreenshots(args: {
+export async function captureAgentVariantScreenshots(args: {
+  initialPreviousSignature?: string | null;
   id: string;
   anchor: string;
   versions: number[];
   activeV: number;
 }): Promise<void> {
-  const fixVersions = args.versions.filter((v) => v > 0);
-  if (fixVersions.length === 0) {
+  const agentVersions = args.versions.filter((v) => v > 0);
+  if (agentVersions.length === 0) {
     return;
   }
 
-  const others = fixVersions.filter((v) => v !== args.activeV);
+  const others = agentVersions.filter((v) => v !== args.activeV);
 
   await captureAndUploadVersionAfterHmr({
     id: args.id,
     anchor: args.anchor,
+    previousSignature: args.initialPreviousSignature,
     v: args.activeV,
   });
 
   for (const v of others.toSorted((a, b) => a - b)) {
+    const previousSignature = anchorRenderSignature(args.anchor);
     if (!(await activateIterationVersion(args.id, v))) {
       console.warn(
         `[CommentBubble] failed to activate v${v} for screenshot capture`
@@ -219,6 +250,7 @@ export async function captureFixVariantScreenshots(args: {
     await captureAndUploadVersionAfterHmr({
       id: args.id,
       anchor: args.anchor,
+      previousSignature,
       v,
     });
   }
@@ -228,14 +260,14 @@ export async function captureFixVariantScreenshots(args: {
   }
 }
 
-/** Fire-and-forget variant captures after a successful fix run. */
-export function scheduleFixVariantScreenshots(
-  args: Parameters<typeof captureFixVariantScreenshots>[0] & {
+/** Fire-and-forget variant captures after a successful agent run. */
+export function scheduleAgentVariantScreenshots(
+  args: Parameters<typeof captureAgentVariantScreenshots>[0] & {
     onDone?: () => void;
   }
 ): void {
   const { onDone, ...captureArgs } = args;
-  captureFixVariantScreenshots(captureArgs)
+  captureAgentVariantScreenshots(captureArgs)
     .then(() => onDone?.())
     .catch(ignorePromiseRejection);
 }

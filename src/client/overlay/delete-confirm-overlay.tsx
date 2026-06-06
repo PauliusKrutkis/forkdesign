@@ -122,8 +122,8 @@ function DeleteConfirmLabel({ label }: { label: ReactNode }) {
 function DeleteKeyboardHints() {
   return (
     <p className="m-0 font-mono text-[10px] text-muted-foreground">
-      <ShortcutHint className="ml-0">Enter</ShortcutHint> confirm · Esc cancel ·{" "}
-      <ShortcutHint className="ml-0">{withCtrl("⌫")}</ShortcutHint> delete
+      <ShortcutHint className="ml-0">{withCtrl("⌫")}</ShortcutHint> confirm ·
+      Esc cancel
     </p>
   );
 }
