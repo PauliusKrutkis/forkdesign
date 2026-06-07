@@ -19,15 +19,28 @@ function nextFrame(): Promise<void> {
   );
 }
 
-function anchorElement(anchor: string): HTMLElement | null {
-  const el = document.querySelector(
+/**
+ * Resolve the DOM element for `anchor` at the given `instance` index. A single
+ * source element can render many times (a `.map()` list, a shared component),
+ * so all copies carry the same `data-comment-anchor`. We capture the instance
+ * the comment is actually anchored to — `querySelector` would always grab the
+ * first copy, which may be off-screen (→ blank PNG) or a different render than
+ * the one the user commented on (→ wrong thumbnail). Falls back to the first
+ * match when the requested index is gone (DOM order shifted).
+ */
+function anchorElement(anchor: string, instance = 0): HTMLElement | null {
+  const matches = document.querySelectorAll<HTMLElement>(
     `[data-comment-anchor="${cssEscape(anchor)}"]`
   );
+  const el = matches[instance] ?? matches[0] ?? null;
   return el instanceof HTMLElement ? el : null;
 }
 
-export function anchorRenderSignature(anchor: string): string | null {
-  const el = anchorElement(anchor);
+export function anchorRenderSignature(
+  anchor: string,
+  instance = 0
+): string | null {
+  const el = anchorElement(anchor, instance);
   if (!el) {
     return null;
   }
@@ -39,12 +52,15 @@ export function anchorRenderSignature(anchor: string): string | null {
   });
 }
 
-async function waitForStableRender(anchor: string): Promise<void> {
-  let previous = anchorRenderSignature(anchor);
+async function waitForStableRender(
+  anchor: string,
+  instance = 0
+): Promise<void> {
+  let previous = anchorRenderSignature(anchor, instance);
 
   for (let i = 0; i < SETTLE_FRAME_LIMIT; i += 1) {
     await nextFrame();
-    const current = anchorRenderSignature(anchor);
+    const current = anchorRenderSignature(anchor, instance);
     if (current && current === previous) {
       await nextFrame();
       return;
@@ -55,8 +71,10 @@ async function waitForStableRender(anchor: string): Promise<void> {
 
 async function waitForVersionRender(args: {
   anchor: string;
+  instance?: number;
   previousSignature?: string | null;
 }): Promise<void> {
+  const instance = args.instance ?? 0;
   const hot = import.meta.hot;
   const hasHotEvents =
     typeof hot?.on === "function" && typeof hot.off === "function";
@@ -73,7 +91,7 @@ async function waitForVersionRender(args: {
     const startedAt = Date.now();
     while (Date.now() - startedAt < RENDER_UPDATE_TIMEOUT_MS) {
       await nextFrame();
-      const currentSignature = anchorRenderSignature(args.anchor);
+      const currentSignature = anchorRenderSignature(args.anchor, instance);
       if (
         args.previousSignature &&
         currentSignature &&
@@ -98,11 +116,14 @@ async function waitForVersionRender(args: {
     }
   }
 
-  await waitForStableRender(args.anchor);
+  await waitForStableRender(args.anchor, instance);
 }
 
-async function captureElementPng(anchor: string): Promise<string | null> {
-  const el = anchorElement(anchor);
+async function captureElementPng(
+  anchor: string,
+  instance = 0
+): Promise<string | null> {
+  const el = anchorElement(anchor, instance);
   if (!el) {
     return null;
   }
@@ -159,9 +180,10 @@ async function uploadVersionPng(
 export async function captureAndUploadVersionNow(args: {
   id: string;
   anchor: string;
+  instance?: number;
   v: number;
 }): Promise<boolean> {
-  const dataUrl = await captureElementPng(args.anchor);
+  const dataUrl = await captureElementPng(args.anchor, args.instance ?? 0);
   if (!dataUrl) {
     console.warn(
       `[CommentBubble] baseline capture: anchor ${args.anchor} not found or empty; skipping v${args.v}.png`
@@ -178,14 +200,16 @@ export async function captureAndUploadVersionNow(args: {
 export function captureAndUploadVersionAfterHmr(args: {
   id: string;
   anchor: string;
+  instance?: number;
   previousSignature?: string | null;
   v: number;
 }): Promise<boolean> {
   const { id, anchor, previousSignature, v } = args;
+  const instance = args.instance ?? 0;
 
   const captureNow = async (): Promise<boolean> => {
-    await waitForVersionRender({ anchor, previousSignature });
-    const dataUrl = await captureElementPng(anchor);
+    await waitForVersionRender({ anchor, instance, previousSignature });
+    const dataUrl = await captureElementPng(anchor, instance);
     if (!dataUrl) {
       console.warn(
         `[CommentBubble] post-agent capture: anchor ${anchor} not found; keeping placeholder v${v}.png`
@@ -226,9 +250,11 @@ export async function captureAgentVariantScreenshots(args: {
   initialPreviousSignature?: string | null;
   id: string;
   anchor: string;
+  instance?: number;
   versions: number[];
   activeV: number;
 }): Promise<void> {
+  const instance = args.instance ?? 0;
   const agentVersions = args.versions.filter((v) => v > 0);
   if (agentVersions.length === 0) {
     return;
@@ -252,12 +278,13 @@ export async function captureAgentVariantScreenshots(args: {
   await captureAndUploadVersionAfterHmr({
     id: args.id,
     anchor: args.anchor,
+    instance,
     previousSignature: args.initialPreviousSignature,
     v: firstCaptureV,
   });
 
   for (const v of others.toSorted((a, b) => a - b)) {
-    const previousSignature = anchorRenderSignature(args.anchor);
+    const previousSignature = anchorRenderSignature(args.anchor, instance);
     if (!(await activateIterationVersion(args.id, v))) {
       console.warn(
         `[CommentBubble] failed to activate v${v} for screenshot capture`
@@ -267,16 +294,18 @@ export async function captureAgentVariantScreenshots(args: {
     await captureAndUploadVersionAfterHmr({
       id: args.id,
       anchor: args.anchor,
+      instance,
       previousSignature,
       v,
     });
   }
 
   if (others.length > 0 || args.activeV !== firstCaptureV) {
-    const previousSignature = anchorRenderSignature(args.anchor);
+    const previousSignature = anchorRenderSignature(args.anchor, instance);
     if (await activateIterationVersion(args.id, args.activeV)) {
       await waitForVersionRender({
         anchor: args.anchor,
+        instance,
         previousSignature,
       });
     }

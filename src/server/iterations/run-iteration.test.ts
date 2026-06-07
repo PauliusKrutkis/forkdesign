@@ -285,6 +285,72 @@ describe("runNewIteration multi-variant", () => {
     expect(runAgentMock).toHaveBeenCalledTimes(2);
   });
 
+  it("captures cross-file edits (reused component) as aux snapshots", async () => {
+    const iterDir = path.join(projectRoot, "designs", "iterations", commentId);
+    const cardPath = path.join(projectRoot, "src", "Card.tsx");
+    // Comment lives next to a reused <Card>; marker is required so the final
+    // active-version write can find it.
+    const widgetWithMarker = `export function Widget() {
+  return (
+    <div>
+      <Card data-comment-anchor="anchor-1" />
+      {/* @comment id="comment-1" anchor="anchor-1" text="make it blue" author="dev@local" date="2026-01-01T00:00:00.000Z" */}
+    </div>
+  );
+}
+`;
+    writeFileSync(sourcePath, widgetWithMarker, "utf8");
+    writeFileSync(
+      cardPath,
+      "export const Card = () => <div>old</div>;\n",
+      "utf8"
+    );
+
+    runAgentMock.mockImplementation(() => {
+      // Agent restyles the reused component's OWN file, leaving the comment
+      // file untouched — the case single-file snapshots could not capture.
+      writeFileSync(
+        cardPath,
+        "export const Card = () => <div>new</div>;\n",
+        "utf8"
+      );
+      return Promise.resolve({
+        ok: true,
+        modelUsed: "composer-2.5-fast",
+        turnsUsed: 1,
+        toolCalls: 1,
+        attempts: [],
+      });
+    });
+
+    const { events, stream } = createTestStream();
+    await runNewIteration({
+      projectRoot,
+      found,
+      id: commentId,
+      model: "composer-2.5-fast",
+      count: 1,
+      skills: [],
+      stream,
+    });
+
+    const auxV1 = JSON.parse(
+      readFileSync(path.join(iterDir, "v1.files.json"), "utf8")
+    ) as Record<string, string>;
+    expect(auxV1["src/Card.tsx"]).toContain("new");
+
+    const auxV0 = JSON.parse(
+      readFileSync(path.join(iterDir, "v0.files.json"), "utf8")
+    ) as Record<string, string>;
+    expect(auxV0["src/Card.tsx"]).toContain("old");
+
+    // Live file reflects the active variant after the run.
+    expect(readFileSync(cardPath, "utf8")).toContain("new");
+
+    const done = events.at(-1) as { ok: boolean; changed?: boolean };
+    expect(done).toMatchObject({ ok: true, changed: true });
+  });
+
   it("returns changed false when every variant makes no diff", async () => {
     runAgentMock.mockResolvedValue({
       ok: true,

@@ -7,6 +7,7 @@ import {
 } from "../../agent/models.ts";
 import { DEFAULT_AGENT_SKILLS } from "../../agent/skills.ts";
 import { applyIterationVersionToSource } from "../../iterations/activate-version.ts";
+import { deleteVersionAuxFiles } from "../../iterations/aux-files.ts";
 import { resolveCommentIterationContext } from "../../iterations/context.ts";
 import {
   deleteVersionArtifactsAllRoots,
@@ -276,19 +277,24 @@ export async function handleIterationsActivate(
     ctx.found,
     ctx.iterationRoots,
     id,
-    v
+    v,
+    projectRoot
   );
   if (!applied.ok) {
     sendError(res, applied.status, applied.message);
     return;
   }
 
-  notifySourceApplied(hooks, {
-    absolutePath: ctx.found.absolutePath,
-    active: v,
-    file: ctx.found.relativePath,
-    id,
-  });
+  // Trigger HMR for every file the activation touched — the comment's file AND
+  // any cross-file (reused-component) edits the version restored.
+  for (const absolutePath of applied.writtenFiles) {
+    notifySourceApplied(hooks, {
+      absolutePath,
+      active: v,
+      file: ctx.found.relativePath,
+      id,
+    });
+  }
 
   sendJson(res, {
     ok: true,
@@ -358,22 +364,26 @@ export async function handleIterationsDelete(
       found,
       iterationRoots,
       id,
-      targetActive
+      targetActive,
+      projectRoot
     );
     if (!applied.ok) {
       sendError(res, applied.status, applied.message);
       return;
     }
-    notifySourceApplied(hooks, {
-      absolutePath: found.absolutePath,
-      active: targetActive,
-      file: found.relativePath,
-      id,
-    });
+    for (const absolutePath of applied.writtenFiles) {
+      notifySourceApplied(hooks, {
+        absolutePath,
+        active: targetActive,
+        file: found.relativePath,
+        id,
+      });
+    }
   }
 
   try {
     await deleteVersionArtifactsAllRoots(iterationRoots, v);
+    await deleteVersionAuxFiles(iterationRoots, v);
   } catch (err) {
     sendError(res, 500, errorMessage(err));
     return;

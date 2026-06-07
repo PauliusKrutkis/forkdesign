@@ -65,10 +65,11 @@ describe("applyIterationVersionToSource", () => {
       found,
       [iterDir],
       "comment-a",
-      1
+      1,
+      projectRoot
     );
 
-    expect(result).toEqual({ ok: true });
+    expect(result.ok).toBe(true);
     const output = await readFile(sourcePath, "utf8");
     expect(output).toContain("Use bold version");
     expect(output).toContain("Keep the live card");
@@ -138,10 +139,11 @@ describe("applyIterationVersionToSource", () => {
       found,
       [iterDir],
       "comment-a",
-      1
+      1,
+      projectRoot
     );
 
-    expect(result).toEqual({ ok: true });
+    expect(result.ok).toBe(true);
     const output = await readFile(sourcePath, "utf8");
     expect(output).toContain("First live copy");
     expect(output).not.toContain("First snapshot copy");
@@ -153,5 +155,83 @@ describe("applyIterationVersionToSource", () => {
     expect(comments.find((comment) => comment.id === "comment-a")?.active).toBe(
       1
     );
+  });
+
+  it("restores and reverts cross-file (reused-component) edits when switching", async () => {
+    projectRoot = await mkdtemp(path.join(tmpdir(), "redline-activate-"));
+    const sourcePath = path.join(projectRoot, "src", "Page.tsx");
+    const cardPath = path.join(projectRoot, "src", "Card.tsx");
+    const iterDir = path.join(
+      projectRoot,
+      "designs",
+      "iterations",
+      "comment-a"
+    );
+    await mkdir(path.dirname(sourcePath), { recursive: true });
+    await mkdir(iterDir, { recursive: true });
+
+    // The comment is on a reused <Card>; the agent restyled Card's OWN file,
+    // so the comment file is identical across versions and the real change
+    // lives in the auxiliary snapshot.
+    const pageSource = `export function Page() {
+  return (
+    <main>
+      <Card data-comment-anchor="anchor-a" />
+      {/* @comment id="comment-a" anchor="anchor-a" text="punch it up" author="dev@local" date="2026-01-01T00:00:00.000Z" */}
+    </main>
+  );
+}
+`;
+    const baselineCard = "export const Card = () => <div>BASELINE</div>;\n";
+    const variantCard = "export const Card = () => <div>VARIANT</div>;\n";
+
+    await writeFile(sourcePath, pageSource, "utf8");
+    await writeFile(cardPath, variantCard, "utf8");
+    await writeFile(path.join(iterDir, "v0.tsx"), pageSource, "utf8");
+    await writeFile(path.join(iterDir, "v1.tsx"), pageSource, "utf8");
+    await writeFile(
+      path.join(iterDir, "v0.files.json"),
+      JSON.stringify({ "src/Card.tsx": baselineCard }),
+      "utf8"
+    );
+    await writeFile(
+      path.join(iterDir, "v1.files.json"),
+      JSON.stringify({ "src/Card.tsx": variantCard }),
+      "utf8"
+    );
+
+    const found: FoundComment = {
+      absolutePath: sourcePath,
+      relativePath: "src/Page.tsx",
+      siblingIds: [],
+      comment: {
+        id: "comment-a",
+        anchor: "anchor-a",
+        text: "punch it up",
+      },
+    };
+
+    const toV1 = await applyIterationVersionToSource(
+      found,
+      [iterDir],
+      "comment-a",
+      1,
+      projectRoot
+    );
+    expect(toV1.ok).toBe(true);
+    if (toV1.ok) {
+      expect(toV1.writtenFiles).toContain(cardPath);
+    }
+    expect(await readFile(cardPath, "utf8")).toContain("VARIANT");
+
+    const toV0 = await applyIterationVersionToSource(
+      found,
+      [iterDir],
+      "comment-a",
+      0,
+      projectRoot
+    );
+    expect(toV0.ok).toBe(true);
+    expect(await readFile(cardPath, "utf8")).toContain("BASELINE");
   });
 });

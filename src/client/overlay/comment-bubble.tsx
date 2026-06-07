@@ -45,6 +45,12 @@ interface CommentBubbleProps {
   autoAgentCount?: number | null;
   comments: CommentData[];
   initialActiveVersion?: number;
+  /**
+   * Which `data-comment-anchor` instance this bubble is anchored to. A single
+   * source element can render many times; screenshots must capture the copy the
+   * user commented on, not always the first one in the DOM. Defaults to 0.
+   */
+  instance?: number;
   onActiveVersionChange?: (id: string, active: number) => void;
   onAgentModelChange: (model: OverlayModel) => void;
   /** Drives pin loading while the agent iterates (cleared when the run ends). */
@@ -177,6 +183,7 @@ export function CommentBubble({
   skipDeleteConfirmation = false,
   autoAgentCount = null,
   initialActiveVersion,
+  instance = 0,
   onActiveVersionChange,
   onAutoAgentStarted,
   onAgentWorkingChange,
@@ -246,6 +253,7 @@ export function CommentBubble({
     lead,
     agentModel,
     agentVersionCount,
+    instance,
     reloadIterations,
     onAgentWorkingChange,
     clearPreferredActive,
@@ -301,6 +309,7 @@ export function CommentBubble({
     scheduleAgentVariantScreenshots({
       id: lead.id,
       anchor: lead.anchor,
+      instance,
       versions: pendingVersions,
       activeV: activeVersion,
       onDone: () => {
@@ -309,6 +318,7 @@ export function CommentBubble({
     });
   }, [
     activeVersion,
+    instance,
     iterations?.versions,
     lead,
     reloadIterations,

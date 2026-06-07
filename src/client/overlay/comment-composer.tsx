@@ -117,6 +117,13 @@ export function CommentComposer({
   const [picker, setPickerState] = useState<PickerState | null>(null);
   const pickerRef = useRef<PickerState | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  // Hold onCancel in a ref so the picker-listener effect below doesn't depend
+  // on its identity. The parent passes a fresh inline arrow every render, and
+  // while an agent runs the overlay re-renders constantly (1.5s poll + HMR) —
+  // listing onCancel in the deps would tear the effect down on each render,
+  // and its cleanup calls setPicker(null), wiping the hover highlight.
+  const onCancelRef = useRef(onCancel);
+  onCancelRef.current = onCancel;
 
   const setPicker = useCallback((next: PickerState | null) => {
     pickerRef.current = next;
@@ -333,7 +340,7 @@ export function CommentComposer({
 
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
-        onCancel();
+        onCancelRef.current();
         return;
       }
       // Enter commits the currently highlighted element — lets a keyboard user
@@ -380,7 +387,7 @@ export function CommentComposer({
       document.removeEventListener("keydown", onKey);
       setPicker(null);
     };
-  }, [active, target, onCancel, setPicker]);
+  }, [active, target, setPicker]);
 
   // Auto-focus textarea once a target is picked.
   useEffect(() => {

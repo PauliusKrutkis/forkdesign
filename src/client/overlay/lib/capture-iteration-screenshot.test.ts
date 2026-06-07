@@ -110,6 +110,44 @@ describe("captureAgentVariantScreenshots", () => {
     );
   });
 
+  it("captures the anchored instance, not the first, when an element is repeated", async () => {
+    // A repeated element: two DOM copies share one anchor (a .map() list or a
+    // shared component). The comment is anchored to the SECOND copy.
+    document.body.innerHTML =
+      '<button data-comment-anchor="anchor-1">first copy</button>' +
+      '<button data-comment-anchor="anchor-1">second copy</button>';
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((input: string | URL | Request, init?: RequestInit) => {
+        const url = String(input);
+        const body = JSON.parse(String(init?.body ?? "{}")) as { v?: number };
+        if (url === "/api/iterations/activate" && body.v === 1) {
+          // Source-level change re-renders every copy of the element.
+          for (const el of document.querySelectorAll("[data-comment-anchor]")) {
+            el.textContent = `${el.textContent} v1`;
+          }
+        }
+        return Promise.resolve(
+          new Response(JSON.stringify({ ok: true }), { status: 200 })
+        );
+      })
+    );
+
+    await captureAgentVariantScreenshots({
+      id: "comment-1",
+      anchor: "anchor-1",
+      instance: 1,
+      versions: [1],
+      activeV: 1,
+      initialPreviousSignature: anchorRenderSignature("anchor-1", 1),
+    });
+
+    // The PNG must come from the second copy (the one commented on), not the
+    // first that querySelector would have grabbed.
+    expect(htmlToImageMock.capturedText).toEqual(["second copy v1"]);
+  });
+
   it("captures pending variants then restores baseline when baseline is active", async () => {
     const activations: number[] = [];
 

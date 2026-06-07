@@ -1,4 +1,4 @@
-import { copyFile, readFile } from "node:fs/promises";
+import { copyFile, readFile, unlink } from "node:fs/promises";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import path from "node:path";
 import { getAgentRuntimeConfig } from "../agent/config.ts";
@@ -22,6 +22,12 @@ import { WriteError } from "../comments/writer-errors.ts";
 import { atomicWriteText } from "../platform/atomic-write.ts";
 import { errorMessage } from "../platform/http.ts";
 import {
+  type AuxFileMap,
+  mergeBaselineAuxFiles,
+  restoreAuxFilesForVersion,
+  writeVersionAuxFiles,
+} from "./aux-files.ts";
+import {
   findVersionPngPath,
   iterationPngUrl,
   nextIterationVersion,
@@ -29,6 +35,12 @@ import {
   pngMtimeMs,
   resolveIterationDirRoots,
 } from "./manifest.ts";
+import {
+  diffSourceSnapshots,
+  fromRelPosix,
+  snapshotSourceFiles,
+  toRelPosix,
+} from "./source-files.ts";
 
 export interface NdjsonStream {
   abortController: AbortController;
@@ -108,6 +120,35 @@ function variantProgressPrefix(variantIndex: number, count: number): string {
   return count > 1 ? `variant ${variantIndex}/${count} — ` : "";
 }
 
+/**
+ * Reset files an earlier variant in this batch touched back to their pre-agent
+ * content, so each variant starts from a clean baseline. A `null`/missing
+ * baseline means the file did not exist before, so we remove it.
+ */
+async function restoreFilesToBaseline(
+  projectRoot: string,
+  rels: Iterable<string>,
+  baselineFiles: Map<string, string>
+): Promise<void> {
+  for (const rel of rels) {
+    const abs = fromRelPosix(projectRoot, rel);
+    const baseline = baselineFiles.get(rel);
+    if (baseline === undefined) {
+      try {
+        await unlink(abs);
+      } catch {
+        // already gone — fine
+      }
+      continue;
+    }
+    try {
+      await atomicWriteText(abs, baseline);
+    } catch {
+      // best-effort restore; the agent re-reads files before editing
+    }
+  }
+}
+
 async function persistNewIterationSnapshot(
   found: FoundComment,
   id: string,
@@ -118,6 +159,8 @@ async function persistNewIterationSnapshot(
   lastAgentSummary: string | undefined,
   stream: NdjsonStream,
   options: {
+    auxBaseline: AuxFileMap;
+    auxFiles: AuxFileMap;
     createdAt: string;
     runId: string;
     setActive: boolean;
@@ -135,6 +178,18 @@ async function persistNewIterationSnapshot(
 
   try {
     await atomicWriteText(nextTsx, afterSource);
+  } catch (err) {
+    return { ok: false, error: errorMessage(err) };
+  }
+
+  // Persist edits to files OTHER than the comment's file (e.g. a reused
+  // component's own definition) plus their pre-agent baseline, so switching
+  // versions can restore or revert them.
+  try {
+    await writeVersionAuxFiles(iterDir, nextV, options.auxFiles);
+    if (Object.keys(options.auxBaseline).length > 0) {
+      await mergeBaselineAuxFiles(iterDir, options.auxBaseline);
+    }
   } catch (err) {
     return { ok: false, error: errorMessage(err) };
   }
@@ -268,6 +323,9 @@ async function waitForVariantScreenshot(
 interface VariantRunOutcome {
   afterSource?: string;
   attempts?: AgentAttemptTiming[];
+  /** Files OTHER than the comment file the agent changed in this variant. */
+  auxBaseline?: AuxFileMap;
+  auxFiles?: AuxFileMap;
   changed: boolean;
   error?: string;
   modelUsed?: AgentModel;
@@ -278,7 +336,9 @@ interface VariantRunOutcome {
 }
 
 async function runSingleAgentVariant(args: {
+  baselineFiles: Map<string, string>;
   beforeSource: string;
+  commentRel: string;
   count: number;
   found: FoundComment;
   model: AgentModel;
@@ -286,10 +346,13 @@ async function runSingleAgentVariant(args: {
   projectRoot: string;
   skills: AgentSkill[];
   stream: NdjsonStream;
+  touchedAux: Set<string>;
   variantIndex: number;
 }): Promise<{ result: VariantRunOutcome; lastAgentSummary?: string }> {
   const {
+    baselineFiles,
     beforeSource,
+    commentRel,
     count,
     found,
     model,
@@ -297,12 +360,15 @@ async function runSingleAgentVariant(args: {
     projectRoot,
     skills,
     stream,
+    touchedAux,
     variantIndex,
   } = args;
   const variantPrefix = variantProgressPrefix(variantIndex, count);
 
   try {
     await atomicWriteText(found.absolutePath, beforeSource);
+    // Undo any cross-file edits from earlier variants so this one starts clean.
+    await restoreFilesToBaseline(projectRoot, touchedAux, baselineFiles);
   } catch (err) {
     return {
       result: {
@@ -389,7 +455,21 @@ async function runSingleAgentVariant(args: {
     };
   }
 
-  if (afterSource === beforeSource) {
+  // Detect edits to files OTHER than the comment file (e.g. a reused
+  // component's definition) by diffing the source tree against the batch
+  // baseline. The comment file is snapshotted separately as v{N}.tsx.
+  const afterFiles = await snapshotSourceFiles(projectRoot);
+  const changedFiles = diffSourceSnapshots(baselineFiles, afterFiles);
+  changedFiles.delete(commentRel);
+  const auxFiles: AuxFileMap = {};
+  const auxBaseline: AuxFileMap = {};
+  for (const [rel, content] of changedFiles) {
+    auxFiles[rel] = content;
+    auxBaseline[rel] = baselineFiles.get(rel) ?? null;
+  }
+  const auxChanged = Object.keys(auxFiles).length > 0;
+
+  if (afterSource === beforeSource && !auxChanged) {
     return {
       result: {
         ok: true,
@@ -410,6 +490,8 @@ async function runSingleAgentVariant(args: {
       changed: true,
       stage: "done",
       afterSource,
+      auxFiles,
+      auxBaseline,
       modelUsed: agentResult.modelUsed,
       turnsUsed: agentResult.turnsUsed,
       toolCalls: agentResult.toolCalls,
@@ -544,7 +626,14 @@ async function persistChangedVariant(args: {
     iterationRoots,
     lastAgentSummary,
     stream,
-    { createdAt: runCreatedAt, runId, setActive: false, variantPrefix }
+    {
+      auxBaseline: result.auxBaseline ?? {},
+      auxFiles: result.auxFiles ?? {},
+      createdAt: runCreatedAt,
+      runId,
+      setActive: false,
+      variantPrefix,
+    }
   );
 
   if (!persisted.ok) {
@@ -603,6 +692,13 @@ async function persistChangedVariant(args: {
   };
 }
 
+/** Accumulate the relative paths a variant touched into the batch's set. */
+function addAuxPaths(touchedAux: Set<string>, auxFiles?: AuxFileMap): void {
+  for (const rel of Object.keys(auxFiles ?? {})) {
+    touchedAux.add(rel);
+  }
+}
+
 async function runVariantBatch(args: {
   beforeSource: string;
   count: number;
@@ -625,6 +721,13 @@ async function runVariantBatch(args: {
   };
   const priorVariantApproaches: string[] = [];
 
+  // Pre-agent snapshot of the whole source tree. Diffing against it after each
+  // variant reveals cross-file edits (e.g. to a reused component's definition);
+  // `touchedAux` accumulates them so later variants reset to baseline first.
+  const baselineFiles = await snapshotSourceFiles(args.projectRoot);
+  const commentRel = toRelPosix(args.projectRoot, args.found.absolutePath);
+  const touchedAux = new Set<string>();
+
   for (let variantIndex = 1; variantIndex <= args.count; variantIndex += 1) {
     if (args.stream.clientGone()) {
       break;
@@ -644,7 +747,9 @@ async function runVariantBatch(args: {
     let variantOutput: Awaited<ReturnType<typeof runSingleAgentVariant>>;
     try {
       variantOutput = await runSingleAgentVariant({
+        baselineFiles,
         beforeSource: args.beforeSource,
+        commentRel,
         count: args.count,
         found: args.found,
         model: args.model,
@@ -652,6 +757,7 @@ async function runVariantBatch(args: {
         projectRoot: args.projectRoot,
         skills: args.skills,
         stream: args.stream,
+        touchedAux,
         variantIndex,
       });
     } finally {
@@ -732,6 +838,7 @@ async function runVariantBatch(args: {
     state.lastTurnsUsed = result.turnsUsed;
     state.lastToolCalls = result.toolCalls;
     state.lastPng = step.png;
+    addAuxPaths(touchedAux, result.auxFiles);
 
     const approachSummary =
       lastAgentSummary?.trim() ||
@@ -780,6 +887,8 @@ async function finishSuccessfulBatch(args: {
   found: FoundComment;
   hooks?: RunNewIterationHooks;
   id: string;
+  iterationRoots: string[];
+  projectRoot: string;
   recordRun: RecordRunFn;
   state: VariantBatchState;
   stream: NdjsonStream;
@@ -835,6 +944,27 @@ async function finishSuccessfulBatch(args: {
     file: args.found.relativePath,
     id: args.id,
   });
+
+  // Make sure every cross-file edit on disk matches the now-active version
+  // (the final variant may have touched a different file set than earlier ones)
+  // and trigger HMR for each.
+  try {
+    const auxWritten = await restoreAuxFilesForVersion(
+      args.projectRoot,
+      args.iterationRoots,
+      lastV
+    );
+    for (const absolutePath of auxWritten) {
+      notifyRunSourceApplied(args.hooks, {
+        absolutePath,
+        active: lastV,
+        file: args.found.relativePath,
+        id: args.id,
+      });
+    }
+  } catch {
+    // The agent's own edits already left the files in the right state.
+  }
 
   if (args.stream.clientGone()) {
     return;
@@ -930,6 +1060,8 @@ export async function runNewIteration(
     found,
     hooks,
     id,
+    iterationRoots,
+    projectRoot,
     recordRun,
     state,
     stream,

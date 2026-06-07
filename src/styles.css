@@ -218,10 +218,10 @@
   /* Hold the indeterminate segment as a quiet static fill instead of hiding it
      off-track (its keyframe parks it past the right edge). */
   .redline-indeterminate {
-    animation: none;
-    transform: none;
     width: 100%;
     opacity: 0.55;
+    transform: none;
+    animation: none;
   }
 }
 

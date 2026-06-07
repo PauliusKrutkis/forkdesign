@@ -13,6 +13,8 @@ export function useAgentIteration(args: {
   lead: CommentData | undefined;
   agentModel: OverlayModel;
   agentVersionCount: number;
+  /** Anchored instance index; threaded to screenshot capture. Defaults to 0. */
+  instance?: number;
   reloadIterations: () => void | Promise<void>;
   /** Pin loading — survives bubble close until the run finishes. */
   onAgentWorkingChange?: (
@@ -30,6 +32,7 @@ export function useAgentIteration(args: {
     lead,
     agentModel,
     agentVersionCount,
+    instance = 0,
     reloadIterations,
     onAgentWorkingChange,
     clearPreferredActive,
@@ -95,6 +98,7 @@ export function useAgentIteration(args: {
         lead,
         agentModel: runModel,
         agentVersionCount: runCount,
+        instance,
         signal: abortController.signal,
         reloadIterations,
         setIterateError,
@@ -118,6 +122,7 @@ export function useAgentIteration(args: {
       iterating,
       agentModel,
       agentVersionCount,
+      instance,
       reloadIterations,
       onAgentWorkingChange,
       clearPreferredActive,

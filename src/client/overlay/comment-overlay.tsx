@@ -954,6 +954,7 @@ function OpenBubble({
       initialActiveVersion={
         lead ? activeVersionByComment.get(lead.id) : undefined
       }
+      instance={target.instance}
       onActiveVersionChange={onActiveVersionChange}
       onAgentModelChange={onAgentModelChange}
       onAgentWorkingChange={onAgentWorkingChange}

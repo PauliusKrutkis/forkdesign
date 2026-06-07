@@ -62,6 +62,7 @@ export async function runAgentIterationRequest(args: {
   lead: CommentData;
   agentModel: OverlayModel;
   agentVersionCount: number;
+  instance?: number;
   signal: AbortSignal;
   reloadIterations: () => void | Promise<void>;
   setIterateError: (message: string | null) => void;
@@ -71,6 +72,7 @@ export async function runAgentIterationRequest(args: {
     lead,
     agentModel,
     agentVersionCount,
+    instance = 0,
     signal,
     reloadIterations,
     setIterateError,
@@ -85,6 +87,7 @@ export async function runAgentIterationRequest(args: {
       const uploaded = await captureAndUploadVersionNow({
         id: lead.id,
         anchor: lead.anchor,
+        instance,
         v: 0,
       });
       if (uploaded) {
@@ -121,6 +124,7 @@ export async function runAgentIterationRequest(args: {
             captureAndUploadVersionAfterHmr({
               id: lead.id,
               anchor: lead.anchor,
+              instance,
               v: event.version,
             })
               .then(async () => {

@@ -4,9 +4,7 @@
   "ignoreDependencies": ["@biomejs/biome", "tailwindcss"],
   "ignore": ["src/client/ui/**", "src/redline.css", "src/styles.css"],
   "ignoreIssues": {
-    "src/client/overlay/comment-thumb.tsx": ["exports"],
     "src/client/settings.ts": ["exports"],
-    "src/server/agent/index.ts": ["exports", "types"],
     "src/server/agent/config.ts": ["exports"],
     "src/server/agent/cursor-models.ts": ["exports"],
     "src/server/agent/models.ts": ["exports"],
