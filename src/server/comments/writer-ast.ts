@@ -21,6 +21,8 @@ import babelTsParser from "recast/parsers/babel-ts.js";
 import { WriteError } from "./writer-errors.ts";
 
 const INDENT_ONLY_RE = /^[ \t]*$/;
+const COMMENT_ID_ATTR_RE = /\bid="([^"]+)"/;
+const JSX_WHITESPACE_RE = /^\s*$/;
 
 export function pushComments(
   list: readonly Comment[] | null | undefined,
@@ -112,6 +114,46 @@ export function findJsxElementByAnchor(
   return found;
 }
 
+/**
+ * Find the JSXElement immediately before a specific `{/* @comment ... *\/}`
+ * marker. This disambiguates repeated source elements that share the same
+ * `data-comment-anchor` value, because the marker is written next to the exact
+ * instance the user commented on.
+ */
+export function findJsxElementByCommentMarker(
+  ast: File,
+  commentId: string
+): JSXElement | null {
+  let found: JSXElement | null = null;
+  recast.visit(ast, {
+    visitJSXExpressionContainer(jsxPath) {
+      if (found) {
+        return false;
+      }
+      const node = jsxPath.node as JSXExpressionContainer;
+      if (!isCommentMarkerForId(node, commentId)) {
+        this.traverse(jsxPath);
+        return;
+      }
+
+      let parent = jsxPath.parent;
+      while (parent) {
+        const parentNode = parent.value as unknown;
+        if (isJsxParent(parentNode)) {
+          const idx = parentNode.children.indexOf(node);
+          if (idx >= 0) {
+            found = previousJsxElementSibling(parentNode.children, idx);
+            return false;
+          }
+        }
+        parent = parent.parent;
+      }
+      return false;
+    },
+  });
+  return found;
+}
+
 export function readAttrValue(
   opening: JSXOpeningElement,
   name: string
@@ -140,6 +182,48 @@ export function readAttrValue(
       return v.expression.value;
     }
     return null;
+  }
+  return null;
+}
+
+function isCommentMarkerForId(
+  node: JSXExpressionContainer,
+  commentId: string
+): boolean {
+  if (node.expression.type !== "JSXEmptyExpression") {
+    return false;
+  }
+  const blocks: Comment[] = [];
+  pushComments(node.innerComments, blocks);
+  pushComments(node.leadingComments, blocks);
+  pushComments(node.trailingComments, blocks);
+  pushComments(node.expression.innerComments, blocks);
+  pushComments(node.expression.leadingComments, blocks);
+  pushComments(node.expression.trailingComments, blocks);
+  return blocks.some((block) => {
+    if (block.type !== "CommentBlock") {
+      return false;
+    }
+    if (!block.value.trim().startsWith("@comment")) {
+      return false;
+    }
+    return block.value.match(COMMENT_ID_ATTR_RE)?.[1] === commentId;
+  });
+}
+
+function previousJsxElementSibling(
+  children: readonly Node[],
+  markerIndex: number
+): JSXElement | null {
+  for (let i = markerIndex - 1; i >= 0; i--) {
+    const child = children[i];
+    if (!child) {
+      continue;
+    }
+    if (child.type === "JSXText" && JSX_WHITESPACE_RE.test(child.value)) {
+      continue;
+    }
+    return child.type === "JSXElement" ? child : null;
   }
   return null;
 }

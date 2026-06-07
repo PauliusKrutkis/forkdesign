@@ -5,6 +5,7 @@ import path from "node:path";
 export interface VersionManifestEntry {
   createdAt: string;
   runId?: string;
+  screenshotCaptured?: boolean;
   summary: string;
 }
 
@@ -84,6 +85,7 @@ function parseManifestEntry(
   const entry = value as {
     createdAt?: unknown;
     runId?: unknown;
+    screenshotCaptured?: unknown;
     summary?: unknown;
   };
   const summary = typeof entry.summary === "string" ? entry.summary.trim() : "";
@@ -96,6 +98,9 @@ function parseManifestEntry(
     createdAt: createdAt || new Date(0).toISOString(),
     ...(typeof entry.runId === "string" && entry.runId.trim()
       ? { runId: entry.runId.trim() }
+      : {}),
+    ...(typeof entry.screenshotCaptured === "boolean"
+      ? { screenshotCaptured: entry.screenshotCaptured }
       : {}),
   };
 }
@@ -142,7 +147,12 @@ export function enrichVersionMeta(
   v: number,
   manifestEntry: VersionManifestEntry | null,
   tsxMtimeMs: number | null
-): { createdAt: string; runId?: string; summary: string } {
+): {
+  createdAt: string;
+  runId?: string;
+  screenshotCaptured?: boolean;
+  summary: string;
+} {
   const summary = manifestEntry?.summary?.trim() || defaultSummaryForVersion(v);
   let createdAt = manifestEntry?.createdAt;
   if (!createdAt || Number.isNaN(Date.parse(createdAt))) {
@@ -155,6 +165,9 @@ export function enrichVersionMeta(
     summary,
     createdAt,
     ...(manifestEntry?.runId ? { runId: manifestEntry.runId } : {}),
+    ...(typeof manifestEntry?.screenshotCaptured === "boolean"
+      ? { screenshotCaptured: manifestEntry.screenshotCaptured }
+      : {}),
   };
 }
 
@@ -323,6 +336,22 @@ export async function patchIterationsManifest(
     ...EMPTY_MANIFEST,
   };
   await writeIterationsManifest(iterDir, mergeVersionEntry(existing, v, entry));
+}
+
+export async function updateVersionScreenshotCaptured(
+  iterDir: string,
+  v: number,
+  screenshotCaptured: boolean
+): Promise<void> {
+  const existing = await readIterationsManifest(iterDir);
+  const entry = versionEntryFromManifest(existing, v);
+  if (!(existing && entry)) {
+    return;
+  }
+  await writeIterationsManifest(
+    iterDir,
+    mergeVersionEntry(existing, v, { ...entry, screenshotCaptured })
+  );
 }
 
 export async function deleteVersionFromManifest(

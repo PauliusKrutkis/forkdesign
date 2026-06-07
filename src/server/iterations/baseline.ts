@@ -38,6 +38,7 @@ export async function seedBaselineIteration(
       await patchIterationsManifest(iterDir, 0, {
         summary: "Baseline",
         createdAt: new Date().toISOString(),
+        screenshotCaptured: Boolean(screenshotBytes),
       });
     } catch (manifestErr) {
       console.warn(

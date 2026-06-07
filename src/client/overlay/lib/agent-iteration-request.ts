@@ -2,10 +2,8 @@ import type { OverlayModel } from "../../settings.ts";
 import type { CommentData } from "../../types.ts";
 import { readApiError } from "./api.ts";
 import {
-  anchorRenderSignature,
   captureAndUploadVersionAfterHmr,
   captureAndUploadVersionNow,
-  scheduleAgentVariantScreenshots,
 } from "./capture-iteration-screenshot.ts";
 import { isAbortError, toErrorMessage } from "./errors.ts";
 import { ignorePromiseRejection } from "./ignore-promise-rejection.ts";
@@ -25,7 +23,42 @@ export async function cancelAgentIterationRequest(id: string): Promise<void> {
   });
 }
 
+async function activateIterationVersion(
+  id: string,
+  v: number
+): Promise<boolean> {
+  const res = await fetch("/api/iterations/activate", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ id, v }),
+  });
+  return res.ok;
+}
+
+async function restorePreferredActiveVersion(args: {
+  currentVersion: number | undefined;
+  getPreferredActive?: () => number | null;
+  id: string;
+  reloadIterations: () => void | Promise<void>;
+}): Promise<void> {
+  const preferredActive = args.getPreferredActive?.();
+  if (
+    preferredActive === null ||
+    preferredActive === undefined ||
+    preferredActive === args.currentVersion
+  ) {
+    return;
+  }
+
+  if (await activateIterationVersion(args.id, preferredActive)) {
+    await Promise.resolve(args.reloadIterations()).catch(
+      ignorePromiseRejection
+    );
+  }
+}
+
 export async function runAgentIterationRequest(args: {
+  getPreferredActive?: () => number | null;
   lead: CommentData;
   agentModel: OverlayModel;
   agentVersionCount: number;
@@ -42,11 +75,10 @@ export async function runAgentIterationRequest(args: {
     reloadIterations,
     setIterateError,
     setIterateStatus,
+    getPreferredActive,
   } = args;
 
   try {
-    const preAgentSignature = anchorRenderSignature(lead.anchor);
-
     // Agent runs change the page; capture baseline (v0) only while the DOM
     // still reflects the pre-agent state. Comment-only creates already POST v0.
     if (!lead.screenshot) {
@@ -91,7 +123,15 @@ export async function runAgentIterationRequest(args: {
               anchor: lead.anchor,
               v: event.version,
             })
-              .then(reload)
+              .then(async () => {
+                await restorePreferredActiveVersion({
+                  id: lead.id,
+                  currentVersion: event.version,
+                  getPreferredActive,
+                  reloadIterations,
+                });
+                reload();
+              })
               .catch(ignorePromiseRejection);
           }
         }
@@ -112,25 +152,12 @@ export async function runAgentIterationRequest(args: {
     window.setTimeout(() => setIterateStatus(null), 3000);
 
     await Promise.resolve(reloadIterations()).catch(ignorePromiseRejection);
-
-    const agentVersions =
-      validated.value.versions?.filter((v) => v > 0) ??
-      (validated.value.v !== undefined && validated.value.v > 0
-        ? [validated.value.v]
-        : []);
-    const activeV = validated.value.v ?? agentVersions.at(-1) ?? 0;
-    if (agentVersions.length > 0) {
-      scheduleAgentVariantScreenshots({
-        id: lead.id,
-        anchor: lead.anchor,
-        versions: agentVersions,
-        activeV,
-        initialPreviousSignature: preAgentSignature,
-        onDone: () => {
-          Promise.resolve(reloadIterations()).catch(ignorePromiseRejection);
-        },
-      });
-    }
+    await restorePreferredActiveVersion({
+      id: lead.id,
+      currentVersion: validated.value.v,
+      getPreferredActive,
+      reloadIterations,
+    });
     return "ok";
   } catch (err) {
     if (isAbortError(err)) {

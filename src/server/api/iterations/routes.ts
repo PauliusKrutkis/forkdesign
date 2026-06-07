@@ -16,6 +16,7 @@ import {
   pngMtimeMs,
   readIterationsManifest,
   tsxMtimeMs,
+  updateVersionScreenshotCaptured,
   versionEntryFromManifest,
 } from "../../iterations/manifest.ts";
 import {
@@ -176,6 +177,7 @@ export async function handleIterationsList(
       png: iterationPngUrl(id, n, pngMtimeMs(iterationRoots, n)),
       summary: meta.summary,
       createdAt: meta.createdAt,
+      ...(meta.screenshotCaptured === false ? { screenshotPending: true } : {}),
       ...(meta.runId ? { runId: meta.runId } : {}),
     };
   });
@@ -529,6 +531,13 @@ export async function handleIterationsScreenshot(
   } catch (err) {
     sendError(res, 500, errorMessage(err));
     return;
+  }
+  try {
+    await updateVersionScreenshotCaptured(ctx.iterDir, v, true);
+  } catch (err) {
+    console.warn(
+      `[vite-plugin-comments] failed to mark v${v}.png captured: ${errorMessage(err)}`
+    );
   }
   notifyVariantScreenshotUploaded(id, v);
 

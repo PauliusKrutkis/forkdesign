@@ -67,6 +67,7 @@ interface CommentComposerProps {
 const PANEL_WIDTH = 400;
 const VIEWPORT_PADDING = 12;
 const MAX_PICKER_CRUMBS = 5;
+const PICKER_CLEAR_DELAY_MS = 750;
 
 interface PickerCandidate {
   el: HTMLElement;
@@ -143,8 +144,13 @@ export function CommentComposer({
       if (!(state && candidate)) {
         return;
       }
+      const el = liveCandidateElement(candidate, state.point);
+      if (!el) {
+        setPicker(null);
+        return;
+      }
       setPicker(null);
-      setTarget({ el: candidate.el, clickPoint: { ...state.point } });
+      setTarget({ el, clickPoint: { ...state.point } });
     },
     [setPicker]
   );
@@ -167,12 +173,30 @@ export function CommentComposer({
       return;
     }
 
+    let pickerClearTimer: number | null = null;
+    const cancelPickerClear = () => {
+      if (pickerClearTimer !== null) {
+        window.clearTimeout(pickerClearTimer);
+        pickerClearTimer = null;
+      }
+    };
+    const schedulePickerClear = () => {
+      if (!pickerRef.current || pickerClearTimer !== null) {
+        return;
+      }
+      pickerClearTimer = window.setTimeout(() => {
+        pickerClearTimer = null;
+        setPicker(null);
+      }, PICKER_CLEAR_DELAY_MS);
+    };
+
     const updatePicker = (x: number, y: number): HTMLElement | null => {
       const elements = pickTargetStack(x, y);
       if (elements.length === 0) {
-        setPicker(null);
+        schedulePickerClear();
         return null;
       }
+      cancelPickerClear();
 
       // Depth-locked: keep the same ancestor offset (index 0 = deepest hit)
       // as the cursor moves, clamped to the new stack. Locking by depth rather
@@ -263,10 +287,16 @@ export function CommentComposer({
     // (used by the Enter hotkey, which has no event coordinates).
     const commitCurrent = (clickPoint?: { x: number; y: number }): boolean => {
       const state = pickerRef.current;
-      const el = state?.candidates[state.selectedIndex]?.el ?? null;
-      if (!(el && state)) {
+      const candidate = state?.candidates[state.selectedIndex];
+      if (!(state && candidate)) {
         return false;
       }
+      const el = liveCandidateElement(candidate, clickPoint ?? state.point);
+      if (!el) {
+        setPicker(null);
+        return false;
+      }
+      cancelPickerClear();
       setPicker(null);
       setTarget({ el, clickPoint: clickPoint ?? { ...state.point } });
       return true;
@@ -341,6 +371,7 @@ export function CommentComposer({
     document.addEventListener("keydown", onKey);
 
     return () => {
+      cancelPickerClear();
       document.removeEventListener("mousemove", onMove, true);
       document.removeEventListener("pointerdown", onPointerDown, true);
       document.removeEventListener("mousedown", onMouseDown, true);
@@ -921,6 +952,39 @@ function toCandidate(el: HTMLElement): PickerCandidate {
       height: rect.height,
     },
   };
+}
+
+function liveCandidateElement(
+  candidate: PickerCandidate,
+  point: { x: number; y: number }
+): HTMLElement | null {
+  if (candidate.el.isConnected) {
+    return candidate.el;
+  }
+
+  const sourceLoc = candidate.el.getAttribute("data-source-loc");
+  if (!sourceLoc) {
+    return null;
+  }
+  const matches = document.querySelectorAll<HTMLElement>(
+    `[data-source-loc="${cssEscape(sourceLoc)}"]`
+  );
+  const liveMatches = Array.from(matches).filter(
+    (match) => !isOverlayElement(match)
+  );
+  return (
+    liveMatches.find((match) => {
+      const rect = match.getBoundingClientRect();
+      return (
+        point.x >= rect.left &&
+        point.x <= rect.right &&
+        point.y >= rect.top &&
+        point.y <= rect.bottom
+      );
+    }) ??
+    liveMatches[0] ??
+    null
+  );
 }
 
 function findSourceOccurrenceRects(

@@ -87,4 +87,71 @@ describe("applyIterationVersionToSource", () => {
       comments.find((comment) => comment.id === "comment-b")?.active
     ).toBeUndefined();
   });
+
+  it("switches the repeated instance next to the comment marker when anchors are duplicated", async () => {
+    projectRoot = await mkdtemp(path.join(tmpdir(), "redline-activate-"));
+    const sourcePath = path.join(projectRoot, "src", "Page.tsx");
+    const iterDir = path.join(
+      projectRoot,
+      "designs",
+      "iterations",
+      "comment-a"
+    );
+    await mkdir(path.dirname(sourcePath), { recursive: true });
+    await mkdir(iterDir, { recursive: true });
+
+    const currentSource = `export function Page() {
+  return (
+    <main>
+      <button data-comment-anchor="shared-anchor">First live copy</button>
+      <button data-comment-anchor="shared-anchor">Second baseline copy</button>
+      {/* @comment id="comment-a" anchor="shared-anchor" text="make only this copy bold" author="dev@local" date="2026-01-01T00:00:00.000Z" */}
+    </main>
+  );
+}
+`;
+    const snapshotSource = `export function Page() {
+  return (
+    <main>
+      <button data-comment-anchor="shared-anchor">First snapshot copy</button>
+      <button data-comment-anchor="shared-anchor">Second variant copy</button>
+      {/* @comment id="comment-a" anchor="shared-anchor" text="make only this copy bold" author="dev@local" date="2026-01-01T00:00:00.000Z" */}
+    </main>
+  );
+}
+`;
+    await writeFile(sourcePath, currentSource, "utf8");
+    await writeFile(path.join(iterDir, "v1.tsx"), snapshotSource, "utf8");
+
+    const found: FoundComment = {
+      absolutePath: sourcePath,
+      relativePath: "src/Page.tsx",
+      siblingIds: [],
+      comment: {
+        id: "comment-a",
+        anchor: "shared-anchor",
+        text: "make only this copy bold",
+      },
+    };
+
+    const result = await applyIterationVersionToSource(
+      found,
+      [iterDir],
+      "comment-a",
+      1
+    );
+
+    expect(result).toEqual({ ok: true });
+    const output = await readFile(sourcePath, "utf8");
+    expect(output).toContain("First live copy");
+    expect(output).not.toContain("First snapshot copy");
+    expect(output).toContain("Second variant copy");
+    expect(output).not.toContain("Second baseline copy");
+
+    const { comments, warnings } = readCommentsFromSource(output);
+    expect(warnings).toEqual([]);
+    expect(comments.find((comment) => comment.id === "comment-a")?.active).toBe(
+      1
+    );
+  });
 });

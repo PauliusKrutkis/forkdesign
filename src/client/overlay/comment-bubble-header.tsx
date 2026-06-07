@@ -2,6 +2,7 @@ import {
   CheckCircle2,
   Eye,
   GripVertical,
+  LocateFixed,
   PanelRightClose,
   PanelRightOpen,
   Trash2,
@@ -14,12 +15,16 @@ import { HotkeyTip } from "./hotkey-tip.tsx";
 import { withCtrl } from "./shortcut-hint.tsx";
 
 interface CommentBubbleHeaderProps {
+  /** Whether the panel has been moved off its anchor (dragged or docked). */
+  canReanchor: boolean;
   docked: boolean;
   height: number;
   onClose: () => void;
   onDragStart: (e: PointerEvent<HTMLDivElement>) => void;
   /** Press-and-hold: fade the panel so the design shows through underneath. */
   onPeekStart: () => void;
+  /** Snap the panel back to its anchor, clearing any saved/dragged position. */
+  onReanchor: () => void;
   onRequestDelete?: () => void;
   onResolve?: () => void;
   onToggleDock: () => void;
@@ -27,6 +32,7 @@ interface CommentBubbleHeaderProps {
 }
 
 export function CommentBubbleHeader({
+  canReanchor,
   docked,
   height,
   resolved,
@@ -35,27 +41,39 @@ export function CommentBubbleHeader({
   onClose,
   onDragStart,
   onPeekStart,
+  onReanchor,
   onToggleDock,
 }: CommentBubbleHeaderProps) {
   return (
     <div
       className={cn(
         "relative flex shrink-0 items-center gap-0.5 border-b pr-1 pl-2",
-        // The whole header is the drag handle in float posture; docked panels
-        // are edge-snapped, so dragging is disabled there (resize only).
-        docked ? "cursor-default" : "cursor-grab active:cursor-grabbing"
+        // The whole header is the drag handle. Dragging a docked panel detaches
+        // it to float so it can be flung to a different edge (drag-to-dock).
+        "cursor-grab active:cursor-grabbing"
       )}
       onPointerDown={onDragStart}
       style={{ height }}
     >
       <GripVertical
         aria-hidden
-        className={cn(
-          "pointer-events-none h-4 w-4 shrink-0 text-muted-foreground",
-          docked && "opacity-30"
-        )}
+        className="pointer-events-none h-4 w-4 shrink-0 text-muted-foreground"
       />
       <div className="flex-1" />
+      {canReanchor ? (
+        <HotkeyTip label="Move back to anchor" side="bottom">
+          <Button
+            aria-label="Move back to anchor"
+            className="h-7 w-7 shrink-0"
+            onClick={onReanchor}
+            size="icon"
+            type="button"
+            variant="ghost"
+          >
+            <LocateFixed className="h-4 w-4" />
+          </Button>
+        </HotkeyTip>
+      ) : null}
       <HotkeyTip
         keys={withCtrl("E")}
         label="Hold to peek through"

@@ -769,6 +769,7 @@ export function CommentOverlay({
           >
             {shell === "list" ? (
               <CommentManagementPanel
+                agentRunsByAnchor={agentRunsByAnchor}
                 comments={comments}
                 fileToRoute={fileToRoute}
                 hideResolved={settings.hideResolved}

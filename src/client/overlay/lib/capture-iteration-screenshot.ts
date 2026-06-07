@@ -234,11 +234,17 @@ export async function captureAgentVariantScreenshots(args: {
     return;
   }
 
-  const others = agentVersions.filter((v) => v !== args.activeV);
+  const firstCaptureV = agentVersions.includes(args.activeV)
+    ? args.activeV
+    : agentVersions[0];
+  if (firstCaptureV === undefined) {
+    return;
+  }
+  const others = agentVersions.filter((v) => v !== firstCaptureV);
 
-  if (!(await activateIterationVersion(args.id, args.activeV))) {
+  if (!(await activateIterationVersion(args.id, firstCaptureV))) {
     console.warn(
-      `[CommentBubble] failed to activate v${args.activeV} for screenshot capture`
+      `[CommentBubble] failed to activate v${firstCaptureV} for screenshot capture`
     );
     return;
   }
@@ -247,7 +253,7 @@ export async function captureAgentVariantScreenshots(args: {
     id: args.id,
     anchor: args.anchor,
     previousSignature: args.initialPreviousSignature,
-    v: args.activeV,
+    v: firstCaptureV,
   });
 
   for (const v of others.toSorted((a, b) => a - b)) {
@@ -266,7 +272,7 @@ export async function captureAgentVariantScreenshots(args: {
     });
   }
 
-  if (others.length > 0) {
+  if (others.length > 0 || args.activeV !== firstCaptureV) {
     const previousSignature = anchorRenderSignature(args.anchor);
     if (await activateIterationVersion(args.id, args.activeV)) {
       await waitForVersionRender({

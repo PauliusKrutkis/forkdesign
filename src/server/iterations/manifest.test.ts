@@ -29,6 +29,7 @@ describe("parseManifestJson", () => {
             summary: "Red CTA",
             createdAt: "2026-01-02T00:00:00.000Z",
             runId: "run-a",
+            screenshotCaptured: false,
           },
         },
       })
@@ -36,6 +37,7 @@ describe("parseManifestJson", () => {
     expect(m.versions["0"]?.summary).toBe("Baseline");
     expect(m.versions["1"]?.summary).toBe("Red CTA");
     expect(m.versions["1"]?.runId).toBe("run-a");
+    expect(m.versions["1"]?.screenshotCaptured).toBe(false);
   });
 
   it("returns empty versions for invalid json", () => {
@@ -87,12 +89,14 @@ describe("enrichVersionMeta", () => {
         summary: "Custom",
         createdAt: "2026-05-01T12:00:00.000Z",
         runId: "run-a",
+        screenshotCaptured: false,
       },
       1000
     );
     expect(meta.summary).toBe("Custom");
     expect(meta.createdAt).toBe("2026-05-01T12:00:00.000Z");
     expect(meta.runId).toBe("run-a");
+    expect(meta.screenshotCaptured).toBe(false);
   });
 
   it("falls back to defaults and mtime", () => {

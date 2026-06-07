@@ -165,6 +165,33 @@ export function setActiveOnDirective(raw: string, active: number): string {
   return `${content}${sep}active=${active}${trail}`;
 }
 
+export function setCommentActiveInSource(
+  source: string,
+  commentId: string,
+  active: number
+): string {
+  if (!Number.isInteger(active) || active < 0) {
+    throw new WriteError(
+      `active must be a non-negative integer (got ${active})`,
+      400
+    );
+  }
+
+  const directiveInner = extractDirectiveInner(source, commentId);
+  if (directiveInner === null) {
+    throw new WriteError(
+      `no @comment with id="${commentId}" found in source`,
+      404
+    );
+  }
+
+  return replaceCommentMarkerInSource(
+    source,
+    commentId,
+    setActiveOnDirective(directiveInner, active)
+  );
+}
+
 /** Toggle the bare `resolved` flag on a directive (reader parses as boolean). */
 export function setResolvedOnDirective(raw: string, resolved: boolean): string {
   const hasResolved = RESOLVED_ATTR_RE.test(raw);

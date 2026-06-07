@@ -18,6 +18,7 @@ import { useBubbleLeadActions } from "./hooks/use-bubble-lead-actions.ts";
 import { useBubblePosture } from "./hooks/use-bubble-posture.ts";
 import { useIterations } from "./hooks/use-iterations.ts";
 import { useViewport } from "./hooks/use-viewport.ts";
+import { scheduleAgentVariantScreenshots } from "./lib/capture-iteration-screenshot.ts";
 import { handleCommentBubbleKeydown } from "./lib/comment-bubble-keydown.ts";
 import { toErrorMessage } from "./lib/errors.ts";
 import { ignorePromiseRejection } from "./lib/ignore-promise-rejection.ts";
@@ -196,7 +197,9 @@ export function CommentBubble({
     switching: versionSwitching,
     deleting: versionDeleting,
     deleteError: versionDeleteError,
+    preferredActive,
     activate: activateVersion,
+    clearPreferredActive,
     removeVersion: removeIterationVersion,
     reload: reloadIterations,
   } = useIterations(commentId);
@@ -212,11 +215,17 @@ export function CommentBubble({
   const [replyBusy, setReplyBusy] = useState(false);
   const [composerError, setComposerError] = useState<string | null>(null);
   const [editingEntryKey, setEditingEntryKey] = useState<string | null>(null);
+  const pendingScreenshotCaptureKeyRef = useRef<string | null>(null);
   const viewport = useViewport();
 
   const activeVersion =
     iterations?.active ?? initialActiveVersion ?? lead?.active ?? 0;
   const hasAgentHistory = (iterations?.versions ?? []).some((v) => v.v > 0);
+  const preferredActiveRef = useRef<number | null>(preferredActive);
+
+  useEffect(() => {
+    preferredActiveRef.current = preferredActive;
+  }, [preferredActive]);
 
   useEffect(() => {
     if (!lead) {
@@ -239,6 +248,8 @@ export function CommentBubble({
     agentVersionCount,
     reloadIterations,
     onAgentWorkingChange,
+    clearPreferredActive,
+    getPreferredActive: () => preferredActiveRef.current,
   });
   const iterationState = visibleIterationState({
     agentRun,
@@ -268,6 +279,42 @@ export function CommentBubble({
     }, 1500);
     return () => window.clearInterval(interval);
   }, [iterationState.iterating, reloadIterations]);
+
+  useEffect(() => {
+    if (!lead || versionSwitching || versionDeleting) {
+      return;
+    }
+    const pendingVersions = (iterations?.versions ?? [])
+      .filter((version) => version.v > 0 && version.screenshotPending)
+      .map((version) => version.v);
+    if (pendingVersions.length === 0) {
+      pendingScreenshotCaptureKeyRef.current = null;
+      return;
+    }
+
+    const captureKey = `${lead.id}:${activeVersion}:${pendingVersions.join(",")}`;
+    if (pendingScreenshotCaptureKeyRef.current === captureKey) {
+      return;
+    }
+    pendingScreenshotCaptureKeyRef.current = captureKey;
+
+    scheduleAgentVariantScreenshots({
+      id: lead.id,
+      anchor: lead.anchor,
+      versions: pendingVersions,
+      activeV: activeVersion,
+      onDone: () => {
+        Promise.resolve(reloadIterations()).catch(ignorePromiseRejection);
+      },
+    });
+  }, [
+    activeVersion,
+    iterations?.versions,
+    lead,
+    reloadIterations,
+    versionDeleting,
+    versionSwitching,
+  ]);
 
   const {
     deleteConfirming,
@@ -454,6 +501,7 @@ export function CommentBubble({
   // resize, dock, and peek gestures. Kept in a hook so this component stays
   // focused on the conversation itself.
   const posture = useBubblePosture({
+    commentId,
     rect,
     viewport,
     placement,
@@ -486,12 +534,14 @@ export function CommentBubble({
   const {
     docked,
     dockSide,
+    hasCustomPlacement,
     hidePointer,
     showLeader,
     peeking,
     dragging,
     box,
     dockedRadius,
+    previewBox,
     dotCx,
     dotCy,
     startDrag,
@@ -508,6 +558,8 @@ export function CommentBubble({
         dotCy={dotCy}
         showLeader={showLeader}
       />
+
+      <DockZonePreview box={previewBox} />
 
       <div
         aria-label="Comment"
@@ -535,11 +587,13 @@ export function CommentBubble({
         <ResizeGrip onResize={startResize} side={dockSide} />
 
         <CommentBubbleHeader
+          canReanchor={hasCustomPlacement}
           docked={docked}
           height={BUBBLE_HEADER_HEIGHT}
           onClose={onClose}
           onDragStart={startDrag}
           onPeekStart={startPeek}
+          onReanchor={reanchor}
           onRequestDelete={onDelete ? requestDelete : undefined}
           onResolve={onResolve ? () => onResolve(lead.id) : undefined}
           onToggleDock={toggleDock}
@@ -667,27 +721,63 @@ function AnchorLink({
   ) : null;
 }
 
-/** Drag handle on the docked panel's inner edge to resize the drawer. */
-function ResizeGrip({
-  side,
-  onResize,
-}: {
-  side: "left" | "right" | null;
-  onResize: (e: PointerEvent<HTMLDivElement>) => void;
-}) {
-  if (!side) {
+/** Translucent zone showing where a drag-to-dock release will snap the panel.
+ *  Renders nothing until a drag arms an edge. */
+function DockZonePreview({ box }: { box: Box | null }) {
+  if (!box) {
     return null;
   }
   return (
     <div
       aria-hidden
+      className="pointer-events-none fixed z-[9190] rounded-lg border-2 border-primary/60 border-dashed bg-primary/10"
+      style={{
+        left: box.left,
+        top: box.top,
+        width: box.width,
+        height: box.height,
+      }}
+    />
+  );
+}
+
+/** Drag handle on the docked panel's inner edge to resize the drawer. Left and
+ *  right docks resize width (vertical grip); top and bottom resize height
+ *  (horizontal grip). */
+function ResizeGrip({
+  side,
+  onResize,
+}: {
+  side: "left" | "right" | "top" | "bottom" | null;
+  onResize: (e: PointerEvent<HTMLDivElement>) => void;
+}) {
+  if (!side) {
+    return null;
+  }
+  const horizontal = side === "left" || side === "right";
+  return (
+    <div
+      aria-hidden
       className={cn(
-        "absolute inset-y-0 z-20 w-2 cursor-col-resize",
-        side === "right" ? "left-0" : "right-0"
+        "absolute z-20",
+        horizontal
+          ? "inset-y-0 w-2 cursor-col-resize"
+          : "inset-x-0 h-2 cursor-row-resize",
+        side === "right" && "left-0",
+        side === "left" && "right-0",
+        side === "bottom" && "top-0",
+        side === "top" && "bottom-0"
       )}
       onPointerDown={onResize}
     >
-      <div className="absolute inset-y-[42%] left-1/2 w-0.5 -translate-x-1/2 rounded-full bg-border" />
+      <div
+        className={cn(
+          "absolute rounded-full bg-border",
+          horizontal
+            ? "inset-y-[42%] left-1/2 w-0.5 -translate-x-1/2"
+            : "inset-x-[42%] top-1/2 h-0.5 -translate-y-1/2"
+        )}
+      />
     </div>
   );
 }

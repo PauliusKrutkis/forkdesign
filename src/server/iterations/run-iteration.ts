@@ -17,6 +17,7 @@ import type { AgentSkill } from "../agent/skills.ts";
 import type { AgentAttemptTiming } from "../agent/types.ts";
 import type { FoundComment } from "../comments/find-comment.ts";
 import { updateCommentActive } from "../comments/writer.ts";
+import { setCommentActiveInSource } from "../comments/writer-directive.ts";
 import { WriteError } from "../comments/writer-errors.ts";
 import { atomicWriteText } from "../platform/atomic-write.ts";
 import { errorMessage } from "../platform/http.ts";
@@ -173,6 +174,7 @@ async function persistNewIterationSnapshot(
       summary,
       createdAt: options.createdAt,
       runId: options.runId,
+      screenshotCaptured: false,
     });
     stream.writeEvent({
       type: "progress",
@@ -784,10 +786,12 @@ async function finishSuccessfulBatch(args: {
 }): Promise<void> {
   const lastV = args.state.createdVersions.at(-1) as number;
 
+  let sourceWithActive: string;
   try {
-    await atomicWriteText(
-      args.found.absolutePath,
-      args.state.lastSuccessfulSource as string
+    sourceWithActive = setCommentActiveInSource(
+      args.state.lastSuccessfulSource as string,
+      args.id,
+      lastV
     );
   } catch (err) {
     args.recordRun({
@@ -807,22 +811,21 @@ async function finishSuccessfulBatch(args: {
   }
 
   try {
-    await updateCommentActive({
-      absolutePath: args.found.absolutePath,
-      commentId: args.id,
-      active: lastV,
-    });
+    await atomicWriteText(args.found.absolutePath, sourceWithActive);
   } catch (err) {
-    const message = activeUpdateErrorMessage(err);
     args.recordRun({
       ok: false,
       stage: "apply",
-      error: message,
+      error: errorMessage(err),
       modelUsed: args.state.lastModelUsed,
       changed: true,
       durationMs: Date.now() - args.agentStartedAt,
     });
-    args.stream.endStream({ type: "done", ok: false, error: message });
+    args.stream.endStream({
+      type: "done",
+      ok: false,
+      error: errorMessage(err),
+    });
     return;
   }
 

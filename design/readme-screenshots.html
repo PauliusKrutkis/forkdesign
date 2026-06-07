@@ -1,28 +1,46 @@
 <!doctype html>
 <html lang="en">
   <head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Redline README screenshots</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700;800&family=Geist+Mono:wght@400;500;600&display=swap"
+      rel="stylesheet"
+    />
     <style>
+      /* ----------------------------------------------------------------
+         redline overlay theme — shadcn zinc tokens, copied verbatim from
+         src/styles.css so the chrome matches the real plugin pixel-for-pixel.
+         ---------------------------------------------------------------- */
       :root {
         --background: oklch(1 0 0);
         --foreground: oklch(0.141 0.005 285.823);
+        --card: oklch(1 0 0);
+        --popover: oklch(1 0 0);
+        --popover-foreground: oklch(0.141 0.005 285.823);
+        --primary: oklch(0.21 0.006 285.885);
+        --primary-foreground: oklch(0.985 0 0);
         --muted: oklch(0.967 0.001 286.375);
         --muted-foreground: oklch(0.552 0.016 285.938);
+        --accent: oklch(0.967 0.001 286.375);
         --border: oklch(0.92 0.004 286.32);
-        --border-strong: oklch(0.84 0.006 286);
-        --primary: oklch(0.21 0.006 285.885);
+        --ring: oklch(0.705 0.015 286.067);
+        --destructive: oklch(0.577 0.245 27.325);
         --agent: oklch(0.52 0.2 280);
-        --agent-soft: oklch(0.955 0.032 285);
-        --live: oklch(0.58 0.13 155);
-        --live-soft: oklch(0.95 0.05 155);
-        --shadow: 0 28px 80px -36px rgb(15 23 42 / 0.45),
-          0 1px 2px rgb(15 23 42 / 0.08),
-          0 0 0 1px rgb(15 23 42 / 0.04);
-        --sans: "Hanken Grotesk", "Aptos", "Segoe UI", ui-sans-serif, system-ui,
+        --agent-soft: oklch(0.95 0.03 285);
+
+        --shadow-lg: 0 10px 15px -3px rgb(9 9 11 / 0.1),
+          0 4px 6px -4px rgb(9 9 11 / 0.1);
+        --shadow-pill: 0 1px 2px rgb(9 9 11 / 0.06),
+          0 4px 16px -6px rgb(9 9 11 / 0.18);
+        --shadow-menu: 0 8px 40px -12px rgb(9 9 11 / 0.35);
+
+        --sans: "Geist", ui-sans-serif, system-ui, -apple-system, "Segoe UI",
           sans-serif;
-        --mono: "Geist Mono", "SF Mono", "Cascadia Code", ui-monospace,
+        --mono: "Geist Mono", ui-monospace, "SF Mono", "Cascadia Code",
           monospace;
       }
 
@@ -32,10 +50,8 @@
 
       html,
       body {
-        width: 100%;
-        min-width: 1440px;
-        height: 100%;
-        min-height: 900px;
+        width: 1440px;
+        height: 900px;
         margin: 0;
       }
 
@@ -74,17 +90,24 @@
           linear-gradient(rgb(24 24 27 / 0.035) 1px, transparent 1px),
           linear-gradient(90deg, rgb(24 24 27 / 0.035) 1px, transparent 1px);
         background-size: 42px 42px;
-        mask-image: linear-gradient(to bottom, transparent, #000 18%, #000 82%, transparent);
+        mask-image: linear-gradient(
+          to bottom,
+          transparent,
+          #000 18%,
+          #000 82%,
+          transparent
+        );
         pointer-events: none;
       }
 
+      /* ---- Browser stage that frames the host design playground ---- */
       .stage {
         position: absolute;
         inset: 56px 72px 64px;
         overflow: hidden;
-        background: color-mix(in oklch, var(--background) 86%, transparent);
+        background: color-mix(in oklch, var(--background) 92%, transparent);
         border: 1px solid var(--border);
-        border-radius: 30px;
+        border-radius: 26px;
         box-shadow: 0 38px 110px -68px rgb(15 23 42 / 0.65);
       }
 
@@ -98,15 +121,16 @@
         border-bottom: 1px solid var(--border);
       }
 
-      .dot {
+      .traffic {
         width: 11px;
         height: 11px;
-        background: var(--border-strong);
+        background: var(--border);
         border-radius: 50%;
       }
 
       .url {
         display: flex;
+        gap: 7px;
         align-items: center;
         height: 26px;
         padding: 0 12px;
@@ -118,24 +142,44 @@
         border-radius: 999px;
       }
 
+      .url svg {
+        width: 11px;
+        height: 11px;
+        opacity: 0.7;
+      }
+
       .page {
         position: absolute;
         inset: 46px 0 0;
-        padding: 44px 58px;
+        padding: 46px 60px;
       }
 
+      /* ---------------------------- HOST APP ---------------------------- */
       .nav {
         display: flex;
         align-items: center;
-        gap: 28px;
-        color: var(--muted-foreground);
+        gap: 30px;
         font-size: 14px;
-        font-weight: 600;
+        font-weight: 500;
+        color: var(--muted-foreground);
       }
 
-      .mark {
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: 9px;
+        font-weight: 700;
+        font-size: 16px;
+        color: var(--foreground);
+        letter-spacing: -0.02em;
+      }
+
+      .brand-glyph {
+        display: grid;
+        place-items: center;
         width: 28px;
         height: 28px;
+        color: #fff;
         background: var(--foreground);
         border-radius: 9px;
       }
@@ -144,457 +188,582 @@
         flex: 1;
       }
 
-      .nav-button {
-        padding: 10px 16px;
+      .nav a {
+        color: inherit;
+        text-decoration: none;
+      }
+
+      .nav-cta {
+        padding: 9px 16px;
+        font-weight: 600;
+        font-size: 13px;
         color: var(--background);
         background: var(--foreground);
-        border-radius: 999px;
+        border-radius: 10px;
       }
 
       .hero {
         width: 560px;
-        margin-top: 86px;
+        margin-top: 78px;
       }
 
       .eyebrow {
-        width: max-content;
-        padding: 7px 11px;
-        margin-bottom: 18px;
-        font: 700 11px / 1 var(--mono);
+        display: inline-flex;
+        align-items: center;
+        gap: 7px;
+        padding: 6px 11px 6px 9px;
+        margin-bottom: 22px;
+        font: 600 11px / 1 var(--mono);
         color: var(--agent);
+        letter-spacing: 0.04em;
         text-transform: uppercase;
-        letter-spacing: 0.09em;
         background: var(--agent-soft);
-        border: 1px solid color-mix(in oklch, var(--agent) 22%, transparent);
+        border: 1px solid color-mix(in oklch, var(--agent) 20%, transparent);
         border-radius: 999px;
+      }
+
+      .eyebrow .pip {
+        width: 6px;
+        height: 6px;
+        background: var(--agent);
+        border-radius: 50%;
       }
 
       h1 {
         margin: 0;
-        font-size: 64px;
-        line-height: 0.97;
-        letter-spacing: -0.055em;
+        font-size: 66px;
+        font-weight: 600;
+        line-height: 0.98;
+        letter-spacing: -0.04em;
       }
 
       .hero p {
-        width: 470px;
-        margin: 22px 0 0;
-        color: var(--muted-foreground);
-        font-size: 19px;
+        width: 452px;
+        margin: 24px 0 0;
+        font-size: 18px;
         line-height: 1.55;
+        color: var(--muted-foreground);
       }
 
       .cta-row {
         display: flex;
         gap: 12px;
-        margin-top: 30px;
+        margin-top: 32px;
       }
 
       .cta {
-        padding: 14px 20px;
-        font-weight: 750;
-        background: var(--foreground);
+        padding: 13px 22px;
+        font-size: 15px;
+        font-weight: 600;
         color: var(--background);
-        border-radius: 14px;
+        background: var(--foreground);
+        border-radius: 12px;
       }
 
       .cta.secondary {
         color: var(--foreground);
-        background: var(--muted);
+        background: var(--background);
         border: 1px solid var(--border);
       }
 
       .preview-card {
         position: absolute;
-        top: 162px;
-        right: 86px;
-        width: 400px;
-        padding: 22px;
+        top: 150px;
+        right: 60px;
+        width: 386px;
+        padding: 18px;
         background: var(--background);
         border: 1px solid var(--border);
-        border-radius: 24px;
-        box-shadow: 0 26px 72px -48px rgb(15 23 42 / 0.56);
+        border-radius: 22px;
+        box-shadow: 0 26px 72px -48px rgb(15 23 42 / 0.5);
       }
 
-      .card-image {
-        height: 210px;
+      .preview-card .shot {
+        height: 200px;
         background:
-          radial-gradient(120px 90px at 72% 24%, oklch(0.82 0.08 280), transparent),
-          linear-gradient(145deg, oklch(0.98 0.002 286), oklch(0.92 0.012 286));
+          radial-gradient(
+            130px 100px at 74% 22%,
+            oklch(0.82 0.09 280),
+            transparent
+          ),
+          radial-gradient(
+            150px 120px at 20% 90%,
+            oklch(0.86 0.07 205),
+            transparent
+          ),
+          linear-gradient(150deg, oklch(0.985 0.002 286), oklch(0.93 0.012 286));
         border: 1px solid var(--border);
-        border-radius: 18px;
+        border-radius: 15px;
       }
 
-      .line {
-        height: 12px;
-        margin-top: 18px;
-        background: var(--border);
-        border-radius: 999px;
-      }
-
-      .line.short {
-        width: 58%;
-      }
-
-      .line.medium {
-        width: 78%;
-      }
-
-      .redline-pin {
-        position: absolute;
-        display: grid;
-        place-items: center;
-        width: 28px;
-        height: 28px;
-        font: 700 10px / 1 var(--mono);
-        color: white;
-        background: var(--foreground);
-        border: 3px solid var(--background);
-        border-radius: 50%;
-        box-shadow: 0 10px 22px -12px rgb(0 0 0 / 0.7);
-      }
-
-      .redline-pin::before {
-        position: absolute;
-        inset: -9px;
-        content: "";
-        border: 2px solid color-mix(in oklch, var(--agent) 48%, transparent);
-        border-radius: inherit;
-      }
-
-      .pin-hero {
-        top: 318px;
-        left: 584px;
-      }
-
-      .pin-card {
-        top: 428px;
-        right: 434px;
-      }
-
-      .pick-outline {
-        position: absolute;
-        top: 307px;
-        left: 127px;
-        width: 515px;
-        height: 128px;
-        border: 2px dashed var(--agent);
-        border-radius: 20px;
-        box-shadow: 0 0 0 4px color-mix(in oklch, var(--agent) 13%, transparent);
-      }
-
-      .composer {
-        position: absolute;
-        top: 486px;
-        left: 498px;
-        width: 410px;
-        overflow: hidden;
-        background: var(--background);
-        border: 1px solid var(--border);
-        border-radius: 18px;
-        box-shadow: var(--shadow);
-      }
-
-      .composer-head,
-      .bubble-head {
+      .preview-card .meta {
         display: flex;
         align-items: center;
-        gap: 8px;
-        padding: 12px 14px;
-        background: linear-gradient(var(--background), oklch(0.99 0.001 286));
-        border-bottom: 1px solid var(--border);
+        gap: 10px;
+        margin-top: 16px;
       }
 
-      .crumb {
-        padding: 5px 8px;
-        font: 650 11px / 1 var(--mono);
-        color: var(--foreground);
-        background: var(--muted);
-        border: 1px solid var(--border);
-        border-radius: 8px;
-      }
-
-      .subtle {
-        color: var(--muted-foreground);
-      }
-
-      .composer textarea {
-        width: 100%;
-        min-height: 94px;
-        padding: 15px 16px 10px;
-        font: 500 15px / 1.5 var(--sans);
-        color: var(--foreground);
-        resize: none;
-        background: transparent;
-        border: 0;
-        outline: 0;
-      }
-
-      .composer-tools {
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        padding: 0 12px 12px;
-      }
-
-      .mode-pill {
-        display: flex;
-        gap: 2px;
-        padding: 3px;
-        background: var(--muted);
-        border: 1px solid var(--border);
-        border-radius: 11px;
-      }
-
-      .mode {
-        padding: 7px 10px;
-        font: 700 11px / 1 var(--mono);
-        color: var(--muted-foreground);
-        border-radius: 8px;
-      }
-
-      .mode.active {
-        color: var(--agent);
-        background: var(--background);
-        box-shadow: 0 1px 2px rgb(15 23 42 / 0.12);
-      }
-
-      .send {
-        margin-left: auto;
-        padding: 10px 13px;
-        font: 750 12px / 1 var(--mono);
-        color: white;
-        background: var(--agent);
-        border-radius: 10px;
-      }
-
-      .dock {
-        position: absolute;
-        right: 28px;
-        bottom: 28px;
-        display: flex;
-        gap: 8px;
-        padding: 8px;
-        background: color-mix(in oklch, var(--background) 92%, transparent);
-        border: 1px solid var(--border);
-        border-radius: 18px;
-        box-shadow: var(--shadow);
-      }
-
-      .dock-button {
-        padding: 10px 13px;
-        font: 750 12px / 1 var(--mono);
-        border-radius: 12px;
-      }
-
-      .dock-button.primary {
-        color: white;
-        background: var(--foreground);
-      }
-
-      .dock-button.light {
-        color: var(--muted-foreground);
-        background: var(--muted);
-      }
-
-      .bubble {
-        position: absolute;
-        top: 132px;
-        left: 468px;
-        width: 480px;
-        overflow: hidden;
-        background: var(--background);
-        border: 1px solid var(--border);
-        border-radius: 20px;
-        box-shadow: var(--shadow);
-      }
-
-      .bubble-head {
-        justify-content: space-between;
-      }
-
-      .icon-row {
-        display: flex;
-        gap: 6px;
-      }
-
-      .icon {
-        width: 28px;
-        height: 28px;
+      .preview-card .ico {
+        width: 34px;
+        height: 34px;
         background: var(--muted);
         border: 1px solid var(--border);
         border-radius: 9px;
       }
 
+      .preview-card .l {
+        height: 9px;
+        background: var(--border);
+        border-radius: 999px;
+      }
+
+      /* =====================================================================
+         REDLINE OVERLAY CHROME — faithful re-creation of the real components
+         ===================================================================== */
+
+      /* ---- Comment pin (src/client/overlay/comment-dot.tsx) ----
+         20px near-circle with one sharp bottom-left corner; pencil glyph. */
+      .pin {
+        position: absolute;
+        display: grid;
+        place-items: center;
+        width: 20px;
+        height: 20px;
+        color: var(--background);
+        background: var(--foreground);
+        border-radius: 50% 50% 50% 3px;
+        box-shadow:
+          0 1px 2px rgb(0 0 0 / 0.16),
+          0 2px 6px -1px rgb(0 0 0 / 0.22);
+        outline: 1px solid rgb(0 0 0 / 0.1);
+        outline-offset: 0;
+      }
+
+      .pin svg {
+        width: 10px;
+        height: 10px;
+      }
+
+      .pin.open {
+        outline: 2px solid var(--foreground);
+        outline-offset: 2px;
+      }
+
+      .pin .count {
+        position: absolute;
+        top: -4px;
+        right: -4px;
+        display: grid;
+        place-items: center;
+        min-width: 14px;
+        height: 14px;
+        padding: 0 3px;
+        font: 600 8px / 1 var(--sans);
+        color: var(--background);
+        background: var(--foreground);
+        border: 1px solid var(--background);
+        border-radius: 999px;
+      }
+
+      /* ---- Floating dock pill (overlay-dock-menu.tsx · OverlayDockPill) ---- */
+      .dock {
+        position: absolute;
+        right: 96px;
+        bottom: 86px;
+        display: inline-flex;
+        gap: 8px;
+        align-items: center;
+        height: 36px;
+        padding: 0 10px;
+        background: color-mix(in oklch, var(--popover) 80%, transparent);
+        border: 1px solid color-mix(in oklch, var(--border) 70%, transparent);
+        border-radius: 999px;
+        box-shadow: var(--shadow-pill);
+        backdrop-filter: blur(8px);
+      }
+
+      .dock .mark {
+        width: 16px;
+        height: 16px;
+        color: var(--foreground);
+      }
+
+      .dock .badge {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-width: 18px;
+        height: 18px;
+        padding: 0 4px;
+        font: 600 10px / 1 var(--sans);
+        color: var(--primary-foreground);
+        background: var(--primary);
+        border-radius: 999px;
+      }
+
+      /* ---- Shared panel surface (composer + bubble) ---- */
+      .panel {
+        position: absolute;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+        background: var(--background);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        box-shadow: var(--shadow-lg);
+      }
+
+      .panel-head {
+        display: flex;
+        flex-shrink: 0;
+        align-items: center;
+        height: 36px;
+        border-bottom: 1px solid var(--border);
+      }
+
+      .icon-btn {
+        display: grid;
+        flex-shrink: 0;
+        place-items: center;
+        width: 28px;
+        height: 28px;
+        color: var(--muted-foreground);
+        background: transparent;
+        border: 0;
+        border-radius: 6px;
+      }
+
+      .icon-btn svg {
+        width: 16px;
+        height: 16px;
+      }
+
+      .chip {
+        max-width: 150px;
+        padding: 2px 6px;
+        overflow: hidden;
+        font: 400 10px / 1.4 var(--mono);
+        color: var(--muted-foreground);
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        background: var(--muted);
+        border-radius: 4px;
+      }
+
+      /* ---- Composer bar (comment-composer-bar.tsx) ---- */
+      .composer-bar {
+        flex-shrink: 0;
+        padding: 8px;
+        background: var(--background);
+        border-top: 1px solid var(--border);
+      }
+
+      .composer-bar.no-top {
+        border-top: 0;
+      }
+
+      .field {
+        background: var(--background);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+      }
+
+      .field.focus {
+        outline: 2px solid var(--ring);
+        outline-offset: -1px;
+      }
+
+      .field .text {
+        position: relative;
+        padding: 10px 12px;
+        font-size: 14px;
+        line-height: 1.55;
+        color: var(--foreground);
+      }
+
+      .field .text.placeholder {
+        color: var(--muted-foreground);
+      }
+
+      .field .text .on-version {
+        position: absolute;
+        top: 10px;
+        right: 12px;
+        font: 400 10px / 1 var(--mono);
+        color: color-mix(in oklch, var(--muted-foreground) 70%, transparent);
+      }
+
+      .field .caret {
+        display: inline-block;
+        width: 1.5px;
+        height: 17px;
+        margin-left: 1px;
+        vertical-align: -3px;
+        background: var(--foreground);
+      }
+
+      .toolbar {
+        display: flex;
+        align-items: center;
+        gap: 2px;
+        padding: 0 6px 6px;
+      }
+
+      .tool {
+        display: inline-flex;
+        gap: 4px;
+        align-items: center;
+        height: 28px;
+        padding: 0 6px;
+        font-size: 12px;
+        font-weight: 500;
+        color: var(--muted-foreground);
+        background: transparent;
+        border: 0;
+        border-radius: 6px;
+      }
+
+      .tool svg.lead {
+        width: 14px;
+        height: 14px;
+      }
+
+      .tool svg.chev {
+        width: 12px;
+        height: 12px;
+        opacity: 0.6;
+      }
+
+      .tool .mono {
+        font: 400 11px / 1 var(--mono);
+      }
+
+      .spacer {
+        flex: 1;
+      }
+
+      .send {
+        display: grid;
+        place-items: center;
+        width: 28px;
+        height: 28px;
+        color: var(--primary-foreground);
+        background: var(--primary);
+        border: 0;
+        border-radius: 6px;
+      }
+
+      .send svg {
+        width: 16px;
+        height: 16px;
+      }
+
+      /* ---- Bubble pointer (comment-bubble-pointer.tsx) ---- */
+      .pointer {
+        position: absolute;
+        width: 12px;
+        height: 12px;
+        background: var(--background);
+        transform: rotate(45deg);
+      }
+
+      /* ---- Transcript (comment-transcript / -human) ---- */
       .transcript {
         display: flex;
         flex-direction: column;
-        gap: 20px;
-        padding: 18px 18px 12px;
+        gap: 16px;
+        padding: 14px;
       }
 
-      .entry {
+      .turn {
         display: flex;
-        gap: 12px;
+        gap: 10px;
       }
 
       .avatar {
         display: grid;
-        flex: none;
+        flex-shrink: 0;
         place-items: center;
-        width: 30px;
-        height: 30px;
-        font: 750 10px / 1 var(--mono);
-        color: white;
-        background: var(--foreground);
+        width: 24px;
+        height: 24px;
+        font: 500 10px / 1 var(--sans);
+        color: var(--primary-foreground);
+        background: var(--primary);
         border-radius: 50%;
       }
 
-      .avatar.agent {
-        color: var(--agent);
-        background: var(--agent-soft);
-        border: 1px solid color-mix(in oklch, var(--agent) 22%, transparent);
-      }
-
-      .meta {
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        margin-bottom: 5px;
-        font: 700 12px / 1 var(--mono);
-      }
-
-      .time {
-        color: var(--muted-foreground);
-        font-weight: 500;
-      }
-
-      .tag {
-        padding: 4px 6px;
-        color: var(--agent);
-        text-transform: uppercase;
-        letter-spacing: 0.06em;
-        background: var(--agent-soft);
-        border: 1px solid color-mix(in oklch, var(--agent) 24%, transparent);
-        border-radius: 7px;
-        font-size: 9px;
+      .turn-body {
+        min-width: 0;
+        flex: 1;
       }
 
       .said {
         margin: 0;
         font-size: 14px;
-        line-height: 1.52;
+        line-height: 1.55;
+        color: var(--foreground);
       }
 
-      .agent-note {
-        margin: 0 0 11px;
+      .attr {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        margin-top: 6px;
+        font-size: 12px;
         color: var(--muted-foreground);
-        font: 500 12px / 1.55 var(--mono);
       }
 
+      .attr .dot {
+        color: color-mix(in oklch, var(--muted-foreground) 40%, transparent);
+      }
+
+      .attr .when {
+        font: 400 10px / 1 var(--mono);
+      }
+
+      /* ---- Variant grid (comment-variant-group.tsx) ---- */
       .variants {
         display: grid;
         grid-template-columns: 1fr 1fr;
-        gap: 10px;
+        gap: 8px;
+        margin-top: 14px;
       }
 
-      .variant {
+      .vcard {
         overflow: hidden;
         background: var(--background);
         border: 1px solid var(--border);
-        border-radius: 14px;
+        border-radius: 8px;
       }
 
-      .variant.live {
-        border-color: var(--live);
-        box-shadow: 0 0 0 1px var(--live);
+      .vcard.live {
+        border-color: var(--primary);
+        box-shadow: 0 0 0 1px var(--primary);
       }
 
-      .variant-preview {
+      .vshot {
         display: grid;
         place-items: center;
-        height: 92px;
-        background: linear-gradient(135deg, oklch(0.985 0.003 286), oklch(0.955 0.007 286));
-        border-bottom: 1px solid var(--border);
+        height: 80px;
+        background: var(--muted);
+        border-bottom: 1px solid
+          color-mix(in oklch, var(--border) 60%, transparent);
       }
 
-      .mini-button {
-        padding: 10px 18px;
-        color: white;
-        font-size: 11px;
-        font-weight: 800;
-        background: var(--foreground);
-        border-radius: 13px;
-      }
-
-      .mini-button.agent {
-        background: var(--agent);
-        border-radius: 10px;
-      }
-
-      .mini-button.warm {
-        background: oklch(0.48 0.18 24);
-        border-radius: 8px;
-      }
-
-      .mini-button.base {
-        padding: 8px 14px;
-        background: oklch(0.61 0.01 286);
-        border-radius: 8px;
-        font-size: 10px;
-      }
-
-      .variant-foot {
+      .vfoot {
         display: flex;
         align-items: center;
         justify-content: space-between;
-        padding: 9px 10px;
-        color: var(--muted-foreground);
-        font: 700 10px / 1 var(--mono);
+        height: 28px;
+        padding: 0 8px;
       }
 
-      .live-badge {
+      .vlabel {
+        font: 400 10px / 1 var(--mono);
+        color: var(--muted-foreground);
+      }
+
+      .vlive {
         display: inline-flex;
+        gap: 4px;
         align-items: center;
-        gap: 5px;
-        color: var(--live);
-        text-transform: uppercase;
-        letter-spacing: 0.05em;
+        font-size: 10px;
+        font-weight: 500;
+        color: var(--primary);
       }
 
-      .live-dot {
-        width: 7px;
-        height: 7px;
-        background: var(--live);
-        border-radius: 50%;
-        box-shadow: 0 0 0 3px var(--live-soft);
+      .vlive svg {
+        width: 12px;
+        height: 12px;
       }
 
-      .composer-mini {
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        padding: 12px;
-        background: linear-gradient(oklch(0.99 0.001 286), var(--background));
-        border-top: 1px solid var(--border);
+      /* miniature button previews drawn inside the variant shots */
+      .mini {
+        font-size: 11px;
+        font-weight: 600;
+        color: #fff;
+        background: var(--foreground);
+        border-radius: 9px;
       }
-
-      .input-ghost {
-        flex: 1;
-        padding: 11px 12px;
+      .mini.timid {
+        padding: 7px 14px;
+        font-weight: 500;
         color: var(--muted-foreground);
-        font-size: 13px;
-        background: var(--muted);
+        background: oklch(0.95 0.002 286);
         border: 1px solid var(--border);
+        border-radius: 7px;
+      }
+      .mini.bold {
+        padding: 9px 18px;
+        border-radius: 11px;
+      }
+      .mini.accent {
+        display: inline-flex;
+        gap: 6px;
+        align-items: center;
+        padding: 8px 15px;
+        background: var(--agent);
+        border-radius: 10px;
+      }
+      .mini.warm {
+        padding: 9px 17px;
+        background: oklch(0.55 0.2 27);
         border-radius: 12px;
       }
 
-      .agent-scene .pin-hero,
-      .agent-scene .pick-outline,
-      .agent-scene .composer {
-        display: none;
+      /* ---- Element picker selection (comment-composer.tsx) ---- */
+      .sel {
+        position: absolute;
+        background: color-mix(in oklch, var(--foreground) 6%, transparent);
+        outline: 1px solid
+          color-mix(in oklch, var(--foreground) 35%, transparent);
       }
 
+      .sel .reticle {
+        position: absolute;
+        width: 10px;
+        height: 10px;
+      }
+      .sel .reticle.tl {
+        top: -1px;
+        left: -1px;
+        border-top: 1.5px solid
+          color-mix(in oklch, var(--foreground) 85%, transparent);
+        border-left: 1.5px solid
+          color-mix(in oklch, var(--foreground) 85%, transparent);
+      }
+      .sel .reticle.tr {
+        top: -1px;
+        right: -1px;
+        border-top: 1.5px solid
+          color-mix(in oklch, var(--foreground) 85%, transparent);
+        border-right: 1.5px solid
+          color-mix(in oklch, var(--foreground) 85%, transparent);
+      }
+      .sel .reticle.bl {
+        bottom: -1px;
+        left: -1px;
+        border-bottom: 1.5px solid
+          color-mix(in oklch, var(--foreground) 85%, transparent);
+        border-left: 1.5px solid
+          color-mix(in oklch, var(--foreground) 85%, transparent);
+      }
+      .sel .reticle.br {
+        bottom: -1px;
+        right: -1px;
+        border-bottom: 1.5px solid
+          color-mix(in oklch, var(--foreground) 85%, transparent);
+        border-right: 1.5px solid
+          color-mix(in oklch, var(--foreground) 85%, transparent);
+      }
+
+      .sel-parent {
+        position: absolute;
+        opacity: 0.55;
+        outline: 1px dashed color-mix(in oklch, var(--ring) 50%, transparent);
+      }
+
+      /* scene switching */
       body[data-scene="comment"] .agent-scene,
       body[data-scene="agent"] .comment-scene {
         display: none;
@@ -602,204 +771,309 @@
     </style>
   </head>
   <body data-scene="comment">
-    <main class="scene comment-scene" aria-label="Redline comment placement screenshot">
+    <!-- ============================== SCENE 1 ============================== -->
+    <main
+      class="scene comment-scene"
+      aria-label="Redline comment composer over a design playground"
+    >
       <section class="stage">
         <div class="browser-bar">
-          <span class="dot"></span>
-          <span class="dot"></span>
-          <span class="dot"></span>
-          <span class="url">localhost:5173/design-playground</span>
+          <span class="traffic"></span>
+          <span class="traffic"></span>
+          <span class="traffic"></span>
+          <span class="url">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+            localhost:5173/playground
+          </span>
         </div>
+
         <div class="page">
           <nav class="nav">
-            <div class="mark"></div>
-            <span>Product</span>
-            <span>Pricing</span>
-            <span>Docs</span>
-            <span>Changelog</span>
-            <div class="nav-spacer"></div>
-            <span class="nav-button">Try the demo</span>
-          </nav>
-
-          <section class="hero">
-            <div class="eyebrow">Design playground</div>
-            <h1>Ship the interface you meant.</h1>
-            <p>
-              Leave feedback directly on the running app. Redline writes the
-              comment back into your source so design history stays with the code.
-            </p>
-            <div class="cta-row">
-              <div class="cta">Get started</div>
-              <div class="cta secondary">View docs</div>
-            </div>
-          </section>
-
-          <aside class="preview-card">
-            <div class="card-image"></div>
-            <div class="line short"></div>
-            <div class="line medium"></div>
-            <div class="line"></div>
-          </aside>
-        </div>
-
-        <div class="pick-outline"></div>
-        <div class="redline-pin pin-hero">1</div>
-        <div class="redline-pin pin-card">2</div>
-
-        <section class="composer" aria-label="Redline composer">
-          <div class="composer-head">
-            <span class="crumb">section.hero</span>
-            <span class="crumb subtle">h1</span>
-          </div>
-          <textarea readonly>Can we make this headline feel more confident and reduce the line break?</textarea>
-          <div class="composer-tools">
-            <div class="mode-pill">
-              <span class="mode">Comment</span>
-              <span class="mode active">Agent</span>
-            </div>
-            <span class="send">Iterate</span>
-          </div>
-        </section>
-
-        <div class="dock">
-          <span class="dock-button primary">Comment</span>
-          <span class="dock-button light">List</span>
-          <span class="dock-button light">Settings</span>
-        </div>
-      </section>
-    </main>
-
-    <main class="scene agent-scene" aria-label="Redline agent iteration screenshot">
-      <section class="stage">
-        <div class="browser-bar">
-          <span class="dot"></span>
-          <span class="dot"></span>
-          <span class="dot"></span>
-          <span class="url">localhost:5173/design-playground</span>
-        </div>
-        <div class="page">
-          <nav class="nav">
-            <div class="mark"></div>
-            <span>Product</span>
-            <span>Pricing</span>
-            <span>Docs</span>
-            <span>Changelog</span>
-            <div class="nav-spacer"></div>
-            <span class="nav-button">Try the demo</span>
-          </nav>
-
-          <section class="hero">
-            <div class="eyebrow">Design playground</div>
-            <h1>Ship the interface you meant.</h1>
-            <p>
-              Leave feedback directly on the running app. Redline writes the
-              comment back into your source so design history stays with the code.
-            </p>
-            <div class="cta-row">
-              <div class="cta">Get started</div>
-              <div class="cta secondary">View docs</div>
-            </div>
-          </section>
-
-          <aside class="preview-card">
-            <div class="card-image"></div>
-            <div class="line short"></div>
-            <div class="line medium"></div>
-            <div class="line"></div>
-          </aside>
-        </div>
-
-        <div class="redline-pin pin-card">1</div>
-
-        <section class="bubble" aria-label="Redline comment thread">
-          <div class="bubble-head">
-            <span class="crumb">button.cta-primary</span>
-            <span class="icon-row">
-              <span class="icon"></span>
-              <span class="icon"></span>
+            <span class="brand">
+              <span class="brand-glyph">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3-1.9 5.8a2 2 0 0 1-1.287 1.288L3 12l5.8 1.9a2 2 0 0 1 1.288 1.287L12 21l1.9-5.8a2 2 0 0 1 1.287-1.288L21 12l-5.8-1.9a2 2 0 0 1-1.288-1.287Z"/></svg>
+              </span>
+              Lumen
             </span>
-          </div>
-          <div class="transcript">
-            <article class="entry">
-              <div class="avatar">PK</div>
-              <div>
-                <div class="meta">
-                  <span>you</span>
-                  <span class="time">14:02</span>
-                </div>
-                <p class="said">
-                  The primary CTA feels timid. Make it bolder, increase contrast,
-                  and round the corners a little more.
-                </p>
-              </div>
-            </article>
-            <article class="entry">
-              <div class="avatar agent">AI</div>
-              <div>
-                <div class="meta">
-                  <span>agent</span>
-                  <span class="tag">fix - 3 variants</span>
-                  <span class="time">14:03</span>
-                </div>
-                <p class="agent-note">
-                  Rewrote the selected CTA and saved each version with a preview.
-                </p>
-                <div class="variants">
-                  <div class="variant live">
-                    <div class="variant-preview">
-                      <span class="mini-button">Get started</span>
-                    </div>
-                    <div class="variant-foot">
-                      <span>v2</span>
-                      <span class="live-badge"><i class="live-dot"></i> live</span>
-                    </div>
-                  </div>
-                  <div class="variant">
-                    <div class="variant-preview">
-                      <span class="mini-button agent">Get started -></span>
-                    </div>
-                    <div class="variant-foot">
-                      <span>v3</span>
-                      <span>use</span>
-                    </div>
-                  </div>
-                  <div class="variant">
-                    <div class="variant-preview">
-                      <span class="mini-button warm">Start now</span>
-                    </div>
-                    <div class="variant-foot">
-                      <span>v4</span>
-                      <span>use</span>
-                    </div>
-                  </div>
-                  <div class="variant">
-                    <div class="variant-preview">
-                      <span class="mini-button base">baseline</span>
-                    </div>
-                    <div class="variant-foot">
-                      <span>v0</span>
-                      <span>restore</span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </article>
-          </div>
-          <div class="composer-mini">
-            <span class="input-ghost">Ask for another pass...</span>
-            <span class="send">Send</span>
-          </div>
-        </section>
+            <a>Product</a>
+            <a>Pricing</a>
+            <a>Docs</a>
+            <a>Changelog</a>
+            <span class="nav-spacer"></span>
+            <span class="nav-cta">Try the demo</span>
+          </nav>
 
-        <div class="dock">
-          <span class="dock-button light">Comment</span>
-          <span class="dock-button primary">List</span>
-          <span class="dock-button light">Settings</span>
+          <section class="hero">
+            <span class="eyebrow"><span class="pip"></span>Design playground</span>
+            <h1>Ship the interface you meant.</h1>
+            <p>
+              Leave feedback right on the running app. Redline writes every note
+              back into your source, so the design history lives with the code.
+            </p>
+            <div class="cta-row">
+              <span class="cta">Get started</span>
+              <span class="cta secondary">View docs</span>
+            </div>
+          </section>
+
+          <aside class="preview-card">
+            <div class="shot"></div>
+            <div class="meta">
+              <div class="ico"></div>
+              <div style="flex: 1">
+                <div class="l" style="width: 64%"></div>
+                <div class="l" style="width: 90%; margin-top: 8px"></div>
+              </div>
+            </div>
+          </aside>
+        </div>
+
+        <!-- existing comment pin on the preview card -->
+        <span class="pin" style="left: 1196px; top: 268px">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/><path d="m15 5 4 4"/></svg>
+        </span>
+      </section>
+
+      <!-- element-picker selection on the headline -->
+      <div class="sel-parent" style="left: 122px; top: 286px; width: 580px; height: 232px"></div>
+      <div class="sel" style="left: 130px; top: 312px; width: 540px; height: 138px">
+        <span class="reticle tl"></span>
+        <span class="reticle tr"></span>
+        <span class="reticle bl"></span>
+        <span class="reticle br"></span>
+      </div>
+
+      <!-- New-comment composer (comment-composer.tsx · ComposerPanel) -->
+      <section class="panel" style="left: 250px; top: 470px; width: 400px">
+        <div class="panel-head" style="padding: 0 4px 0 14px">
+          <span style="display: inline-flex; align-items: center; gap: 6px; flex: 1; min-width: 0">
+            <svg style="width: 14px; height: 14px; color: var(--muted-foreground)" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.034 12.681a.498.498 0 0 1 .647-.647l9 3.5a.5.5 0 0 1-.033.943l-3.444 1.068a1 1 0 0 0-.66.66l-1.067 3.443a.5.5 0 0 1-.943.033z"/><path d="M5 3a2 2 0 0 0-2 2"/><path d="M19 3a2 2 0 0 1 2 2"/><path d="M5 21a2 2 0 0 1-2-2"/><path d="M9 3h1"/><path d="M9 21h2"/><path d="M14 3h1"/><path d="M3 9v1"/><path d="M21 9v2"/><path d="M3 14v1"/></svg>
+            <span style="font-size: 12px; font-weight: 500; color: var(--foreground)">New comment</span>
+          </span>
+          <span class="chip">h1</span>
+          <button class="icon-btn" aria-label="Cancel">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+          </button>
+        </div>
+
+        <div class="composer-bar no-top">
+          <div class="field focus">
+            <div class="text">Make this headline more confident — tighten the
+              line break and bump the weight.<span class="caret"></span></div>
+            <div class="toolbar">
+              <button class="tool">
+                <svg class="lead" style="color: var(--agent)" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .962 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.962 0z"/><path d="M20 3v4"/><path d="M22 5h-4"/><path d="M4 17v2"/><path d="M5 18H3"/></svg>
+                <span style="font-weight: 500; color: var(--foreground)">Agent</span>
+                <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+              </button>
+              <button class="tool">
+                <span class="mono">2.5 fast</span>
+                <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+              </button>
+              <button class="tool">
+                <span class="mono">3</span>
+                <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+              </button>
+              <span class="spacer"></span>
+              <button class="send" aria-label="Run agent">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12 7-7 7 7"/><path d="M12 19V5"/></svg>
+              </button>
+            </div>
+          </div>
         </div>
       </section>
+
+      <!-- floating dock pill -->
+      <span class="dock">
+        <svg class="mark" viewBox="0 0 16 16" fill="none"><path d="M2.5 11.75h11" stroke="currentColor" stroke-linecap="round" stroke-width="1.5"/><path d="M5.25 11.75 8 5l2.75 6.75" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"/></svg>
+        <span class="badge">4</span>
+      </span>
     </main>
+
+    <!-- ============================== SCENE 2 ============================== -->
+    <main
+      class="scene agent-scene"
+      aria-label="Redline agent iteration thread with version previews"
+    >
+      <section class="stage">
+        <div class="browser-bar">
+          <span class="traffic"></span>
+          <span class="traffic"></span>
+          <span class="traffic"></span>
+          <span class="url">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+            localhost:5173/playground
+          </span>
+        </div>
+
+        <div class="page">
+          <nav class="nav">
+            <span class="brand">
+              <span class="brand-glyph">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3-1.9 5.8a2 2 0 0 1-1.287 1.288L3 12l5.8 1.9a2 2 0 0 1 1.288 1.287L12 21l1.9-5.8a2 2 0 0 1 1.287-1.288L21 12l-5.8-1.9a2 2 0 0 1-1.288-1.287Z"/></svg>
+              </span>
+              Lumen
+            </span>
+            <a>Product</a>
+            <a>Pricing</a>
+            <a>Docs</a>
+            <a>Changelog</a>
+            <span class="nav-spacer"></span>
+            <span class="nav-cta">Try the demo</span>
+          </nav>
+
+          <section class="hero">
+            <span class="eyebrow"><span class="pip"></span>Design playground</span>
+            <h1>Ship the interface you meant.</h1>
+            <p>
+              Leave feedback right on the running app. Redline writes every note
+              back into your source, so the design history lives with the code.
+            </p>
+            <div class="cta-row">
+              <span class="cta" style="position: relative">Get started</span>
+              <span class="cta secondary">View docs</span>
+            </div>
+          </section>
+
+          <aside class="preview-card">
+            <div class="shot"></div>
+            <div class="meta">
+              <div class="ico"></div>
+              <div style="flex: 1">
+                <div class="l" style="width: 64%"></div>
+                <div class="l" style="width: 90%; margin-top: 8px"></div>
+              </div>
+            </div>
+          </aside>
+        </div>
+
+        <!-- pin anchored to the primary "Get started" CTA, open thread -->
+        <span class="pin open" style="left: 152px; top: 494px">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/><path d="m15 5 4 4"/></svg>
+        </span>
+      </section>
+
+      <!-- dashed leader line linking the docked thread back to its pin
+           (src/styles.css · .redline-leader-line) -->
+      <svg
+        style="position: absolute; inset: 0; pointer-events: none"
+        width="1440"
+        height="900"
+        viewBox="0 0 1440 900"
+        fill="none"
+      >
+        <path
+          d="M228,562 C390,562 410,392 520,392"
+          stroke="var(--foreground)"
+          stroke-width="1"
+          stroke-dasharray="2 5"
+          opacity="0.4"
+        />
+        <circle cx="228" cy="562" r="3.5" fill="var(--foreground)" opacity="0.55" />
+      </svg>
+
+      <!-- Comment thread bubble (comment-bubble.tsx) -->
+      <section class="panel" style="left: 520px; top: 162px; width: 384px">
+
+        <!-- header: grip + action icons -->
+        <div class="panel-head" style="padding: 0 4px 0 8px">
+          <svg style="width: 16px; height: 16px; color: var(--muted-foreground)" viewBox="0 0 24 24" fill="currentColor"><circle cx="9" cy="12" r="1"/><circle cx="9" cy="5" r="1"/><circle cx="9" cy="19" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="15" cy="5" r="1"/><circle cx="15" cy="19" r="1"/></svg>
+          <span class="spacer"></span>
+          <button class="icon-btn" aria-label="Peek">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0"/><circle cx="12" cy="12" r="3"/></svg>
+          </button>
+          <button class="icon-btn" aria-label="Dock">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M15 3v18"/><path d="m8 9 3 3-3 3"/></svg>
+          </button>
+          <button class="icon-btn" aria-label="Resolve">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.801 10A10 10 0 1 1 17 3.335"/><path d="m9 11 3 3L22 4"/></svg>
+          </button>
+          <button class="icon-btn" aria-label="Delete">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" x2="10" y1="11" y2="17"/><line x1="14" x2="14" y1="11" y2="17"/></svg>
+          </button>
+          <button class="icon-btn" aria-label="Close">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+          </button>
+        </div>
+
+        <!-- transcript -->
+        <div class="transcript">
+          <div class="turn">
+            <span class="avatar">PK</span>
+            <div class="turn-body">
+              <p class="said">The primary CTA feels timid. Make it bolder,
+                add contrast, and round the corners a little more.</p>
+              <div class="attr">
+                <span>paulius.krutkis</span>
+                <span class="dot">·</span>
+                <span class="when">14:02</span>
+              </div>
+
+              <div class="variants">
+                <div class="vcard">
+                  <div class="vshot"><span class="mini timid">Get started</span></div>
+                  <div class="vfoot"><span class="vlabel">Original</span></div>
+                </div>
+                <div class="vcard live">
+                  <div class="vshot"><span class="mini bold">Get started</span></div>
+                  <div class="vfoot">
+                    <span class="vlabel">v2</span>
+                    <span class="vlive">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
+                      Live
+                    </span>
+                  </div>
+                </div>
+                <div class="vcard">
+                  <div class="vshot"><span class="mini accent">Get started
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg></span></div>
+                  <div class="vfoot"><span class="vlabel">v3</span></div>
+                </div>
+                <div class="vcard">
+                  <div class="vshot"><span class="mini warm">Start now</span></div>
+                  <div class="vfoot"><span class="vlabel">v4</span></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- composer bar -->
+        <div class="composer-bar">
+          <div class="field">
+            <div class="text placeholder">Tell the agent what to change…<span class="on-version">on v2</span></div>
+            <div class="toolbar">
+              <button class="tool">
+                <svg class="lead" style="color: var(--agent)" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .962 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.962 0z"/><path d="M20 3v4"/><path d="M22 5h-4"/><path d="M4 17v2"/><path d="M5 18H3"/></svg>
+                <span style="font-weight: 500; color: var(--foreground)">Agent</span>
+                <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+              </button>
+              <button class="tool">
+                <span class="mono">2.5 fast</span>
+                <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+              </button>
+              <button class="tool">
+                <span class="mono">3</span>
+                <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+              </button>
+              <span class="spacer"></span>
+              <button class="send" aria-label="Run agent">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12 7-7 7 7"/><path d="M12 19V5"/></svg>
+              </button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- floating dock pill -->
+      <span class="dock">
+        <svg class="mark" viewBox="0 0 16 16" fill="none"><path d="M2.5 11.75h11" stroke="currentColor" stroke-linecap="round" stroke-width="1.5"/><path d="M5.25 11.75 8 5l2.75 6.75" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"/></svg>
+        <span class="badge">4</span>
+      </span>
+    </main>
+
     <script>
-      const scene = new URLSearchParams(window.location.search).get("scene");
+      const scene = new URLSearchParams(location.search).get("scene");
       document.body.dataset.scene = scene === "agent" ? "agent" : "comment";
     </script>
   </body>

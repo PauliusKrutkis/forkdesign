@@ -136,6 +136,21 @@
   animation: redline-shimmer 1.3s ease-in-out infinite;
 }
 
+/* Agent indeterminate bar — a single accent segment sweeps the track while a
+   run is in flight. Reads as live work without claiming a known percentage. */
+@keyframes redline-indeterminate {
+  0% {
+    transform: translateX(-110%);
+  }
+  100% {
+    transform: translateX(260%);
+  }
+}
+
+.redline-indeterminate {
+  animation: redline-indeterminate 1.2s cubic-bezier(0.65, 0, 0.35, 1) infinite;
+}
+
 /* Bubble entrance — a quiet lift as the thread opens. */
 @keyframes redline-bubble-in {
   from {
@@ -198,6 +213,15 @@
   .redline-shimmer {
     transition: none;
     animation: none;
+  }
+
+  /* Hold the indeterminate segment as a quiet static fill instead of hiding it
+     off-track (its keyframe parks it past the right edge). */
+  .redline-indeterminate {
+    animation: none;
+    transform: none;
+    width: 100%;
+    opacity: 0.55;
   }
 }
 

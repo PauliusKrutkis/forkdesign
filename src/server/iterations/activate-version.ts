@@ -5,9 +5,14 @@ import {
   printAst,
 } from "../comments/directive-ast.ts";
 import type { FoundComment } from "../comments/find-comment.ts";
-import { updateCommentActive } from "../comments/writer.ts";
-import { findJsxElementByAnchor } from "../comments/writer-ast.ts";
-import { extractDirectiveInner } from "../comments/writer-directive.ts";
+import {
+  findJsxElementByAnchor,
+  findJsxElementByCommentMarker,
+} from "../comments/writer-ast.ts";
+import {
+  extractDirectiveInner,
+  setCommentActiveInSource,
+} from "../comments/writer-directive.ts";
 import { WriteError } from "../comments/writer-errors.ts";
 import { atomicWriteText } from "../platform/atomic-write.ts";
 import { errorMessage } from "../platform/http.ts";
@@ -69,14 +74,12 @@ function mergeSnapshotAnchorIntoCurrentSource(
 ): MergeSnapshotResult {
   const currentAst = parseSourceAst(currentSource);
   const snapshotAst = parseSourceAst(snapshotSource);
-  const currentTarget = findJsxElementByAnchor(
-    currentAst,
-    found.comment.anchor
-  );
-  const snapshotTarget = findJsxElementByAnchor(
-    snapshotAst,
-    found.comment.anchor
-  );
+  const currentTarget =
+    findJsxElementByCommentMarker(currentAst, id) ??
+    findJsxElementByAnchor(currentAst, found.comment.anchor);
+  const snapshotTarget =
+    findJsxElementByCommentMarker(snapshotAst, id) ??
+    findJsxElementByAnchor(snapshotAst, found.comment.anchor);
 
   if (!currentTarget) {
     return mergeSnapshotError(
@@ -143,18 +146,15 @@ export async function applyIterationVersionToSource(
     return merged;
   }
 
+  let sourceWithActive: string;
   try {
-    await atomicWriteText(found.absolutePath, merged.source);
+    sourceWithActive = setCommentActiveInSource(merged.source, id, v);
   } catch (err) {
     return writeErrorToApplyResult(err);
   }
 
   try {
-    await updateCommentActive({
-      absolutePath: found.absolutePath,
-      commentId: id,
-      active: v,
-    });
+    await atomicWriteText(found.absolutePath, sourceWithActive);
   } catch (err) {
     return writeErrorToApplyResult(err);
   }

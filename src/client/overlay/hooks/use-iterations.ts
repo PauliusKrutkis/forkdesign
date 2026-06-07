@@ -8,6 +8,7 @@ export interface IterationVersion {
   createdAt?: string;
   png: string;
   runId?: string;
+  screenshotPending?: boolean;
   summary?: string;
   tsx: string;
   v: number;
@@ -26,6 +27,7 @@ export function useIterations(commentId: string) {
   const [switching, setSwitching] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [preferredActive, setPreferredActive] = useState<number | null>(null);
 
   const reload = useCallback(async () => {
     try {
@@ -37,20 +39,39 @@ export function useIterations(commentId: string) {
         return;
       }
       const body = (await res.json()) as IterationsData;
-      setData(body);
+      setData({
+        ...body,
+        active:
+          preferredActive !== null &&
+          body.versions.some((version) => version.v === preferredActive)
+            ? preferredActive
+            : body.active,
+      });
     } catch {
       setData(null);
     } finally {
       setLoading(false);
     }
+  }, [commentId, preferredActive]);
+
+  // Show the full "Loading versions…" state only for the first fetch of a
+  // bubble. Background refreshes — e.g. after switching to an already-generated
+  // version (which bumps `preferredActive` and so recreates `reload`) — must
+  // stay silent, otherwise the switch looks like the variants are regenerating.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: commentId is the trigger, not a referenced value
+  useEffect(() => {
+    setLoading(true);
   }, [commentId]);
 
   useEffect(() => {
-    setLoading(true);
     reload().catch(ignorePromiseRejection);
   }, [reload]);
 
   useViteHmrReload(reload);
+
+  const clearPreferredActive = useCallback(() => {
+    setPreferredActive(null);
+  }, []);
 
   const activate = useCallback(
     async (v: number) => {
@@ -58,6 +79,8 @@ export function useIterations(commentId: string) {
         return;
       }
       const previousActive = data?.active;
+      const previousPreferredActive = preferredActive;
+      setPreferredActive(v);
       setSwitching(true);
       setData((prev) => (prev ? { ...prev, active: v } : prev));
       try {
@@ -67,6 +90,7 @@ export function useIterations(commentId: string) {
           body: JSON.stringify({ id: commentId, v }),
         });
         if (!res.ok) {
+          setPreferredActive(previousPreferredActive);
           if (typeof previousActive === "number") {
             setData((prev) =>
               prev ? { ...prev, active: previousActive } : prev
@@ -75,6 +99,7 @@ export function useIterations(commentId: string) {
           return;
         }
       } catch {
+        setPreferredActive(previousPreferredActive);
         if (typeof previousActive === "number") {
           setData((prev) =>
             prev ? { ...prev, active: previousActive } : prev
@@ -84,7 +109,7 @@ export function useIterations(commentId: string) {
         setSwitching(false);
       }
     },
-    [commentId, switching, deleting, data?.active]
+    [commentId, switching, deleting, data?.active, preferredActive]
   );
 
   const removeVersion = useCallback(
@@ -104,6 +129,9 @@ export function useIterations(commentId: string) {
           throw new Error(await readApiError(res));
         }
         const body = (await res.json()) as { active?: number };
+        if (preferredActive === v) {
+          setPreferredActive(null);
+        }
         await reload();
         const nextActive = body.active;
         if (typeof nextActive === "number") {
@@ -116,7 +144,7 @@ export function useIterations(commentId: string) {
         setDeleting(false);
       }
     },
-    [commentId, switching, deleting, reload]
+    [commentId, switching, deleting, reload, preferredActive]
   );
 
   return {
@@ -125,7 +153,9 @@ export function useIterations(commentId: string) {
     switching,
     deleting,
     deleteError,
+    preferredActive,
     activate,
+    clearPreferredActive,
     removeVersion,
     reload,
   };

@@ -8,6 +8,8 @@ import {
 import { ignorePromiseRejection } from "../lib/ignore-promise-rejection.ts";
 
 export function useAgentIteration(args: {
+  clearPreferredActive?: () => void;
+  getPreferredActive?: () => number | null;
   lead: CommentData | undefined;
   agentModel: OverlayModel;
   agentVersionCount: number;
@@ -30,6 +32,8 @@ export function useAgentIteration(args: {
     agentVersionCount,
     reloadIterations,
     onAgentWorkingChange,
+    clearPreferredActive,
+    getPreferredActive,
   } = args;
   const [iterating, setIterating] = useState(false);
   const [iterateError, setIterateError] = useState<string | null>(null);
@@ -65,6 +69,7 @@ export function useAgentIteration(args: {
       const runCount = overrides?.agentVersionCount ?? agentVersionCount;
       const abortController = new AbortController();
       abortRef.current = abortController;
+      clearPreferredActive?.();
 
       const startedAt = Date.now();
       setIterating(true);
@@ -94,6 +99,7 @@ export function useAgentIteration(args: {
         reloadIterations,
         setIterateError,
         setIterateStatus,
+        getPreferredActive,
       });
 
       if (abortRef.current === abortController) {
@@ -114,6 +120,8 @@ export function useAgentIteration(args: {
       agentVersionCount,
       reloadIterations,
       onAgentWorkingChange,
+      clearPreferredActive,
+      getPreferredActive,
     ]
   );
 
