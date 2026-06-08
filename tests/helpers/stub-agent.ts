@@ -29,21 +29,18 @@
  */
 
 import { vi } from "vitest";
-import { atomicWriteText } from "../../src/server/platform/atomic-write.ts";
-import { resolveSafeProjectRelativePath } from "../../src/server/platform/path-safety.ts";
+// biome-ignore lint/performance/noNamespaceImport: vi.spyOn requires the module namespace object to install the runAgent spy
 import * as agentModule from "../../src/server/agent/index.ts";
 import type { AgentModel } from "../../src/server/agent/models.ts";
-import type { AgentResult, AgentRunInput } from "../../src/server/agent/types.ts";
+import type {
+  AgentResult,
+  AgentRunInput,
+} from "../../src/server/agent/types.ts";
+import { atomicWriteText } from "../../src/server/platform/atomic-write.ts";
+import { resolveSafeProjectRelativePath } from "../../src/server/platform/path-safety.ts";
 
 /** A canned variant the stub "produces" for a given run. */
 export interface StubVariant {
-  /**
-   * Full replacement source for the comment file the agent was pointed at
-   * (`AgentRunInput.file`, resolved against `projectRoot`). When omitted, the
-   * stub leaves the file untouched so tests can exercise the "no change" path
-   * (`runNewIteration` treats an unchanged file as `changed: false`).
-   */
-  source?: string;
   /**
    * Optional extra files to write, keyed by POSIX project-relative path. Lets
    * tests exercise the aux-file flow in `run-iteration.ts` / `aux-files.ts`
@@ -52,8 +49,15 @@ export interface StubVariant {
   auxFiles?: Record<string, string>;
   /** Reported model in the `AgentResult`. Defaults to the requested model. */
   modelUsed?: AgentModel;
-  turnsUsed?: number;
+  /**
+   * Full replacement source for the comment file the agent was pointed at
+   * (`AgentRunInput.file`, resolved against `projectRoot`). When omitted, the
+   * stub leaves the file untouched so tests can exercise the "no change" path
+   * (`runNewIteration` treats an unchanged file as `changed: false`).
+   */
+  source?: string;
   toolCalls?: number;
+  turnsUsed?: number;
 }
 
 /**
@@ -75,42 +79,39 @@ export interface StubAgentOptions {
 
 export interface StubAgentController {
   /**
-   * The installed spy standing in for `runAgent`. Equivalent to a `vi.fn()`; you
-   * can assert on it directly (`expect(controller.runAgent).toHaveBeenCalled()`).
-   */
-  runAgent: (input: AgentRunInput) => Promise<AgentResult>;
-  /** Set the default variant (or factory) used when no override is queued. */
-  setVariant(variant: StubVariantSpec): void;
-  /**
-   * Override the variant returned on the NEXT call only (consumed once). Useful
-   * for injecting a specific edit, an aux-file edit, or a no-op for one run.
-   */
-  setNextVariant(variant: StubVariant): void;
-  /**
-   * Pin a variant to a specific 1-based `variantIndex` (for `count>1` batches).
-   * Takes precedence over the default for matching calls.
-   */
-  setVariantForIndex(variantIndex: number, variant: StubVariant): void;
-  /** Force the NEXT call to fail with `{ ok: false, error }` (consumed once). */
-  setNextError(error: string): void;
-  /**
    * Every `AgentRunInput` the stub was invoked with, in order. Lets tests
    * assert prompt-relevant fields: `file`, `anchor`, `text`, `screenshot`,
    * `view`, `variantIndex`/`variantCount`, `priorVariantApproaches`, `model`.
    * (To assert the *rendered* prompt string, combine with `buildIteratePrompt`
    * from `src/server/agent/prompt.ts` over the recorded input.)
    */
-  readonly calls: ReadonlyArray<AgentRunInput>;
+  readonly calls: readonly AgentRunInput[];
   /** Reset recorded calls and queued overrides (keeps the spy installed). */
   reset(): void;
   /** Uninstall the spy, restoring the real `runAgent`. Wire into `afterEach`. */
   restore(): void;
+  /**
+   * The installed spy standing in for `runAgent`. Equivalent to a `vi.fn()`; you
+   * can assert on it directly (`expect(controller.runAgent).toHaveBeenCalled()`).
+   */
+  runAgent: (input: AgentRunInput) => Promise<AgentResult>;
+  /** Force the NEXT call to fail with `{ ok: false, error }` (consumed once). */
+  setNextError(error: string): void;
+  /**
+   * Override the variant returned on the NEXT call only (consumed once). Useful
+   * for injecting a specific edit, an aux-file edit, or a no-op for one run.
+   */
+  setNextVariant(variant: StubVariant): void;
+  /** Set the default variant (or factory) used when no override is queued. */
+  setVariant(variant: StubVariantSpec): void;
+  /**
+   * Pin a variant to a specific 1-based `variantIndex` (for `count>1` batches).
+   * Takes precedence over the default for matching calls.
+   */
+  setVariantForIndex(variantIndex: number, variant: StubVariant): void;
 }
 
-function resolveSpec(
-  spec: StubVariantSpec,
-  input: AgentRunInput
-): StubVariant {
+function resolveSpec(spec: StubVariantSpec, input: AgentRunInput): StubVariant {
   return typeof spec === "function" ? spec(input) : spec;
 }
 
@@ -206,7 +207,7 @@ export function createStubAgent(
     setNextError(error: string): void {
       nextError = error;
     },
-    get calls(): ReadonlyArray<AgentRunInput> {
+    get calls(): readonly AgentRunInput[] {
       return calls;
     },
     reset(): void {

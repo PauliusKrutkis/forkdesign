@@ -15,11 +15,19 @@
  * NOT loaded in the happy-dom unit test environment.
  */
 
-import { afterEach } from "vitest";
-import { cp, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import {
+  cp,
+  mkdir,
+  mkdtemp,
+  readdir,
+  readFile,
+  rm,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { afterEach } from "vitest";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 
@@ -33,27 +41,10 @@ const FIXTURE_PLAYGROUND_DIR = path.resolve(
 
 export interface TempProject {
   /**
-   * Absolute path to the temp project root. Pass this as `projectRoot` to
-   * server functions (`runNewIteration`, `findCommentById`,
-   * `applyIterationVersionToSource`, ...).
+   * Recursively delete the temp dir. Safe to call more than once. Wire this
+   * into `afterEach` so no temp tree leaks between tests.
    */
-  readonly root: string;
-  /**
-   * Resolve a project-relative POSIX path (e.g. `"src/App.tsx"`) to an absolute
-   * path under `root`. Convenience for passing `absolutePath` to the writer or
-   * asserting on a specific file.
-   */
-  srcFile(relPath: string): string;
-  /**
-   * Read a project-relative `.tsx` (or any text) file's contents as utf8.
-   * `relPath` is POSIX-style relative to `root` (e.g. `"src/App.tsx"`).
-   */
-  readSource(relPath: string): Promise<string>;
-  /**
-   * Overwrite a project-relative text file (creating parent dirs as needed).
-   * `relPath` is POSIX-style relative to `root`.
-   */
-  writeSource(relPath: string, contents: string): Promise<void>;
+  cleanup(): Promise<void>;
   /**
    * List every file currently present under `<root>/designs/` as POSIX-style
    * relative paths (relative to `designs/`), sorted for stable assertions.
@@ -67,13 +58,35 @@ export interface TempProject {
    */
   readSnapshot(relPathUnderDesigns: string): Promise<string>;
   /**
-   * Recursively delete the temp dir. Safe to call more than once. Wire this
-   * into `afterEach` so no temp tree leaks between tests.
+   * Read a project-relative `.tsx` (or any text) file's contents as utf8.
+   * `relPath` is POSIX-style relative to `root` (e.g. `"src/App.tsx"`).
    */
-  cleanup(): Promise<void>;
+  readSource(relPath: string): Promise<string>;
+  /**
+   * Absolute path to the temp project root. Pass this as `projectRoot` to
+   * server functions (`runNewIteration`, `findCommentById`,
+   * `applyIterationVersionToSource`, ...).
+   */
+  readonly root: string;
+  /**
+   * Resolve a project-relative POSIX path (e.g. `"src/App.tsx"`) to an absolute
+   * path under `root`. Convenience for passing `absolutePath` to the writer or
+   * asserting on a specific file.
+   */
+  srcFile(relPath: string): string;
+  /**
+   * Overwrite a project-relative text file (creating parent dirs as needed).
+   * `relPath` is POSIX-style relative to `root`.
+   */
+  writeSource(relPath: string, contents: string): Promise<void>;
 }
 
 export interface CreateTempProjectOptions {
+  /**
+   * When false, do NOT auto-register the project for `afterEach` teardown — the
+   * caller takes ownership of `cleanup()`. Defaults to true.
+   */
+  autoCleanup?: boolean;
   /**
    * Override the fixture tree to copy. Defaults to
    * `tests/fixtures/playground`. The contents are copied INTO a `src/`
@@ -81,11 +94,6 @@ export interface CreateTempProjectOptions {
    * Useful for tests that need a different starting source shape.
    */
   fixtureDir?: string;
-  /**
-   * When false, do NOT auto-register the project for `afterEach` teardown — the
-   * caller takes ownership of `cleanup()`. Defaults to true.
-   */
-  autoCleanup?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -192,7 +200,7 @@ export async function createTempProject(
     srcFile(relPath: string): string {
       return toAbs(relPath);
     },
-    async readSource(relPath: string): Promise<string> {
+    readSource(relPath: string): Promise<string> {
       return readFile(toAbs(relPath), "utf8");
     },
     async writeSource(relPath: string, contents: string): Promise<void> {
@@ -208,10 +216,8 @@ export async function createTempProject(
         )
         .sort();
     },
-    async readSnapshot(relPathUnderDesigns: string): Promise<string> {
-      const rel = relPathUnderDesigns
-        .split(path.posix.sep)
-        .join(path.sep);
+    readSnapshot(relPathUnderDesigns: string): Promise<string> {
+      const rel = relPathUnderDesigns.split(path.posix.sep).join(path.sep);
       return readFile(path.join(designsDir, rel), "utf8");
     },
     async cleanup(): Promise<void> {

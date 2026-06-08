@@ -22,27 +22,26 @@
 
 import { parse as parseBabel } from "@babel/parser";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { createTempProject } from "../helpers/index.ts";
 import { findCommentById } from "../../src/server/comments/find-comment.ts";
 import {
   readCommentsFromFile,
   readCommentsFromSource,
 } from "../../src/server/comments/reader.ts";
-import { WriteError } from "../../src/server/comments/writer-errors.ts";
 import { writeCommentToFile } from "../../src/server/comments/writer.ts";
+import { WriteError } from "../../src/server/comments/writer-errors.ts";
+import { createTempProject } from "../helpers/index.ts";
 
 const PAGE_REL = "src/App.tsx";
-const AUTHOR = "paulius.krutkis@oxylabs.io";
+const AUTHOR = "dev@local";
+const UUID_RE = /^[0-9a-f-]{36}$/i;
 
-/** Assert source parses as valid TSX (throws on failure). */
-function assertValidTsx(source: string): void {
-  expect(() =>
-    parseBabel(source, {
-      sourceType: "module",
-      plugins: ["jsx", "typescript"],
-      errorRecovery: false,
-    })
-  ).not.toThrow();
+/** Parse source as TSX, throwing on a syntax error. */
+function parseTsx(source: string): void {
+  parseBabel(source, {
+    sourceType: "module",
+    plugins: ["jsx", "typescript"],
+    errorRecovery: false,
+  });
 }
 
 /**
@@ -97,8 +96,8 @@ describe("integration: comment write→read round-trip", () => {
     });
 
     // Returned ids.
-    expect(result.id).toMatch(/^[0-9a-f-]{36}$/i);
-    expect(result.anchor).toMatch(/^[0-9a-f-]{36}$/i);
+    expect(result.id).toMatch(UUID_RE);
+    expect(result.anchor).toMatch(UUID_RE);
     expect(() => new Date(result.date).toISOString()).not.toThrow();
     expect(new Date(result.date).toISOString()).toBe(result.date);
 
@@ -123,7 +122,7 @@ describe("integration: comment write→read round-trip", () => {
     expect(updated).toContain(`data-comment-anchor="${result.anchor}"`);
 
     // Still valid TSX.
-    assertValidTsx(updated);
+    expect(() => parseTsx(updated)).not.toThrow();
 
     // Directive survives a parse→print→parse cycle unchanged.
     const reread = readCommentsFromSource(updated);
@@ -206,7 +205,8 @@ describe("integration: comment write→read round-trip", () => {
     expect(byId.get(a.id)?.anchor).toBe(a.anchor);
     expect(byId.get(b.id)?.anchor).toBe(a.anchor);
     expect(byId.get(c.id)?.anchor).toBe(c.anchor);
-    assertValidTsx(await project.readSource(PAGE_REL));
+    const roundTripped = await project.readSource(PAGE_REL);
+    expect(() => parseTsx(roundTripped)).not.toThrow();
 
     // findCommentById for B reports the OTHER ids as siblings.
     const foundB = await findCommentById(project.root, b.id, []);
@@ -227,11 +227,13 @@ describe("integration: comment write→read round-trip", () => {
     });
 
     const updated = await project.readSource(PAGE_REL);
-    assertValidTsx(updated);
+    expect(() => parseTsx(updated)).not.toThrow();
 
     // The nested element carries the anchor; the marker is a sibling (next
     // line after the button), not hoisted to the root.
-    expect(updated).toContain(`<button type="button" data-comment-anchor="${anchor}">`);
+    expect(updated).toContain(
+      `<button type="button" data-comment-anchor="${anchor}">`
+    );
     // Outer structure preserved (recast keeps untouched regions byte-stable).
     expect(updated).toContain('<main data-view="playground">');
     expect(updated).toContain('<div className="card">');

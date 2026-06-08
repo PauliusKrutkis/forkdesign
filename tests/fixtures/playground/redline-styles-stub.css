@@ -1,0 +1,13 @@
+/*
+ * Stub stylesheet aliased to `redline/styles.css` for the e2e playground.
+ *
+ * The redline plugin's auto-mounted client does `import "redline/styles.css"`,
+ * which normally resolves (via package `exports`) to the COMPILED Tailwind
+ * output in `dist/styles.css` — a file that only exists after `pnpm build`.
+ * The e2e suite must run with a bare `pnpm install` (no build), so the
+ * playground vite.config aliases `redline/styles.css` to this empty file.
+ *
+ * The Playwright tests assert on DOM structure, `data-*`/`aria-*` hooks and
+ * conditional rendering, none of which depend on the visual Tailwind styles, so
+ * an empty stylesheet is sufficient to mount the overlay and exercise it.
+ */

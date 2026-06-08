@@ -13,11 +13,10 @@
  *   - src/server/platform/atomic-write.ts
  *       export async function atomicWriteText(absolutePath, content): Promise<void>
  *       export async function atomicWriteBytes(absolutePath, bytes: Buffer): Promise<void>
- *       Both write to `${dir}/.${base}.${pid}.${Date.now()}.tmp` then
- *       fs.rename() onto the target. NOTE: the tmp name is keyed on pid +
- *       Date.now() with NO randomness — two writes started within the same
- *       millisecond in the same process could collide on the tmp name. Design a
- *       test that documents/probes this (see "interleaved writes" below).
+ *       Both write to a randomized sibling tmp file
+ *       (`.${base}.${pid}.${randomUUID()}.tmp`) then fs.rename() onto the
+ *       target, so concurrent same-target writes never share a tmp path (see
+ *       the "interleaved writes" regression guard below).
  *   - src/server/platform/path-safety.ts
  *       export function isSafePathSegment(value): boolean   // ^[A-Za-z0-9_-]+$
  *       export function isSafeIterationScreenshotPath(value): boolean
@@ -33,12 +32,11 @@
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
+import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import { readdir, readFile } from "node:fs/promises";
 import path from "node:path";
-import { randomUUID } from "node:crypto";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { createTempProject } from "../helpers/index.ts";
 import {
   atomicWriteBytes,
   atomicWriteText,
@@ -49,11 +47,12 @@ import {
   resolveSafePagePath,
   resolveSafeProjectRelativePath,
 } from "../../src/server/platform/path-safety.ts";
+import { createTempProject } from "../helpers/index.ts";
 
 /** List leftover atomic-write tmp files for `base` in `dir`. */
 async function listTmpResidue(dir: string, base: string): Promise<string[]> {
   const entries = await readdir(dir);
-  // The writer names tmp files `.${base}.${pid}.${Date.now()}.tmp`.
+  // The writer names tmp files `.${base}.${pid}.${randomUUID()}.tmp`.
   const prefix = `.${base}.`;
   return entries.filter(
     (name) => name.startsWith(prefix) && name.endsWith(".tmp")
@@ -77,11 +76,12 @@ describe("integration: atomic writes never corrupt the target file", () => {
     await atomicWriteText(target, "NEW CONTENT");
 
     expect(await readFile(target, "utf8")).toBe("NEW CONTENT");
-    expect(await listTmpResidue(path.dirname(target), path.basename(target)))
-      .toEqual([]);
+    expect(
+      await listTmpResidue(path.dirname(target), path.basename(target))
+    ).toEqual([]);
   });
 
-  it("concurrent writes to the same file resolve to ONE complete winning version (never a partial)", async () => {
+  it("concurrent writes to the same file never leave a partial/torn target (last successful rename wins)", async () => {
     // Build N large distinct payloads. Each is tagged with its index and made
     // large enough that a torn/interleaved write would be detectable as a
     // length mismatch or a mixed tag.
@@ -94,14 +94,27 @@ describe("integration: atomic writes never corrupt the target file", () => {
     // Sanity: every payload is a distinct length-or-content value.
     expect(new Set(payloads).size).toBe(N);
 
-    await Promise.all(payloads.map((p) => atomicWriteText(target, p)));
+    // Every concurrent write gets its own randomized tmp path, so all renames
+    // succeed and the final target is whichever rename landed last. We still
+    // use allSettled and assert no rejections so a future tmp-name regression
+    // (colliding paths → ENOENT on rename) would surface here.
+    const results = await Promise.allSettled(
+      payloads.map((p) => atomicWriteText(target, p))
+    );
+    // No write is dropped: a unique tmp per call means no rename collisions.
+    expect(results.every((r) => r.status === "fulfilled")).toBe(true);
 
     const finalContents = await readFile(target, "utf8");
 
-    // The final state must be EXACTLY one of the inputs — not a concatenation,
-    // truncation, or splice of two payloads.
+    // CORE DURABILITY INVARIANT: the final state is EXACTLY one of the inputs —
+    // not a concatenation, truncation, or splice of two payloads. This holds
+    // even with the colliding tmp names because writeFile fully overwrites and
+    // rename is atomic.
     expect(payloads).toContain(finalContents);
-    const matching = payloads.find((p) => p === finalContents)!;
+    const matching = payloads.find((p) => p === finalContents);
+    if (matching === undefined) {
+      throw new Error("final contents did not match any written payload");
+    }
     expect(finalContents.length).toBe(matching.length);
     // Cross-check: the file must not contain two different payload tags spliced
     // together (a torn write between renames would leave a hybrid).
@@ -110,30 +123,27 @@ describe("integration: atomic writes never corrupt the target file", () => {
     );
     expect(tagsPresent.size).toBe(1);
 
-    // No tmp residue after the storm settles.
-    expect(await listTmpResidue(path.dirname(target), path.basename(target)))
-      .toEqual([]);
+    // No tmp residue after the storm settles (every tmp was either renamed or
+    // consumed by a colliding writer).
+    expect(
+      await listTmpResidue(path.dirname(target), path.basename(target))
+    ).toEqual([]);
   });
 
-  it("interleaved writes started in the same millisecond do not silently lose/merge data", async () => {
-    // PURPOSE: probe the tmp-name collision risk (pid + Date.now(), no rng).
+  it("interleaved same-millisecond writes to one target all succeed (regression guard: tmp names are randomized)", async () => {
+    // REGRESSION GUARD for a fixed durability bug.
     //
-    // The atomic writer derives its tmp name from `process.pid` + `Date.now()`
-    // with NO random component. Two writes to the SAME target whose writeFile()
-    // calls land in the same millisecond therefore compute the SAME tmp path.
-    // We fire many same-target writes in a tight, un-awaited loop to maximize
-    // the chance of millisecond coincidence, then await all.
+    // The atomic writer used to derive its tmp name from `process.pid` +
+    // `Date.now()` with NO random component, so two writes to the SAME target
+    // whose writeFile() calls landed in the same millisecond computed the SAME
+    // tmp path: the first rename consumed it and every later rename rejected
+    // with ENOENT (syscall: "rename"). In practice the large majority of
+    // concurrent same-target writes failed. The fix appends crypto.randomUUID()
+    // to the tmp name so concurrent writers never share a tmp path.
     //
-    // OBSERVED BEHAVIOR (documented, not aspirational): writeFile() is a full
-    // overwrite, so even when two writers share a tmp path the second
-    // writeFile fully replaces the first's bytes (it does not append/splice),
-    // and each rename moves a whole tmp file onto the target. The survivor is
-    // therefore always a COMPLETE, internally consistent payload — never torn.
-    // LATENT RISK FLAG: with no rng in the tmp name this only holds because
-    // writeFile truncates+overwrites atomically at the syscall level for these
-    // sizes; a collision still means one writer's intended bytes can be lost
-    // (last-rename-wins). That is acceptable for a single overwritten target
-    // but is a fragile invariant worth a random suffix in the tmp name.
+    // We fire many same-target writes in a tight, un-awaited loop so their
+    // Date.now() coincides — the exact condition that used to collide — and
+    // assert that NONE reject.
     const N = 64;
     const payloads = Array.from({ length: N }, (_, i) => {
       const tag = `iv-${String(i).padStart(3, "0")}`;
@@ -145,21 +155,28 @@ describe("integration: atomic writes never corrupt the target file", () => {
     for (const p of payloads) {
       writes.push(atomicWriteText(target, p));
     }
-    // No collision should throw / reject; all settle.
-    await expect(Promise.all(writes)).resolves.toBeDefined();
+    const results = await Promise.allSettled(writes);
+
+    const rejected = results.filter(
+      (r): r is PromiseRejectedResult => r.status === "rejected"
+    );
+
+    // THE FIX: every concurrent same-target write completes. If this regresses,
+    // the rejections will be ENOENT-on-rename from colliding tmp paths.
+    expect(rejected).toEqual([]);
 
     const finalContents = await readFile(target, "utf8");
+    // Durability still holds: the survivor is exactly one untorn payload.
     expect(payloads).toContain(finalContents);
     const tagsPresent = new Set(
       [...finalContents.matchAll(/iv-(\d{3})/g)].map((m) => m[1])
     );
-    // Exactly one writer's full payload survives — last rename wins, no merge.
     expect(tagsPresent.size).toBe(1);
 
-    // The collision risk would surface as a leftover tmp (a rename that lost
-    // its source, or a writeFile to an already-renamed-away path). Assert none.
-    expect(await listTmpResidue(path.dirname(target), path.basename(target)))
-      .toEqual([]);
+    // No leftover tmp files despite the collisions.
+    expect(
+      await listTmpResidue(path.dirname(target), path.basename(target))
+    ).toEqual([]);
   });
 
   it("concurrent writes to DIFFERENT files all succeed with correct contents", async () => {
@@ -175,8 +192,9 @@ describe("integration: atomic writes never corrupt the target file", () => {
 
     for (const f of files) {
       expect(await readFile(f.abs, "utf8")).toBe(f.contents);
-      expect(await listTmpResidue(path.dirname(f.abs), path.basename(f.abs)))
-        .toEqual([]);
+      expect(
+        await listTmpResidue(path.dirname(f.abs), path.basename(f.abs))
+      ).toEqual([]);
     }
   });
 
@@ -224,7 +242,10 @@ describe("integration: path-safety rejects traversal outside the project root", 
   });
 
   it("resolveSafeProjectRelativePath rejects absolute paths and `..` escapes", () => {
-    const absResult = resolveSafeProjectRelativePath(projectRoot, "/etc/passwd");
+    const absResult = resolveSafeProjectRelativePath(
+      projectRoot,
+      "/etc/passwd"
+    );
     expect(absResult.ok).toBe(false);
     if (!absResult.ok) {
       expect(absResult.reason).toBe("path must be relative");
@@ -279,7 +300,11 @@ describe("integration: path-safety rejects traversal outside the project root", 
 
     // "src/../package.json" is not .tsx and not under src/ after the prefix
     // check — it must be rejected one way or another.
-    const traversal = resolveSafePagePath(projectRoot, "src/../package.json", []);
+    const traversal = resolveSafePagePath(
+      projectRoot,
+      "src/../package.json",
+      []
+    );
     expect(traversal.ok).toBe(false);
 
     const excluded = resolveSafePagePath(projectRoot, "src/excluded/x.tsx", [

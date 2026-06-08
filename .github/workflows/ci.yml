@@ -31,12 +31,8 @@ jobs:
       - run: pnpm build
       - run: pnpm pack --dry-run
 
-  # Non-blocking: the integration scaffold is intentionally red/unimplemented
-  # for now, so failures here must NOT fail the overall CI run. Remove
-  # `continue-on-error` once the integration suite is implemented and green.
   integration:
     runs-on: ubuntu-latest
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v6
 
@@ -50,12 +46,8 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm test:integration
 
-  # Non-blocking: the e2e scaffold is intentionally red/unimplemented for now,
-  # so failures here must NOT fail the overall CI run. Remove
-  # `continue-on-error` once the e2e suite is implemented and green.
   e2e:
     runs-on: ubuntu-latest
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v6
 

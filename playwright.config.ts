@@ -1,21 +1,26 @@
 import { defineConfig, devices } from "@playwright/test";
 
 // Playwright E2E config for the redline Vite + React dev plugin.
-// E2E specs live in the top-level `tests/e2e/` dir (owned by the fixture/e2e agents).
+// E2E specs live in the top-level `tests/e2e/` dir.
 //
-// TODO(fixture owner): finalize the `webServer.command` and `port`/`url` below.
-// The exact command to boot the fixture playground dev server is TBD — it must
-// start the Vite playground that mounts the redline plugin. The placeholder
-// assumes a playground under `tests/fixtures/playground`. Adjust once the
-// fixture is in place (e.g. switch to a pnpm workspace `--filter` invocation,
-// or a dedicated `dev:fixture` script).
+// The `webServer` below boots the fixture playground Vite dev server
+// (`tests/fixtures/playground/`) with the redline plugin mounted from LOCAL
+// SOURCE (no prior `pnpm build` required — see the playground vite.config.ts).
+// The overlay only mounts under `import.meta.env.DEV`, which a Vite dev server
+// satisfies.
 
-const PORT = 5173; // TODO(fixture owner): confirm/override the playground dev server port.
+const PORT = Number(process.env.E2E_PORT ?? 5179);
 const baseURL = process.env.E2E_BASE_URL ?? `http://localhost:${PORT}`;
 const isCI = !!process.env.CI;
 
 export default defineConfig({
   testDir: "tests/e2e",
+  // The specs share ONE on-disk fixture (tests/fixtures/playground/src/App.tsx)
+  // that comment-creating tests mutate then restore, and one dev server. Running
+  // them in parallel would let one test's afterEach-restore clobber another's
+  // in-flight write. Force a single serial worker.
+  fullyParallel: false,
+  workers: 1,
   // Fail the build on CI if test.only was accidentally left in the source.
   forbidOnly: isCI,
   // Flaky-test mitigation: retry once on CI, never locally.
@@ -26,6 +31,8 @@ export default defineConfig({
     headless: true,
     // Capture a trace only when retrying a failed test to keep artifacts small.
     trace: "on-first-retry",
+    screenshot: "only-on-failure",
+    video: "retain-on-failure",
   },
   projects: [
     {
@@ -34,11 +41,7 @@ export default defineConfig({
     },
   ],
   webServer: {
-    // TODO(fixture owner): replace with the real command that boots the
-    // fixture playground Vite dev server. Examples:
-    //   command: "pnpm --filter @redline/playground dev"
-    //   command: "vite tests/fixtures/playground"
-    command: "vite tests/fixtures/playground --port " + PORT,
+    command: `pnpm exec vite --config tests/fixtures/playground/vite.config.ts --port ${PORT} --strictPort`,
     url: baseURL,
     reuseExistingServer: !isCI,
     timeout: 120_000,

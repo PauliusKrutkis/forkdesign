@@ -7,6 +7,8 @@
   ],
   "files": {
     // `design/` holds standalone HTML design explorations, not shipped source.
-    "includes": ["!design"]
+    // `tests/fixtures/playground` is a non-shipped Vite + React fixture app
+    // (PascalCase entry component, a CSS stub) consumed only by the e2e suite.
+    "includes": ["!design", "!tests/fixtures/playground"]
   }
 }
