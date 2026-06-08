@@ -34,6 +34,7 @@ export interface PromptReply {
 export interface PromptInput {
   activeVersion?: number;
   anchor: string;
+  commentId?: string;
   file: string;
   /** Summaries of earlier variants in this multi-agent batch (variant 2+). */
   priorVariantApproaches?: string[];
@@ -165,7 +166,7 @@ export function buildIteratePrompt(input: PromptInput): string {
 
   if (
     input.screenshot &&
-    isSafeIterationScreenshotPath(input.screenshot) &&
+    isSafeIterationScreenshotPath(input.screenshot, input.commentId) &&
     shouldIncludeScreenshotInPrompt(input.text)
   ) {
     const absScreenshot = path.join(

@@ -74,11 +74,6 @@ export function toRelPosix(projectRoot: string, absPath: string): string {
   return path.relative(projectRoot, absPath).split(path.sep).join("/");
 }
 
-/** Resolve a posix project-relative key back to an absolute path. */
-export function fromRelPosix(projectRoot: string, relPosix: string): string {
-  return path.join(projectRoot, ...relPosix.split("/"));
-}
-
 async function walk(
   dir: string,
   projectRoot: string,

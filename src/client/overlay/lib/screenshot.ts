@@ -7,7 +7,7 @@ import { isOverlayElement } from "./overlay-dom.ts";
  * remain a non-goal; for backdrop-rich elements the captured screenshot
  * will be slightly off and the lightbox will show that.
  */
-export function effectiveBackgroundColor(el: Element): string {
+function effectiveBackgroundColor(el: Element): string {
   let cur: Element | null = el;
   while (cur) {
     const bg = window.getComputedStyle(cur).backgroundColor;

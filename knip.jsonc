@@ -1,8 +1,13 @@
 {
   "$schema": "https://unpkg.com/knip@6/schema.json",
-  "project": ["src/**/*.{ts,tsx,css}"],
-  "ignoreDependencies": ["@biomejs/biome", "tailwindcss"],
-  "ignore": ["src/client/ui/**", "src/redline.css", "src/styles.css"],
+  "workspaces": {
+    ".": {
+      "project": ["src/**/*.{ts,tsx,css}"],
+      "ignoreDependencies": ["@biomejs/biome", "tailwindcss"],
+      "ignore": ["src/client/ui/**", "src/redline.css", "src/styles.css"]
+    },
+    "examples/basic-vite": {}
+  },
   "ignoreIssues": {
     "src/client/settings.ts": ["exports"],
     "src/server/agent/config.ts": ["exports"],

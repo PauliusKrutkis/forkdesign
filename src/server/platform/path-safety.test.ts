@@ -156,4 +156,19 @@ describe("isSafeIterationScreenshotPath", () => {
       false
     );
   });
+
+  it("can require the expected iteration id", () => {
+    expect(
+      isSafeIterationScreenshotPath(
+        "/designs/iterations/comment-a/v0.png",
+        "comment-a"
+      )
+    ).toBe(true);
+    expect(
+      isSafeIterationScreenshotPath(
+        "/designs/iterations/comment-b/v0.png",
+        "comment-a"
+      )
+    ).toBe(false);
+  });
 });

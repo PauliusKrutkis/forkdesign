@@ -23,3 +23,6 @@ source files, write screenshots and iteration artifacts under `designs/`, and
 run configured AI agents. Do not run it on an untrusted network or against
 repositories whose source/screenshots cannot be shared with your configured AI
 provider.
+
+The middleware rejects non-loopback clients by default. Only set
+`allowRemoteAccess: true` for a Vite dev server on a trusted network.

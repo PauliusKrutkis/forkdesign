@@ -27,6 +27,7 @@ const INJECT_MARKER = "<!-- vite-plugin-comments injected -->";
 const AUTO_MOUNT_MARKER = "<!-- redline overlay auto-mount -->";
 const VIRTUAL_CLIENT_ID = "virtual:redline/client";
 const RESOLVED_VIRTUAL_CLIENT_ID = `\0${VIRTUAL_CLIENT_ID}`;
+const LOOPBACK_IPV6 = new Set(["::1", "0:0:0:0:0:0:0:1"]);
 
 interface SourceChangeController {
   onInternalSourceWorkFinish: (event: IterationSourceAppliedEvent) => void;
@@ -38,6 +39,34 @@ const sourceChangeControllers = new WeakMap<
   ViteDevServer,
   SourceChangeController
 >();
+
+export function isLoopbackRemoteAddress(
+  remoteAddress: string | undefined
+): boolean {
+  if (!remoteAddress) {
+    return false;
+  }
+  const address = remoteAddress.startsWith("::ffff:")
+    ? remoteAddress.slice("::ffff:".length)
+    : remoteAddress;
+  return address.startsWith("127.") || LOOPBACK_IPV6.has(address);
+}
+
+function rejectRemoteApiRequest(
+  req: IncomingMessage,
+  res: ServerResponse,
+  allowRemoteAccess: boolean
+): boolean {
+  if (allowRemoteAccess || isLoopbackRemoteAddress(req.socket.remoteAddress)) {
+    return false;
+  }
+  sendError(
+    res,
+    403,
+    "redline API is local-only; pass allowRemoteAccess: true only on trusted networks"
+  );
+  return true;
+}
 
 function redlineClientModule(): string {
   return `
@@ -208,6 +237,11 @@ export interface CommentsPluginOptions {
    * Defaults to `["frontend-design"]`; pass `[]` to disable.
    */
   agentSkills?: AgentSkill[];
+  /**
+   * Allow API requests from non-loopback clients. Keep false unless the Vite
+   * dev server is on a trusted network.
+   */
+  allowRemoteAccess?: boolean;
   /** Path to the Cursor CLI `agent` binary. Default: `"agent"` (must be on PATH). */
   cursorAgentPath?: string;
   /**
@@ -225,6 +259,7 @@ export interface CommentsPluginOptions {
 
 export function comments(options: CommentsPluginOptions = {}): Plugin {
   const excludeSrcPrefixes = options.excludeSrcPrefixes ?? [];
+  const allowRemoteAccess = options.allowRemoteAccess ?? false;
   const cursorAgentPath = options.cursorAgentPath;
   const agentModelPriority = options.agentModelPriority;
   const agentSkills = options.agentSkills;
@@ -246,6 +281,9 @@ export function comments(options: CommentsPluginOptions = {}): Plugin {
 
     configureServer(server) {
       server.middlewares.use("/api/comments", (req, res, next) => {
+        if (rejectRemoteApiRequest(req, res, allowRemoteAccess)) {
+          return;
+        }
         if (req.method === "OPTIONS") {
           res.statusCode = 204;
           res.end();
@@ -279,6 +317,9 @@ export function comments(options: CommentsPluginOptions = {}): Plugin {
       });
 
       server.middlewares.use("/api/iterations", (req, res, next) => {
+        if (rejectRemoteApiRequest(req, res, allowRemoteAccess)) {
+          return;
+        }
         if (req.method === "OPTIONS") {
           res.statusCode = 204;
           res.end();

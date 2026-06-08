@@ -15,6 +15,7 @@ export interface AgentProgress {
 export interface AgentRunInput {
   activeVersion?: number;
   anchor: string;
+  commentId?: string;
   file: string;
   model: AgentModel;
   onEvent?: (event: AgentProgress) => void;

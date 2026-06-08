@@ -176,7 +176,7 @@ function parseDirective(
 
   const rawScreenshot = stringOf(attrs.values.screenshot) ?? undefined;
   const screenshot =
-    rawScreenshot && isSafeIterationScreenshotPath(rawScreenshot)
+    rawScreenshot && isSafeIterationScreenshotPath(rawScreenshot, id)
       ? rawScreenshot
       : undefined;
   if (rawScreenshot && !screenshot) {

@@ -1,0 +1,3 @@
+# playground fixture
+
+A minimal stand-in user project used as the canonical fixture for `redline`'s integration and e2e round-trip tests. `createTempProject` (see `tests/helpers/temp-project.ts`) copies this tree into a throwaway OS temp dir so server flows can write comment markers into its `.tsx` source, persist iteration snapshots under `designs/`, and activate versions against a real on-disk project without touching the repo. Because `src/server/comments/find-comment.ts` walks `SRC_REL = "src"`, the copied tree must place `App.tsx` (and any other anchorable components) under a `src/` directory in the temp project — the harness is responsible for laying it out that way during the copy step.

@@ -342,6 +342,7 @@ interface VariantRunOutcome {
 async function runSingleAgentVariant(args: {
   baselineFiles: Map<string, string>;
   beforeSource: string;
+  commentId: string;
   commentRel: string;
   count: number;
   found: FoundComment;
@@ -356,6 +357,7 @@ async function runSingleAgentVariant(args: {
   const {
     baselineFiles,
     beforeSource,
+    commentId,
     commentRel,
     count,
     found,
@@ -393,6 +395,7 @@ async function runSingleAgentVariant(args: {
   let lastAgentSummary: string | undefined;
   const agentResult = await runAgent({
     projectRoot,
+    commentId,
     file: found.relativePath,
     anchor: found.comment.anchor,
     text: found.comment.text,
@@ -753,6 +756,7 @@ async function runVariantBatch(args: {
       variantOutput = await runSingleAgentVariant({
         baselineFiles,
         beforeSource: args.beforeSource,
+        commentId: args.id,
         commentRel,
         count: args.count,
         found: args.found,

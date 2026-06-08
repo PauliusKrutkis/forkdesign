@@ -62,6 +62,21 @@ Screenshots and agent iterations are written under `designs/`. Add `designs/`
 and `public/designs/` to the host app's `.gitignore` if those artifacts should
 stay local.
 
+## Example
+
+Try the minimal Vite app in [`examples/basic-vite`](./examples/basic-vite):
+
+```sh
+pnpm install
+pnpm build
+pnpm example
+```
+
+That app is only the default `redline()` plugin plus a small React surface. It
+does not manually import the overlay or use Tailwind. Comment markers are
+written into `examples/basic-vite/src/`; local iteration artifacts land under
+`examples/basic-vite/designs/`.
+
 ## AI Iteration
 
 Agent mode uses your configured local tools:
@@ -94,6 +109,7 @@ redline({
 
 ```ts
 redline({
+  allowRemoteAccess: false,
   excludeSrcPrefixes: ["src/dev/"],
   cursorAgentPath: "/usr/local/bin/agent",
   agentModelPriority: ["composer-2.5-fast", "composer-2.5", "default"],
@@ -135,6 +151,9 @@ source files, write screenshots and iteration artifacts, and run configured AI
 agents. Do not expose a Vite dev server running redline to an untrusted network
 or run it with `vite --host` unless the network is trusted.
 
+The API rejects non-loopback clients by default. Pass `allowRemoteAccess: true`
+only when the dev server is intentionally reachable from a trusted network.
+
 When AI iteration is enabled, selected source context, comments, screenshots,
 and feedback may be sent to your configured provider. See [`SECURITY.md`](./SECURITY.md).
 
@@ -151,6 +170,7 @@ and feedback may be sent to your configured provider. See [`SECURITY.md`](./SECU
 Architecture notes live in [`docs/architecture.md`](./docs/architecture.md).
 `AGENTS.md` is guidance for AI coding assistants; human contributors should
 start with [`CONTRIBUTING.md`](./CONTRIBUTING.md).
+For a manual smoke check in a real Vite dev server, use `pnpm example`.
 
 ```sh
 pnpm install

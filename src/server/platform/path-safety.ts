@@ -14,9 +14,17 @@ export function isSafePathSegment(value: string): boolean {
   return SAFE_PATH_SEGMENT_RE.test(value);
 }
 
-export function isSafeIterationScreenshotPath(value: string): boolean {
+export function isSafeIterationScreenshotPath(
+  value: string,
+  expectedId?: string
+): boolean {
   const match = value.match(ITERATION_SCREENSHOT_RE);
-  return match?.[1] !== undefined && isSafePathSegment(match[1]);
+  const id = match?.[1];
+  return (
+    id !== undefined &&
+    isSafePathSegment(id) &&
+    (expectedId === undefined || id === expectedId)
+  );
 }
 
 export function resolveSafeProjectRelativePath(

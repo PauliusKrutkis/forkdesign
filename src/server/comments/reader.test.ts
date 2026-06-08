@@ -195,4 +195,16 @@ describe("readCommentsFromSource", () => {
       warnings.some((warning) => warning.includes("invalid screenshot path"))
     ).toBe(true);
   });
+
+  it("drops screenshots that belong to a different comment id", () => {
+    const src = wrap(
+      `      <button data-comment-anchor="a1">Save</button>
+      {/* @comment id="c1" anchor="a1" text="hi" author="x@y.z" date="2026-05-01T00:00:00Z" screenshot="/designs/iterations/c2/v0.png" */}`
+    );
+    const { comments, warnings } = readCommentsFromSource(src);
+    expect(comments[0]?.screenshot).toBeUndefined();
+    expect(
+      warnings.some((warning) => warning.includes("invalid screenshot path"))
+    ).toBe(true);
+  });
 });
