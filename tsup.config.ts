@@ -22,12 +22,10 @@ export default defineConfig({
     "class-variance-authority",
     "clsx",
     "tailwind-merge",
-    "html-to-image",
   ],
   external: [
     "react",
     "react-dom",
-    "react-router-dom",
     "vite",
     "@anthropic-ai/claude-agent-sdk",
     "recast",

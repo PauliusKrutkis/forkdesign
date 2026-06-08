@@ -38,6 +38,15 @@ describe("buildIteratePrompt", () => {
     );
   });
 
+  it("omits unsafe screenshot paths", () => {
+    const prompt = buildIteratePrompt({
+      ...base,
+      screenshot: "/../../etc/passwd",
+    });
+    expect(prompt).not.toContain("Visual context");
+    expect(prompt).not.toContain("/etc/passwd");
+  });
+
   it("omits screenshot section for explicit className feedback", () => {
     const prompt = buildIteratePrompt({
       ...base,

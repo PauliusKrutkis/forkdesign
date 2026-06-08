@@ -44,6 +44,7 @@ import {
   sendJson,
 } from "../../platform/http.ts";
 import { decodeScreenshotPng } from "../../platform/media.ts";
+import { isSafePathSegment } from "../../platform/path-safety.ts";
 import {
   parseActivateBody,
   parseDeleteVersionBody,
@@ -149,6 +150,10 @@ export async function handleIterationsList(
     sendError(res, 400, "missing query param: id");
     return;
   }
+  if (!isSafePathSegment(id)) {
+    sendError(res, 400, "query param `id` contains unsafe path characters");
+    return;
+  }
 
   const ctx = await resolveCommentIterationContext(
     projectRoot,
@@ -229,6 +234,10 @@ export async function handleIterationsCancel(
   const id = (body.value as { id?: unknown }).id;
   if (typeof id !== "string" || !id.trim()) {
     sendError(res, 400, "missing field: id");
+    return;
+  }
+  if (!isSafePathSegment(id)) {
+    sendError(res, 400, "field `id` contains unsafe path characters");
     return;
   }
   const cancelled = cancelIterationRun(id);

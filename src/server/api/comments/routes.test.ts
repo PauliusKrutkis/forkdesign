@@ -188,6 +188,21 @@ describe("handleGet", () => {
 });
 
 describe("handlePatch", () => {
+  it("rejects unsafe ids", async () => {
+    const mock = createMockResponse();
+    const req = createJsonRequest(
+      { text: "updated text" },
+      { method: "PATCH", url: "/nested/id" }
+    );
+
+    await handlePatch(req, mock.res, projectRoot, []);
+
+    expect(mock.getStatus()).toBe(400);
+    expect(mock.getJson()).toEqual({
+      error: "comment id contains unsafe path characters",
+    });
+  });
+
   it("updates comment text by id", async () => {
     const created = await seedComment();
     const mock = createMockResponse();
@@ -259,6 +274,21 @@ describe("handlePatch", () => {
 });
 
 describe("handleDelete", () => {
+  it("rejects unsafe ids", async () => {
+    const mock = createMockResponse();
+    const req = createJsonRequest(undefined, {
+      method: "DELETE",
+      url: "/nested/id",
+    });
+
+    await handleDelete(req, mock.res, projectRoot, []);
+
+    expect(mock.getStatus()).toBe(400);
+    expect(mock.getJson()).toEqual({
+      error: "comment id contains unsafe path characters",
+    });
+  });
+
   it("removes a comment marker", async () => {
     const created = await seedComment();
     const mock = createMockResponse();

@@ -31,7 +31,10 @@ import {
   sendJson,
 } from "../../platform/http.ts";
 import { decodeScreenshotPng } from "../../platform/media.ts";
-import { resolveSafePagePath } from "../../platform/path-safety.ts";
+import {
+  isSafePathSegment,
+  resolveSafePagePath,
+} from "../../platform/path-safety.ts";
 import { parsePatchBody, parsePostBody } from "./parse-body.ts";
 
 const LEADING_SLASHES_RE = /^\/+/;
@@ -57,17 +60,13 @@ async function handleGetAllComments(
         all.push({ ...c, file: relativePath });
       }
     } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
+      const message = errorMessage(err);
       console.warn(
         `[vite-plugin-comments] ${relativePath}: parse error — ${message}`
       );
     }
   }
   return all;
-}
-
-function sendJsonOk(res: ServerResponse, body: unknown): void {
-  sendJson(res, body);
 }
 
 export async function handleGet(
@@ -86,10 +85,10 @@ export async function handleGet(
   if (!file) {
     try {
       const all = await handleGetAllComments(projectRoot, excludeSrcPrefixes);
-      sendJsonOk(res, { comments: all });
+      sendJson(res, { comments: all });
       return;
     } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
+      const message = errorMessage(err);
       sendError(res, 500, `scan error: ${message}`);
       return;
     }
@@ -122,12 +121,12 @@ export async function handleGet(
       console.warn(`[vite-plugin-comments] ${file}: ${w}`);
     }
 
-    sendJsonOk(res, {
+    sendJson(res, {
       file: resolved.relativePath,
       comments: list,
     });
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
+    const message = errorMessage(err);
     sendError(res, 500, `parse error: ${message}`);
   }
 }
@@ -173,7 +172,7 @@ export async function handlePost(
   // The baseline file snapshot (`v0.tsx`) is captured AFTER the writer
   // succeeds (see step 5 below) so it includes the freshly-written marker.
   // If v0.tsx lacked the marker, activating v0 later would wipe the marker
-  // entirely — bug #24.
+  // entirely.
   const commentId = randomUUID();
 
   // Decode and validate the optional screenshot BEFORE running the writer.
@@ -211,7 +210,7 @@ export async function handlePost(
       sendError(res, err.status, err.message);
       return;
     }
-    sendError(res, 500, err instanceof Error ? err.message : String(err));
+    sendError(res, 500, errorMessage(err));
     return;
   }
 
@@ -245,7 +244,7 @@ export async function handlePost(
     view = null;
   }
 
-  sendJsonOk(res, {
+  sendJson(res, {
     id: result.id,
     anchor: result.anchor,
     view,
@@ -264,6 +263,10 @@ export async function handlePatch(
   const id = url.pathname.replace(LEADING_SLASHES_RE, "");
   if (id.length === 0) {
     sendError(res, 400, "PATCH /api/comments/:id requires a non-empty id");
+    return;
+  }
+  if (!isSafePathSegment(id)) {
+    sendError(res, 400, "comment id contains unsafe path characters");
     return;
   }
 
@@ -398,7 +401,7 @@ export async function handlePatch(
       sendError(res, err.status, err.message);
       return;
     }
-    sendError(res, 500, err instanceof Error ? err.message : String(err));
+    sendError(res, 500, errorMessage(err));
   }
 }
 
@@ -460,6 +463,10 @@ export async function handleDelete(
     sendError(res, 400, "DELETE /api/comments/:id requires a non-empty id");
     return;
   }
+  if (!isSafePathSegment(id)) {
+    sendError(res, 400, "comment id contains unsafe path characters");
+    return;
+  }
 
   const found = await findCommentById(projectRoot, id, excludeSrcPrefixes);
   if (!found) {
@@ -516,7 +523,7 @@ export async function handleDelete(
       sendError(res, err.status, err.message);
       return;
     }
-    sendError(res, 500, err instanceof Error ? err.message : String(err));
+    sendError(res, 500, errorMessage(err));
     return;
   }
 
@@ -530,7 +537,7 @@ export async function handleDelete(
       await rm(dir, { recursive: true, force: true });
     } catch (err) {
       console.warn(
-        `[vite-plugin-comments] failed to remove ${dir}: ${err instanceof Error ? err.message : String(err)}`
+        `[vite-plugin-comments] failed to remove ${dir}: ${errorMessage(err)}`
       );
     }
   }

@@ -6,9 +6,10 @@ Redline is pre-1.0. Security fixes are handled on the latest released version.
 
 ## Reporting a vulnerability
 
-Please report security issues privately by emailing the maintainer listed in
-`package.json`, or by opening a private vulnerability report on GitHub if the
-repository has that feature enabled.
+Please report security issues through GitHub private vulnerability reporting if
+it is enabled for the repository. If private reporting is unavailable, open a
+minimal public issue asking for a private contact path without including exploit
+details.
 
 Do not include secrets, customer data, or proprietary source code in a public
 issue. A good report includes the affected version, reproduction steps, impact,

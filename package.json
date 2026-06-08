@@ -39,7 +39,6 @@
   "peerDependencies": {
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
-    "react-router-dom": "^7.0.0",
     "vite": "^8.0.0"
   },
   "scripts": {
@@ -50,7 +49,6 @@
     "knip": "knip",
     "lint": "ultracite check",
     "lint:fix": "ultracite fix",
-    "prepare": "pnpm build",
     "prepublishOnly": "pnpm check && pnpm typecheck && pnpm test && pnpm build",
     "test": "vitest run",
     "test:watch": "vitest",
@@ -96,6 +94,7 @@
   "files": [
     "dist",
     "docs/assets",
+    "CHANGELOG.md",
     "CONTRIBUTING.md",
     "README.md",
     "SECURITY.md",

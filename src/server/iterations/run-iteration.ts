@@ -21,6 +21,7 @@ import { setCommentActiveInSource } from "../comments/writer-directive.ts";
 import { WriteError } from "../comments/writer-errors.ts";
 import { atomicWriteText } from "../platform/atomic-write.ts";
 import { errorMessage } from "../platform/http.ts";
+import { resolveSafeProjectRelativePath } from "../platform/path-safety.ts";
 import {
   type AuxFileMap,
   mergeBaselineAuxFiles,
@@ -37,7 +38,6 @@ import {
 } from "./manifest.ts";
 import {
   diffSourceSnapshots,
-  fromRelPosix,
   snapshotSourceFiles,
   toRelPosix,
 } from "./source-files.ts";
@@ -131,7 +131,11 @@ async function restoreFilesToBaseline(
   baselineFiles: Map<string, string>
 ): Promise<void> {
   for (const rel of rels) {
-    const abs = fromRelPosix(projectRoot, rel);
+    const resolved = resolveSafeProjectRelativePath(projectRoot, rel);
+    if (!resolved.ok) {
+      continue;
+    }
+    const abs = resolved.absolutePath;
     const baseline = baselineFiles.get(rel);
     if (baseline === undefined) {
       try {

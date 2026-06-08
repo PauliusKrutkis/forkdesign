@@ -6,7 +6,7 @@ leave feedback, and optionally let an agent generate source-backed iterations.
 Redline stores feedback in your repo: comment markers live in `.tsx` files and
 iteration snapshots live under `designs/`.
 
-> 0.x scope: React 19, Vite 8, and React Router 7. APIs may change before 1.0.
+> 0.x scope: React 19 and Vite 8. APIs may change before 1.0.
 
 ## Screenshots
 
@@ -21,13 +21,10 @@ pnpm add -D redline
 # or: npm install --save-dev redline
 ```
 
-Before npm publish:
+Peer dependencies: `react`, `react-dom`, `vite`.
 
-```sh
-pnpm add -D github:PauliusKrutkis/redline
-```
-
-Peer dependencies: `react`, `react-dom`, `react-router-dom`, `vite`.
+Requirements: Node 20 or newer. The development commands in this repository use
+pnpm.
 
 ## Quick Start
 
@@ -71,6 +68,12 @@ Agent mode uses your configured local tools:
 
 - Cursor CLI (`agent`): run `agent login` or set `CURSOR_API_KEY`.
 - Claude: set `ANTHROPIC_API_KEY` or use Claude Code login.
+- Optional: set `CURSOR_AGENT_PATH` when the Cursor CLI binary is not named
+  `agent`.
+
+Copy `.env.example` if you want to document local agent credentials for a host
+app. Redline does not send keys to the browser; local agent tools read their own
+credentials.
 
 Default model order:
 
@@ -129,7 +132,8 @@ export function App() {
 
 Redline is a local development tool. Its Vite middleware can read and write app
 source files, write screenshots and iteration artifacts, and run configured AI
-agents. Do not expose a Vite dev server running redline to an untrusted network.
+agents. Do not expose a Vite dev server running redline to an untrusted network
+or run it with `vite --host` unless the network is trusted.
 
 When AI iteration is enabled, selected source context, comments, screenshots,
 and feedback may be sent to your configured provider. See [`SECURITY.md`](./SECURITY.md).
@@ -143,6 +147,10 @@ and feedback may be sent to your configured provider. See [`SECURITY.md`](./SECU
 | `redline/styles.css` | Compiled overlay CSS |
 
 ## Development
+
+Architecture notes live in [`docs/architecture.md`](./docs/architecture.md).
+`AGENTS.md` is guidance for AI coding assistants; human contributors should
+start with [`CONTRIBUTING.md`](./CONTRIBUTING.md).
 
 ```sh
 pnpm install

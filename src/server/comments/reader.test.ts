@@ -171,4 +171,28 @@ describe("readCommentsFromSource", () => {
       { author: "u", date: "2026-05-02", text: "ack", v: 1 },
     ]);
   });
+
+  it("skips IDs that are unsafe for iteration paths", () => {
+    const src = wrap(
+      `      <button data-comment-anchor="a1">Save</button>
+      {/* @comment id="../evil" anchor="a1" text="hi" author="x@y.z" date="2026-05-01T00:00:00Z" */}`
+    );
+    const { comments, warnings } = readCommentsFromSource(src);
+    expect(comments).toEqual([]);
+    expect(warnings.some((warning) => warning.includes("invalid id"))).toBe(
+      true
+    );
+  });
+
+  it("drops invalid screenshot paths", () => {
+    const src = wrap(
+      `      <button data-comment-anchor="a1">Save</button>
+      {/* @comment id="c1" anchor="a1" text="hi" author="x@y.z" date="2026-05-01T00:00:00Z" screenshot="/../../etc/passwd" */}`
+    );
+    const { comments, warnings } = readCommentsFromSource(src);
+    expect(comments[0]?.screenshot).toBeUndefined();
+    expect(
+      warnings.some((warning) => warning.includes("invalid screenshot path"))
+    ).toBe(true);
+  });
 });

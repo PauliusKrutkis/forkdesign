@@ -4,6 +4,7 @@ import {
 } from "../../../shared/agent-version-count.ts";
 import { type AgentModel, parseAgentModel } from "../../agent/models.ts";
 import { type AgentSkill, parseAgentSkill } from "../../agent/skills.ts";
+import { isSafePathSegment } from "../../platform/path-safety.ts";
 import {
   type ParseResult,
   requireInt,
@@ -62,6 +63,9 @@ function parseIdVersionBody(
   const id = requireNonEmptyString(obj, "id");
   if (!id.ok) {
     return id;
+  }
+  if (!isSafePathSegment(id.value)) {
+    return { ok: false, reason: "field `id` contains unsafe path characters" };
   }
   const v = requireInt(obj, "v", { min: vMin });
   if (!v.ok) {
@@ -130,6 +134,9 @@ export function parseNewIterationBody(
   const id = requireNonEmptyString(obj, "id");
   if (!id.ok) {
     return id;
+  }
+  if (!isSafePathSegment(id.value)) {
+    return { ok: false, reason: "field `id` contains unsafe path characters" };
   }
   const countRaw = obj.count;
   let count = DEFAULT_AGENT_VERSION_COUNT;

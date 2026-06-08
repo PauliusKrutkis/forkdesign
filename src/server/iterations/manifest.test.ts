@@ -17,6 +17,7 @@ import {
   patchIterationsManifest,
   readIterationsManifest,
   removeVersionFromManifest,
+  resolveIterationDirRoots,
 } from "./manifest.ts";
 
 describe("parseManifestJson", () => {
@@ -122,6 +123,18 @@ describe("iterationPngUrl", () => {
     expect(iterationPngUrl("abc", 1, null)).toBe(
       "/designs/iterations/abc/v1.png"
     );
+  });
+
+  it("rejects unsafe IDs", () => {
+    expect(() => iterationPngUrl("../evil", 1, null)).toThrow(
+      "invalid iteration id"
+    );
+  });
+});
+
+describe("resolveIterationDirRoots", () => {
+  it("rejects unsafe IDs before resolving paths", () => {
+    expect(resolveIterationDirRoots("/tmp/project", "../evil")).toEqual([]);
   });
 });
 

@@ -2,7 +2,7 @@ import type {
   ComposerSubmission,
   ComposerSubmitResult,
 } from "../comment-composer.tsx";
-import { readApiError } from "./api.ts";
+import { postJson, readApiError } from "./api.ts";
 import { currentAppRoute, getCommentAuthor } from "./comment-author.ts";
 import { toErrorMessage } from "./errors.ts";
 import { findSourceLoc } from "./source-loc.ts";
@@ -32,19 +32,15 @@ export async function submitComment(
   const route = currentAppRoute();
 
   try {
-    const res = await fetch("/api/comments", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        file: src.file,
-        line: src.line,
-        column: src.column,
-        text: entry.text,
-        author,
-        ...(existingAnchor ? { existingAnchor } : {}),
-        ...(entry.screenshotPng ? { screenshotPng: entry.screenshotPng } : {}),
-        ...(route ? { route } : {}),
-      }),
+    const res = await postJson("/api/comments", {
+      file: src.file,
+      line: src.line,
+      column: src.column,
+      text: entry.text,
+      author,
+      ...(existingAnchor ? { existingAnchor } : {}),
+      ...(entry.screenshotPng ? { screenshotPng: entry.screenshotPng } : {}),
+      ...(route ? { route } : {}),
     });
     if (!res.ok) {
       const error = await readApiError(res);

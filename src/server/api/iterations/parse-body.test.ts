@@ -27,6 +27,13 @@ describe("parseActivateBody", () => {
       reason: "field `v` must be a non-negative integer",
     });
   });
+
+  it("rejects unsafe ids", () => {
+    expect(parseActivateBody({ id: "../evil", v: 1 })).toEqual({
+      ok: false,
+      reason: "field `id` contains unsafe path characters",
+    });
+  });
 });
 
 describe("parseDeleteVersionBody", () => {
@@ -66,6 +73,13 @@ describe("parseNewIterationBody", () => {
     expect(parseNewIterationBody({ id: "abc", count: 3 })).toEqual({
       ok: true,
       value: { id: "abc", count: 3 },
+    });
+  });
+
+  it("rejects unsafe ids", () => {
+    expect(parseNewIterationBody({ id: "abc/def", count: 1 })).toEqual({
+      ok: false,
+      reason: "field `id` contains unsafe path characters",
     });
   });
 
