@@ -121,3 +121,40 @@ Biome's linter will catch most issues automatically. Focus your attention on:
 ---
 
 Most formatting and common issues are automatically fixed by Biome. Run `pnpm dlx ultracite fix` before committing to ensure compliance.
+
+## Cursor Cloud specific instructions
+
+**Redline** is a **library** (not a runnable app). This repo has no bundled demo or `docker-compose`. Day-to-day work here is `pnpm install`, then lint/typecheck/test/build — no databases or Docker.
+
+### Standard commands (see `package.json` / `CONTRIBUTING.md`)
+
+| Task | Command |
+| --- | --- |
+| Install + build (`prepare` hook) | `pnpm install` |
+| Lint | `pnpm check` |
+| Typecheck | `pnpm typecheck` |
+| Tests (Vitest + happy-dom) | `pnpm test` |
+| Library build | `pnpm build` |
+| Watch rebuild | `pnpm dev` |
+
+Node **≥20** (CI uses 22). Package manager is **pnpm@10.33.0** (`corepack prepare pnpm@10.33.0 --activate`).
+
+### Manual end-to-end (host Vite app)
+
+To exercise the overlay and `/api/comments` middleware, use a **separate** Vite + React 19 host app (not in this repo):
+
+1. `"redline": "file:/workspace"` (or `pnpm link`) in the host `package.json`.
+2. `redline()` in `vite.config.ts` (see `README.md`).
+3. Run `vite` / `pnpm dev` in the host app (default **http://127.0.0.1:5173**).
+
+Redline’s API runs inside the host Vite dev server; there is no standalone backend process.
+
+### Optional AI iteration
+
+`CURSOR_API_KEY` / `agent login` (Composer) or `ANTHROPIC_API_KEY` (Claude). Not required for install, tests, or comment API smoke tests.
+
+### Gotchas
+
+- `pnpm install` triggers `prepare` → `pnpm build`; first install takes longer.
+- pnpm may warn about ignored build scripts (`esbuild`, `@parcel/watcher`); builds and tests still pass with prebuilt binaries.
+- `pnpm check` may fail on pre-existing lint in the tree; `pnpm test` and `pnpm build` are the primary health signals for this library.
