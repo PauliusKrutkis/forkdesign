@@ -1,4 +1,4 @@
-import { Check, Expand, Trash2 } from "lucide-react";
+import { Check, Expand, Loader2, Trash2 } from "lucide-react";
 import { type ReactNode, useState } from "react";
 import { Button } from "../ui/button.tsx";
 import { cn } from "../ui/cn.ts";
@@ -15,6 +15,15 @@ interface VariantGridProps {
   onThumbClick: (src: string) => void;
   switching: boolean;
   versions: IterationVersion[];
+}
+
+function PendingVariantThumbnail() {
+  return (
+    <div className="absolute inset-0 flex flex-col items-center justify-center gap-1.5 bg-muted text-muted-foreground">
+      <Loader2 aria-hidden className="h-4 w-4 animate-spin" />
+      <span className="font-mono text-[10px] leading-none">Capturing…</span>
+    </div>
+  );
 }
 
 function VariantThumbnail({ src }: { src: string }) {
@@ -97,6 +106,7 @@ function VariantCard({
   onThumbClick: (src: string) => void;
 }) {
   const isActive = version.v === active;
+  const screenshotPending = Boolean(version.screenshotPending);
   const canDelete = version.v > 0;
   const label = version.v === 0 ? "Original" : formatVersionDisplay(version.v);
 
@@ -140,7 +150,11 @@ function VariantCard({
   const cardBody = (
     <>
       <div className="relative h-20 w-full bg-muted">
-        <VariantThumbnail key={version.png} src={version.png} />
+        {screenshotPending ? (
+          <PendingVariantThumbnail />
+        ) : (
+          <VariantThumbnail key={version.png} src={version.png} />
+        )}
       </div>
       <div className="flex h-7 items-center justify-between gap-1 px-2">
         <span className="truncate font-mono text-[10px] text-muted-foreground tabular-nums leading-none">
@@ -172,16 +186,18 @@ function VariantCard({
       ) : (
         cardBody
       )}
-      <Button
-        aria-label="View screenshot fullscreen"
-        className="absolute top-1 right-1 z-10 h-6 w-6 bg-background/90 text-muted-foreground opacity-0 shadow-sm backdrop-blur-sm transition-opacity hover:bg-background hover:text-foreground focus-visible:opacity-100 group-hover/card:opacity-100"
-        onClick={() => onThumbClick(version.png)}
-        size="icon"
-        type="button"
-        variant="secondary"
-      >
-        <Expand aria-hidden className="h-3.5 w-3.5" />
-      </Button>
+      {screenshotPending ? null : (
+        <Button
+          aria-label="View screenshot fullscreen"
+          className="absolute top-1 right-1 z-10 h-6 w-6 bg-background/90 text-muted-foreground opacity-0 shadow-sm backdrop-blur-sm transition-opacity hover:bg-background hover:text-foreground focus-visible:opacity-100 group-hover/card:opacity-100"
+          onClick={() => onThumbClick(version.png)}
+          size="icon"
+          type="button"
+          variant="secondary"
+        >
+          <Expand aria-hidden className="h-3.5 w-3.5" />
+        </Button>
+      )}
       {canDelete && !isActive ? (
         <Button
           aria-label="Delete version"
