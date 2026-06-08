@@ -68,7 +68,12 @@ describe("runNewIteration multi-variant", () => {
   let sourcePath: string;
   const commentId = "comment-1";
   const baselineSource = `export function Widget() {
-  return <div data-comment-anchor="anchor-1">baseline</div>;
+  return (
+    <div data-comment-anchor="anchor-1">
+      baseline
+      {/* @comment id="comment-1" anchor="anchor-1" text="make it blue" author="dev@local" date="2026-01-01T00:00:00.000Z" active=0 */}
+    </div>
+  );
 }`;
 
   const found: FoundComment = {
@@ -151,13 +156,10 @@ describe("runNewIteration multi-variant", () => {
         "utf8"
       )
     ).toContain("// variant 2");
-    expect(readFileSync(sourcePath, "utf8")).toContain("// variant 2");
-    expect(updateCommentActiveMock).toHaveBeenCalledTimes(1);
-    expect(updateCommentActiveMock).toHaveBeenCalledWith({
-      absolutePath: sourcePath,
-      commentId,
-      active: 2,
-    });
+    const finalSource = readFileSync(sourcePath, "utf8");
+    expect(finalSource).toContain("// variant 2");
+    expect(finalSource).toMatch(/\bactive=2\b/);
+    expect(updateCommentActiveMock).not.toHaveBeenCalled();
     expect(sourceAppliedEvents).toEqual([
       {
         absolutePath: sourcePath,

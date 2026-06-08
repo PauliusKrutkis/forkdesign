@@ -19,7 +19,7 @@ import { fromRelPosix } from "./source-files.ts";
 /** A `relPosix -> content|null` map. `null` = file absent (delete on restore). */
 export type AuxFileMap = Record<string, string | null>;
 
-export function auxFilesPath(iterDir: string, v: number): string {
+function auxFilesPath(iterDir: string, v: number): string {
   return path.join(iterDir, `v${v}.files.json`);
 }
 
@@ -45,7 +45,7 @@ function parseAuxJson(raw: string): AuxFileMap {
 }
 
 /** Read a version's aux map, searching every iteration root. Empty when none. */
-export async function readVersionAuxFiles(
+async function readVersionAuxFiles(
   roots: string[],
   v: number
 ): Promise<AuxFileMap> {
