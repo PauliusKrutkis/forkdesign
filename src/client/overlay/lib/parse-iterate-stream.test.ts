@@ -6,7 +6,9 @@ import {
   validateIterateDone,
 } from "./parse-iterate-stream.ts";
 
-function streamFromChunks(chunks: readonly string[]): ReadableStream<Uint8Array> {
+function streamFromChunks(
+  chunks: readonly string[]
+): ReadableStream<Uint8Array> {
   const encoder = new TextEncoder();
   return new ReadableStream<Uint8Array>({
     start(controller) {
@@ -94,12 +96,12 @@ describe("validateIterateDone", () => {
   });
 
   it("passes through failed done errors", () => {
-    expect(validateIterateDone({ type: "done", ok: false, error: "boom" })).toEqual(
-      {
-        ok: false,
-        error: "boom",
-      }
-    );
+    expect(
+      validateIterateDone({ type: "done", ok: false, error: "boom" })
+    ).toEqual({
+      ok: false,
+      error: "boom",
+    });
   });
 
   it("treats successful no-change responses as user-facing failures", () => {

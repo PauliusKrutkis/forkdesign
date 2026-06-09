@@ -19,7 +19,12 @@ describe("auxiliary iteration files", () => {
 
   async function createProject() {
     projectRoot = await mkdtemp(path.join(tmpdir(), "redline-aux-files-"));
-    const iterDir = path.join(projectRoot, "designs", "iterations", "comment-a");
+    const iterDir = path.join(
+      projectRoot,
+      "designs",
+      "iterations",
+      "comment-a"
+    );
     await mkdir(iterDir, { recursive: true });
     await mkdir(path.join(projectRoot, "src"), { recursive: true });
     return { iterDir };
@@ -52,7 +57,11 @@ describe("auxiliary iteration files", () => {
   it("deletes files whose baseline records them as absent", async () => {
     const { iterDir } = await createProject();
     const newFilePath = path.join(projectRoot, "src", "NewFile.tsx");
-    await writeFile(newFilePath, "export const NewFile = () => null;\n", "utf8");
+    await writeFile(
+      newFilePath,
+      "export const NewFile = () => null;\n",
+      "utf8"
+    );
     await writeFile(
       path.join(iterDir, "v0.files.json"),
       JSON.stringify({ "src/NewFile.tsx": null }),
