@@ -7,7 +7,7 @@ import {
   resolveSafeProjectRelativePath,
 } from "./path-safety.ts";
 
-const projectRoot = "/tmp/redline-project";
+const projectRoot = "/tmp/design-crit-project";
 
 describe("resolveSafePagePath", () => {
   it("accepts a valid src/pages/Foo.tsx path", () => {

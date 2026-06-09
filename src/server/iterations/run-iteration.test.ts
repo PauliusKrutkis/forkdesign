@@ -91,7 +91,7 @@ describe("runNewIteration multi-variant", () => {
   };
 
   beforeEach(() => {
-    projectRoot = mkdtempSync(path.join(tmpdir(), "redline-run-iteration-"));
+    projectRoot = mkdtempSync(path.join(tmpdir(), "design-crit-run-iteration-"));
     sourcePath = path.join(projectRoot, "src", "Widget.tsx");
     mkdirSync(path.dirname(sourcePath), { recursive: true });
     writeFileSync(sourcePath, baselineSource, "utf8");

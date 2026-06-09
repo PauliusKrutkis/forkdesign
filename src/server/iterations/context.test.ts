@@ -16,7 +16,7 @@ describe("resolveCommentIterationContext", () => {
   });
 
   it("returns 404 when comment id is missing", async () => {
-    projectRoot = await mkdtemp(path.join(tmpdir(), "redline-ctx-"));
+    projectRoot = await mkdtemp(path.join(tmpdir(), "design-crit-ctx-"));
     const result = await resolveCommentIterationContext(
       projectRoot,
       "missing-id",
@@ -30,7 +30,7 @@ describe("resolveCommentIterationContext", () => {
   });
 
   it("returns 404 when iterations dir is missing", async () => {
-    projectRoot = await mkdtemp(path.join(tmpdir(), "redline-ctx-"));
+    projectRoot = await mkdtemp(path.join(tmpdir(), "design-crit-ctx-"));
     const relativeFile = "src/pages/Widget.tsx";
     const absoluteFile = path.join(projectRoot, relativeFile);
     await mkdir(path.dirname(absoluteFile), { recursive: true });
@@ -63,7 +63,7 @@ describe("resolveCommentIterationContext", () => {
   });
 
   it("resolves comment and iteration roots", async () => {
-    projectRoot = await mkdtemp(path.join(tmpdir(), "redline-ctx-"));
+    projectRoot = await mkdtemp(path.join(tmpdir(), "design-crit-ctx-"));
     const relativeFile = "src/pages/Widget.tsx";
     const absoluteFile = path.join(projectRoot, relativeFile);
     await mkdir(path.dirname(absoluteFile), { recursive: true });

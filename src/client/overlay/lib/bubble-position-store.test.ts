@@ -59,10 +59,10 @@ describe("bubble position persistence", () => {
 
   it("returns null for unknown ids and corrupt entries", () => {
     expect(loadBubblePosition("missing")).toBeNull();
-    window.localStorage.setItem("redline:bubble-pos:bad", "not json");
+    window.localStorage.setItem("bubble-pos:bad", "not json");
     expect(loadBubblePosition("bad")).toBeNull();
     window.localStorage.setItem(
-      "redline:bubble-pos:partial",
+      "bubble-pos:partial",
       JSON.stringify({ left: 5 })
     );
     expect(loadBubblePosition("partial")).toBeNull();

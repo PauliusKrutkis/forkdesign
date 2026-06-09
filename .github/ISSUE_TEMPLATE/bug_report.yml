@@ -16,7 +16,7 @@ body:
       label: Reproduction
       description: Steps or a minimal repo that reproduces the issue.
       placeholder: |
-        1. Install redline...
+        1. Install design-crit...
         2. Run vite...
         3. Click...
     validations:
@@ -25,8 +25,8 @@ body:
     id: versions
     attributes:
       label: Versions
-      description: Redline, React, Vite, Node, and browser versions.
-      placeholder: "redline 0.1.0, React 19, Vite 8, Node 22, Chrome 120"
+      description: Design Crit, React, Vite, Node, and browser versions.
+      placeholder: "design-crit 0.1.0, React 19, Vite 8, Node 22, Chrome 120"
   - type: textarea
     id: logs
     attributes:

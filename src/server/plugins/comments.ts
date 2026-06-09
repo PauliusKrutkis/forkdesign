@@ -24,8 +24,8 @@ import { errorMessage, sendError, wrapApiHandler } from "../platform/http.ts";
 import { sourceLoc as createSourceLocPlugin } from "./source-loc.ts";
 
 const INJECT_MARKER = "<!-- vite-plugin-comments injected -->";
-const AUTO_MOUNT_MARKER = "<!-- redline overlay auto-mount -->";
-const VIRTUAL_CLIENT_ID = "virtual:redline/client";
+const AUTO_MOUNT_MARKER = "<!-- comment-overlay auto-mount -->";
+const VIRTUAL_CLIENT_ID = "virtual:comment-overlay/client";
 const RESOLVED_VIRTUAL_CLIENT_ID = `\0${VIRTUAL_CLIENT_ID}`;
 const LOOPBACK_IPV6 = new Set(["::1", "0:0:0:0:0:0:0:1"]);
 
@@ -63,21 +63,21 @@ function rejectRemoteApiRequest(
   sendError(
     res,
     403,
-    "redline API is local-only; pass allowRemoteAccess: true only on trusted networks"
+    "design-crit API is local-only; pass allowRemoteAccess: true only on trusted networks"
   );
   return true;
 }
 
-function redlineClientModule(): string {
+function designCritClientModule(): string {
   return `
 import { createElement } from "react";
 import { createRoot } from "react-dom/client";
-import { CommentOverlay } from "redline";
-import "redline/styles.css";
+import { CommentOverlay } from "design-crit";
+import "design-crit/styles.css";
 
-const ROOT_ID = "redline-overlay-root";
+const ROOT_ID = "overlay-root";
 
-function mountRedlineOverlay() {
+function mountDesignCritOverlay() {
   if (!import.meta.env.DEV || typeof document === "undefined") {
     return;
   }
@@ -96,9 +96,9 @@ function mountRedlineOverlay() {
 }
 
 if (document.readyState === "loading") {
-  document.addEventListener("DOMContentLoaded", mountRedlineOverlay, { once: true });
+  document.addEventListener("DOMContentLoaded", mountDesignCritOverlay, { once: true });
 } else {
-  mountRedlineOverlay();
+  mountDesignCritOverlay();
 }
 `;
 }
@@ -251,7 +251,7 @@ export interface CommentsPluginOptions {
   excludeSrcPrefixes?: string[];
   /**
    * Inject and mount `<CommentOverlay />` automatically in dev. The low-level
-   * `comments()` middleware keeps this off by default; use `redline()` for the
+   * `comments()` middleware keeps this off by default; use `designCrit()` for the
    * streamlined setup.
    */
   mountOverlay?: boolean;
@@ -345,7 +345,7 @@ export function comments(options: CommentsPluginOptions = {}): Plugin {
 
     load(id) {
       if (mountOverlay && id === RESOLVED_VIRTUAL_CLIENT_ID) {
-        return redlineClientModule();
+        return designCritClientModule();
       }
       return null;
     },
@@ -372,7 +372,7 @@ export function comments(options: CommentsPluginOptions = {}): Plugin {
   };
 }
 
-export interface RedlinePluginOptions extends CommentsPluginOptions {
+export interface DesignCritPluginOptions extends CommentsPluginOptions {
   /**
    * Source-location stamping for DOM target picking. Enabled by default.
    * Pass `false` only when you mount the overlay manually and provide another
@@ -386,12 +386,14 @@ export interface RedlinePluginOptions extends CommentsPluginOptions {
       };
 }
 
-export type RedlinePluginOption = { name: string } | RedlinePluginOption[];
+export type DesignCritPluginOption =
+  | { name: string }
+  | DesignCritPluginOption[];
 
 /** Streamlined dev setup: source locations + API middleware + overlay mount. */
-export function redline(
-  options: RedlinePluginOptions = {}
-): RedlinePluginOption {
+export function designCrit(
+  options: DesignCritPluginOptions = {}
+): DesignCritPluginOption {
   const {
     sourceLoc: sourceLocOptions,
     mountOverlay = true,
@@ -411,7 +413,7 @@ export function redline(
   ];
 }
 
-/** Re-exported for `redline/plugin` consumers configuring the dev source-loc stamper. */
+/** Re-exported for `design-crit/plugin` consumers configuring the dev source-loc stamper. */
 export function sourceLoc(
   options: Parameters<typeof createSourceLocPlugin>[0] = {}
 ): ReturnType<typeof createSourceLocPlugin> {

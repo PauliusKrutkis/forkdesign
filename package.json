@@ -37,7 +37,7 @@
     "ultracite": "7.8.1",
     "vitest": "^4.1.8"
   },
-  "name": "redline",
+  "name": "design-crit",
   "peerDependencies": {
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
@@ -45,7 +45,7 @@
   },
   "scripts": {
     "build": "tsup && pnpm build:css",
-    "build:css": "tailwindcss -i ./src/redline.css -o ./dist/styles.css --minify && node ./scripts/unwrap-css-layers.mjs ./dist/styles.css",
+    "build:css": "tailwindcss -i ./src/design-crit.css -o ./dist/styles.css --minify && node ./scripts/unwrap-css-layers.mjs ./dist/styles.css",
     "check": "ultracite check",
     "dev": "tsup --watch",
     "example": "pnpm --dir examples/basic-vite dev",
@@ -68,10 +68,10 @@
   "author": "Paulius Krutkis",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/PauliusKrutkis/redline.git"
+    "url": "git+https://github.com/PauliusKrutkis/design-crit.git"
   },
-  "bugs": "https://github.com/PauliusKrutkis/redline/issues",
-  "homepage": "https://github.com/PauliusKrutkis/redline#readme",
+  "bugs": "https://github.com/PauliusKrutkis/design-crit/issues",
+  "homepage": "https://github.com/PauliusKrutkis/design-crit#readme",
   "sideEffects": [
     "**/*.css"
   ],

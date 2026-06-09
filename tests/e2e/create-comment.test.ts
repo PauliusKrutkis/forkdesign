@@ -45,17 +45,15 @@ test.describe("create comment", () => {
   });
 
   test("activate composer and pick a target element", async ({ page }) => {
-    await page.getByRole("button", { name: "redline comments" }).click();
+    await page.getByRole("button", { name: "design-crit comments" }).click();
     await page
-      .getByRole("menu", { name: "redline actions" })
+      .getByRole("menu", { name: "design-crit actions" })
       .getByRole("menuitem", { name: "Add comment" })
       .click();
 
     // Hover a stable fixture target; the picker chip surfaces its label.
     await page.getByTestId("card").hover();
-    const pickerChip = page
-      .locator('[data-comment-overlay="true"]', { hasText: "target" })
-      .first();
+    const pickerChip = page.getByTestId("design-crit-picker-chip");
     await expect(pickerChip).toBeVisible();
     await expect(pickerChip).toContainText("card");
   });
@@ -66,9 +64,9 @@ test.describe("create comment", () => {
     test.setTimeout(60_000);
 
     // Activate composer + freeze the heading as the target.
-    await page.getByRole("button", { name: "redline comments" }).click();
+    await page.getByRole("button", { name: "design-crit comments" }).click();
     await page
-      .getByRole("menu", { name: "redline actions" })
+      .getByRole("menu", { name: "design-crit actions" })
       .getByRole("menuitem", { name: "Add comment" })
       .click();
 
@@ -77,9 +75,7 @@ test.describe("create comment", () => {
     await title.click();
 
     // The composer panel ("New comment") appears anchored near the click.
-    const panel = page
-      .locator('[data-comment-overlay="true"]', { hasText: "New comment" })
-      .first();
+    const panel = page.getByTestId("design-crit-composer-panel");
     await expect(panel).toBeVisible();
 
     // Flip the mode toggle from "Agent" to "Comment" so no agent runs. The mode
@@ -134,9 +130,9 @@ test.describe("create comment", () => {
     // (clickPoint.x - 200) and clamps left to <= viewportW - 400 - 12.
     const viewportW = 760;
     await page.setViewportSize({ width: viewportW, height: 600 });
-    await page.getByRole("button", { name: "redline comments" }).click();
+    await page.getByRole("button", { name: "design-crit comments" }).click();
     await page
-      .getByRole("menu", { name: "redline actions" })
+      .getByRole("menu", { name: "design-crit actions" })
       .getByRole("menuitem", { name: "Add comment" })
       .click();
 
@@ -153,9 +149,7 @@ test.describe("create comment", () => {
       await page.mouse.click(clickX, clickY);
     }
 
-    const panel = page
-      .locator('[data-comment-overlay="true"]', { hasText: "New comment" })
-      .first();
+    const panel = page.getByTestId("design-crit-composer-panel");
     await expect(panel).toBeVisible();
 
     const box = await panel.boundingBox();

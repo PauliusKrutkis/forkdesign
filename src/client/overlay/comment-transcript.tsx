@@ -197,7 +197,7 @@ export function CommentTranscript({
 
   return (
     <div
-      className="redline-scroll min-h-0 flex-1 space-y-4 overflow-y-auto px-3.5 py-3.5"
+      className="scroll min-h-0 flex-1 space-y-4 overflow-y-auto px-3.5 py-3.5"
       ref={scrollRef}
     >
       {leadTurn ? renderTurn(leadTurn) : null}
@@ -382,8 +382,8 @@ function HistoryToggle({
       <ChevronDown
         aria-hidden
         className={cn(
-          "redline-chevron h-4 w-4 shrink-0",
-          open && "redline-chevron-open"
+          "chevron h-4 w-4 shrink-0",
+          open && "chevron-open"
         )}
       />
     </button>
@@ -395,7 +395,7 @@ function VariantSkeletonGrid({ count }: { count: number }) {
     <div className="mt-2 grid grid-cols-2 gap-2">
       {Array.from({ length: Math.max(1, count) }, (_, i) => (
         <div
-          className="redline-shimmer h-[7.5rem] rounded-lg border"
+          className="shimmer h-[7.5rem] rounded-lg border"
           // biome-ignore lint/suspicious/noArrayIndexKey: fixed-length skeleton
           key={i}
         />

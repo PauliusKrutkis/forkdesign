@@ -1,7 +1,7 @@
 # Browser E2E tests (Playwright)
 
 These tests drive a **real browser** against a **real Vite dev server** running
-the fixture playground with the `redline` plugin enabled. They cover only the
+the fixture playground with the `design-crit` plugin enabled. They cover only the
 interactions that cannot be exercised headless: real DOM pointer events, the
 element picker, comment-pin / bubble placement geometry, the overlay chrome, and
 the iteration/version thumbnail UI.
@@ -47,11 +47,11 @@ playground source. Otherwise the suite is not idempotent.
 
 (Pulled from `src/client/overlay/**`; keep these in sync if the overlay changes.)
 
-- Overlay root: `[data-redline-overlay-root="true"]` (all overlay chrome also
+- Overlay root: `[data-overlay-root="true"]` (all overlay chrome also
   carries `[data-comment-overlay="true"]`, used by `isOverlayElement`).
-- Dock: `[data-redline-dock="true"]`; pill `button[aria-label="redline comments"]`;
-  menu `[role="menu"][aria-label="redline actions"]` with menuitems "Add comment",
-  "Comments", "Settings"; review switch `input#redline-review-toggle`.
+- Dock: `[data-dock="true"]`; pill `button[aria-label="design-crit comments"]`;
+  menu `[role="menu"][aria-label="design-crit actions"]` with menuitems "Add comment",
+  "Comments", "Settings"; review switch `input#review-toggle`.
 - Comment pin (CommentDot): `button[aria-label*="comment"]`, fixed `z-[9100]`.
 - Composer panel: fixed `z-[9300]`, "New comment" header; picker chip `z-[9310]`.
 - Bubble header buttons by `aria-label`: "Close", "Resolve"/"Resolved",
@@ -60,11 +60,11 @@ playground source. Otherwise the suite is not idempotent.
   expand `button[aria-label="View screenshot fullscreen"]`, delete
   `button[aria-label="Delete version"]`; active card shows a "Live" badge +
   `border-primary ring-primary`.
-- Thumbnail loading: `.redline-shimmer` skeleton overlay while the `<img>`
+- Thumbnail loading: `.shimmer` skeleton overlay while the `<img>`
   decodes; `PendingVariantThumbnail` (spinner + "Capturing…") for
   `screenshotPending` versions.
 - Lightbox: `[aria-label="Version screenshot"]`, close via
-  `[aria-label="Close screenshot"]`; `document.body[data-redline-lightbox="open"]`.
+  `[aria-label="Close screenshot"]`; `document.body[data-lightbox="open"]`.
 
 ## TODO — `playwright.config.ts` (NOT in this directory; owned by another agent)
 
@@ -74,7 +74,7 @@ config must define at least:
 
 - **`webServer`**: command that boots the fixture Vite playground
   (`tests/fixtures/playground/`, created by another agent) in **dev** with the
-  redline plugin active (the overlay only mounts under `import.meta.env.DEV`).
+  design-crit plugin active (the overlay only mounts under `import.meta.env.DEV`).
   Set `reuseExistingServer: !process.env.CI`, a `url`/`port` matching `baseURL`,
   and a generous `timeout` for cold Vite starts.
 - **`use.baseURL`**: the dev server origin (e.g. `http://localhost:<port>`), so

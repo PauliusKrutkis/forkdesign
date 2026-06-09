@@ -10,7 +10,7 @@
         "tailwindcss",
         "@vitejs/plugin-react"
       ],
-      "ignore": ["src/client/ui/**", "src/redline.css", "src/styles.css"]
+      "ignore": ["src/client/ui/**", "src/design-crit.css", "src/styles.css"]
     },
     "examples/basic-vite": {}
   },

@@ -2,10 +2,10 @@
 
 export type {
   CommentsPluginOptions,
-  RedlinePluginOptions,
+  DesignCritPluginOptions,
 } from "../server/plugins/comments.ts";
 export {
   comments,
-  redline,
+  designCrit,
   sourceLoc,
 } from "../server/plugins/comments.ts";

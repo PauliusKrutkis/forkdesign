@@ -56,7 +56,7 @@ function DockRow({
   );
 }
 
-function RedlineMark({ className }: { className?: string }) {
+function DesignCritMark({ className }: { className?: string }) {
   return (
     <svg
       aria-hidden="true"
@@ -114,7 +114,7 @@ export function OverlayDockMenu({
 }: OverlayDockMenuProps) {
   return (
     <div
-      aria-label="redline actions"
+      aria-label="design-crit actions"
       className={cn(
         "pointer-events-auto w-56 overflow-hidden rounded-xl border border-border/70 p-1",
         "bg-popover/95 text-popover-foreground backdrop-blur-md",
@@ -173,7 +173,7 @@ export function OverlayDockMenu({
 
       <label
         className="flex cursor-pointer items-center gap-2.5 rounded-md px-2.5 py-2 text-sm hover:bg-accent"
-        htmlFor="redline-review-toggle"
+        htmlFor="review-toggle"
         style={{ animationDelay: `${(enabled ? 3 : 1) * 28}ms` }}
       >
         <span
@@ -185,15 +185,15 @@ export function OverlayDockMenu({
         <span className="flex-1">{enabled ? "Reviewing" : "Paused"}</span>
         <Switch
           checked={enabled}
-          id="redline-review-toggle"
+          id="review-toggle"
           onCheckedChange={onToggleEnabled}
         />
       </label>
 
       <div className="mt-1 flex items-center justify-between px-2.5 pt-1.5 pb-1">
         <span className="inline-flex items-center gap-1.5 font-mono text-[10px] text-muted-foreground lowercase tracking-wide">
-          <RedlineMark className="h-3 w-3" />
-          redline
+          <DesignCritMark className="h-3 w-3" />
+          design-crit
         </span>
         {enabled && totalCount > 0 ? (
           <span className="font-mono text-[10px] text-muted-foreground tabular-nums">
@@ -220,7 +220,7 @@ export function OverlayDockPill({
     <button
       aria-expanded={open}
       aria-haspopup="menu"
-      aria-label="redline comments"
+      aria-label="design-crit comments"
       className={cn(
         "group pointer-events-auto relative inline-flex h-9 items-center gap-2 rounded-full border px-2.5",
         "border-border/70 bg-popover/80 text-popover-foreground backdrop-blur-md",
@@ -233,7 +233,7 @@ export function OverlayDockPill({
       onClick={onToggle}
       type="button"
     >
-      <RedlineMark className="h-4 w-4 text-foreground" />
+      <DesignCritMark className="h-4 w-4 text-foreground" />
       {enabled && totalCount > 0 ? (
         <span
           className={cn(

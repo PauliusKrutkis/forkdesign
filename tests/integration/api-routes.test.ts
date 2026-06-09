@@ -211,8 +211,8 @@ async function runOneIteration(
   // @comment marker) so the marker survives — the real agent edits in place.
   const current = await readFile(project.srcFile(PAGE), "utf8");
   const edited = current.replace(
-    "Redline Playground",
-    `Redline Playground ${marker}`
+    "Design Crit Playground",
+    `Design Crit Playground ${marker}`
   );
   agent.setVariant({ source: edited });
   // The next version this count:1 run will create.
@@ -718,7 +718,7 @@ describe("integration: iterations API routes", () => {
     let read = await readCommentsFromFile(project.srcFile(PAGE));
     expect(read.comments[0].active).toBe(1);
     expect(await readFile(project.srcFile(PAGE), "utf8")).toContain(
-      "Redline Playground v1"
+      "Design Crit Playground v1"
     );
 
     // activate v0 (back to baseline)
@@ -916,8 +916,8 @@ describe("integration: iterations API routes", () => {
       const current = await readFile(project.srcFile(PAGE), "utf8");
       agent.setVariant({
         source: current.replace(
-          "Redline Playground",
-          `Redline Playground ${VARIANT_1}`
+          "Design Crit Playground",
+          `Design Crit Playground ${VARIANT_1}`
         ),
       });
       const expectedV = maxTsxVersion(project, id) + 1;
@@ -960,7 +960,7 @@ describe("integration: iterations API routes", () => {
 
       // v1.tsx snapshot lands on disk under designs/iterations/<id>/.
       const v1 = await project.readSnapshot(`iterations/${id}/v1.tsx`);
-      expect(v1).toContain("Redline Playground v1");
+      expect(v1).toContain("Design Crit Playground v1");
     });
   });
 });

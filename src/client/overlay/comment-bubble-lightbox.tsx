@@ -16,15 +16,15 @@ export function CommentBubbleLightbox({
 
   useEffect(() => {
     setPortalRoot(
-      document.querySelector<HTMLElement>("[data-redline-overlay-root]") ??
+      document.querySelector<HTMLElement>("[data-overlay-root]") ??
         document.body
     );
   }, []);
 
   useEffect(() => {
-    document.body.dataset.redlineLightbox = "open";
+    document.body.dataset.lightbox = "open";
     return () => {
-      delete document.body.dataset.redlineLightbox;
+      delete document.body.dataset.lightbox;
     };
   }, []);
 
@@ -52,20 +52,20 @@ export function CommentBubbleLightbox({
   return createPortal(
     <dialog
       aria-label="Version screenshot"
-      className="redline-lightbox-backdrop"
+      className="lightbox-backdrop"
       data-comment-overlay="true"
       ref={dialogRef}
     >
       <button
         aria-label="Close screenshot"
-        className="redline-lightbox-scrim"
+        className="lightbox-scrim"
         onClick={onClose}
         type="button"
       />
-      <div className="redline-lightbox-image-wrap">
+      <div className="lightbox-image-wrap">
         <img
           alt="Version screenshot"
-          className="redline-lightbox-image"
+          className="lightbox-image"
           height={600}
           src={src}
           width={800}
@@ -73,7 +73,7 @@ export function CommentBubbleLightbox({
       </div>
       <Button
         aria-label="Close screenshot"
-        className="redline-lightbox-close"
+        className="lightbox-close"
         onClick={onClose}
         size="icon"
         type="button"

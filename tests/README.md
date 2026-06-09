@@ -1,6 +1,6 @@
 # Tests
 
-`redline` is tested in three layers, ordered from fastest/most-isolated to
+`design-crit` is tested in three layers, ordered from fastest/most-isolated to
 slowest/most-integrated.
 
 ## 1. Unit — `src/**/*.test.ts` (existing)

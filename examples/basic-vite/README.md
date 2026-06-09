@@ -1,6 +1,6 @@
 # basic-vite
 
-Minimal Vite + React host app for trying Redline locally.
+Minimal Vite + React host app for trying Design Crit locally.
 
 ## Run from the repo root
 
@@ -10,7 +10,7 @@ pnpm build
 pnpm example
 ```
 
-Open the printed localhost URL, click the Redline button, then select an element
+Open the printed localhost URL, click the Design Crit button, then select an element
 on the page to leave a comment.
 
 Comment markers are written into `src/*.tsx`; iteration artifacts go under

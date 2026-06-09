@@ -1,7 +1,7 @@
 /**
  * Temporary on-disk fixture project helper for integration/e2e tests.
  *
- * Server flows in `redline` mutate the *user's* source tree: comment markers
+ * Server flows in `design-crit` mutate the *user's* source tree: comment markers
  * are written into `.tsx` files (see `src/server/comments/writer.ts`) and
  * iteration snapshots are persisted under `<projectRoot>/designs/iterations/`
  * (see `src/server/iterations/run-iteration.ts` and
@@ -176,7 +176,7 @@ export async function createTempProject(
   const fixtureDir = options.fixtureDir ?? FIXTURE_PLAYGROUND_DIR;
   const autoCleanup = options.autoCleanup ?? true;
 
-  const root = await mkdtemp(path.join(tmpdir(), "redline-it-"));
+  const root = await mkdtemp(path.join(tmpdir(), "design-crit-it-"));
   const srcDir = path.join(root, "src");
   await mkdir(srcDir, { recursive: true });
   // CRITICAL: fixture components must land under `<root>/src/` because

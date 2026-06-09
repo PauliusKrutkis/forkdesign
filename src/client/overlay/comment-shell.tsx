@@ -47,7 +47,7 @@ export function CommentShell({
               </p>
             ) : null}
 
-            <div className="redline-scroll min-h-0 flex-1 overflow-y-auto">
+            <div className="scroll min-h-0 flex-1 overflow-y-auto">
               {children}
             </div>
           </Tabs>

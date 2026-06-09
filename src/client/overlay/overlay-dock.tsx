@@ -87,7 +87,7 @@ export function OverlayDock({
         POSITION_CLASSES[position]
       )}
       data-comment-overlay="true"
-      data-redline-dock="true"
+      data-dock="true"
       ref={rootRef}
     >
       {openUp ? (

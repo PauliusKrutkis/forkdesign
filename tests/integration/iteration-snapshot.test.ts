@@ -74,7 +74,7 @@ const TINY_PNG = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
   "base64"
 );
-const PLAYGROUND_HEADING_RE = /Redline Playground[^<]*/;
+const PLAYGROUND_HEADING_RE = /Design Crit Playground[^<]*/;
 
 /**
  * Locate a JSXElement opening tag by its name in the CURRENT source. Returns the
@@ -157,8 +157,8 @@ describe("integration: iteration snapshot + manifest", () => {
     }
 
     const editedSource = baselineSource.replace(
-      "Redline Playground",
-      "Redline Playground (v1)"
+      "Design Crit Playground",
+      "Design Crit Playground (v1)"
     );
     expect(editedSource).not.toBe(baselineSource);
     agent.setVariant({ source: editedSource });
@@ -287,7 +287,7 @@ describe("integration: iteration snapshot + manifest", () => {
       agent.setVariant({
         source: liveSource.replace(
           PLAYGROUND_HEADING_RE,
-          `Redline Playground ${labels[i]}`
+          `Design Crit Playground ${labels[i]}`
         ),
       });
 
@@ -364,8 +364,8 @@ describe("integration: iteration snapshot + manifest", () => {
     // (run-iteration resets the file to beforeSource before each variant).
     agent.setVariant((variantInput) => ({
       source: baselineSource.replace(
-        "Redline Playground",
-        `Redline Playground variant-${variantInput.variantIndex}`
+        "Design Crit Playground",
+        `Design Crit Playground variant-${variantInput.variantIndex}`
       ),
     }));
 
@@ -404,8 +404,8 @@ describe("integration: iteration snapshot + manifest", () => {
       const contents = await project.readSnapshot(`iterations/${id}/v${v}.tsx`);
       expect(contents).toBe(
         baselineSource.replace(
-          "Redline Playground",
-          `Redline Playground variant-${v}`
+          "Design Crit Playground",
+          `Design Crit Playground variant-${v}`
         )
       );
     }
@@ -413,7 +413,7 @@ describe("integration: iteration snapshot + manifest", () => {
     // The LAST successful variant (v3) is left active on the live source.
     expect(await readActive(found.absolutePath, id)).toBe(3);
     const live = await project.readSource("src/App.tsx");
-    expect(live).toContain("Redline Playground variant-3");
+    expect(live).toContain("Design Crit Playground variant-3");
     expect(live).not.toContain("variant-1");
     expect(live).not.toContain("variant-2");
   });
@@ -449,8 +449,8 @@ describe("integration: iteration snapshot + manifest", () => {
     }
     agent.setVariant({
       source: baselineSource.replace(
-        "Redline Playground",
-        "Redline Playground edited"
+        "Design Crit Playground",
+        "Design Crit Playground edited"
       ),
     });
     const stream = createStreamCollector();

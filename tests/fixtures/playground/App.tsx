@@ -1,7 +1,7 @@
 /**
  * Canonical fixture component for round-trip integration tests.
  *
- * This is the source `redline`'s server flows mutate in tests: comment markers
+ * This is the source `design-crit`'s server flows mutate in tests: comment markers
  * are written into it (src/server/comments/writer.ts), read back out
  * (src/server/comments/reader.ts, src/server/comments/find-comment.ts), and the
  * agent (stubbed in tests — see tests/helpers/stub-agent.ts) edits it to
@@ -25,7 +25,7 @@
 export default function App() {
   return (
     <main data-view="playground">
-      <h1>Redline Playground</h1>
+      <h1>Design Crit Playground</h1>
       <div className="card">
         <p>A minimal surface for anchoring comments in tests.</p>
         <button type="button">Click me</button>

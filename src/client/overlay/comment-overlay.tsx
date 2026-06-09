@@ -390,7 +390,7 @@ export function CommentOverlay({
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         // Screenshot lightbox handles its own Escape; don't close the bubble.
-        if (document.body.dataset.redlineLightbox === "open") {
+        if (document.body.dataset.lightbox === "open") {
           return;
         }
         setOpenTarget(null);
@@ -647,7 +647,7 @@ export function CommentOverlay({
         aria-live="polite"
         className="pointer-events-none fixed inset-0 z-[9000]"
         data-comment-overlay="true"
-        data-redline-overlay-root="true"
+        data-overlay-root="true"
       >
         {settings.enabled
           ? visibleAnchors.map((anchor) => (
