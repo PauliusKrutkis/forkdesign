@@ -62,6 +62,12 @@ async function readVersionAuxFiles(
   return {};
 }
 
+export async function readBaselineAuxFiles(
+  roots: string[]
+): Promise<AuxFileMap> {
+  return readVersionAuxFiles(roots, 0);
+}
+
 export async function writeVersionAuxFiles(
   iterDir: string,
   v: number,
@@ -104,6 +110,43 @@ export async function mergeBaselineAuxFiles(
   }
   if (changed) {
     await writeFile(filePath, `${JSON.stringify(existing, null, 2)}\n`, "utf8");
+  }
+}
+
+export async function removeBaselineAuxFileEntries(
+  roots: string[],
+  rels: Iterable<string>
+): Promise<void> {
+  const relSet = new Set(rels);
+  if (relSet.size === 0) {
+    return;
+  }
+
+  for (const iterDir of roots) {
+    const filePath = auxFilesPath(iterDir, 0);
+    if (!(existsSync(filePath) && statSync(filePath).isFile())) {
+      continue;
+    }
+    let baseline: AuxFileMap;
+    try {
+      baseline = parseAuxJson(await readFile(filePath, "utf8"));
+    } catch {
+      continue;
+    }
+    let changed = false;
+    for (const rel of relSet) {
+      if (rel in baseline) {
+        delete baseline[rel];
+        changed = true;
+      }
+    }
+    if (changed) {
+      await writeFile(
+        filePath,
+        `${JSON.stringify(baseline, null, 2)}\n`,
+        "utf8"
+      );
+    }
   }
 }
 

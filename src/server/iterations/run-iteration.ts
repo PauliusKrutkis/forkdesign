@@ -23,11 +23,15 @@ import { atomicWriteText } from "../platform/atomic-write.ts";
 import { errorMessage } from "../platform/http.ts";
 import {
   type AuxFileMap,
+  deleteVersionAuxFiles,
   mergeBaselineAuxFiles,
+  readBaselineAuxFiles,
+  removeBaselineAuxFileEntries,
   restoreAuxFilesForVersion,
   writeVersionAuxFiles,
 } from "./aux-files.ts";
 import {
+  deleteVersionArtifactsAllRoots,
   findVersionPngPath,
   iterationPngUrl,
   nextIterationVersion,
@@ -118,6 +122,10 @@ function activeUpdateErrorMessage(err: unknown): string {
 
 function variantProgressPrefix(variantIndex: number, count: number): string {
   return count > 1 ? `variant ${variantIndex}/${count} — ` : "";
+}
+
+function iterationRootsWithPrimary(iterDir: string, roots: string[]): string[] {
+  return [iterDir, ...roots.filter((root) => root !== iterDir)];
 }
 
 /**
@@ -547,6 +555,8 @@ function createAgentRunRecorder(args: {
 }
 
 interface VariantBatchState {
+  baselineFiles: Map<string, string>;
+  createdBaselineAuxKeys: Set<string>;
   createdVersions: number[];
   hadAgentFailure: boolean;
   lastAgentError?: string;
@@ -715,10 +725,6 @@ async function runVariantBatch(args: {
   skills: AgentSkill[];
   stream: NdjsonStream;
 }): Promise<VariantBatchState> {
-  const state: VariantBatchState = {
-    createdVersions: [],
-    hadAgentFailure: false,
-  };
   const priorVariantApproaches: string[] = [];
 
   // Pre-agent snapshot of the whole source tree. Diffing against it after each
@@ -727,6 +733,19 @@ async function runVariantBatch(args: {
   const baselineFiles = await snapshotSourceFiles(args.projectRoot);
   const commentRel = toRelPosix(args.projectRoot, args.found.absolutePath);
   const touchedAux = new Set<string>();
+  const iterationRoots = iterationRootsWithPrimary(
+    args.iterDir,
+    args.iterationRoots
+  );
+  const knownBaselineAuxKeys = new Set(
+    Object.keys(await readBaselineAuxFiles(iterationRoots))
+  );
+  const state: VariantBatchState = {
+    baselineFiles,
+    createdBaselineAuxKeys: new Set<string>(),
+    createdVersions: [],
+    hadAgentFailure: false,
+  };
 
   for (let variantIndex = 1; variantIndex <= args.count; variantIndex += 1) {
     if (args.stream.clientGone()) {
@@ -806,6 +825,9 @@ async function runVariantBatch(args: {
       continue;
     }
 
+    const newBaselineAuxKeys = Object.keys(result.auxBaseline ?? {}).filter(
+      (rel) => !knownBaselineAuxKeys.has(rel)
+    );
     const step = await persistChangedVariant({
       count: args.count,
       found: args.found,
@@ -839,6 +861,10 @@ async function runVariantBatch(args: {
     state.lastToolCalls = result.toolCalls;
     state.lastPng = step.png;
     addAuxPaths(touchedAux, result.auxFiles);
+    for (const rel of newBaselineAuxKeys) {
+      knownBaselineAuxKeys.add(rel);
+      state.createdBaselineAuxKeys.add(rel);
+    }
 
     const approachSummary =
       lastAgentSummary?.trim() ||
@@ -880,6 +906,55 @@ function finishNoVariants(args: {
       ? { error: lastAgentError }
       : {}),
   });
+}
+
+async function cleanupAbortedBatch(args: {
+  beforeSource: string;
+  found: FoundComment;
+  id: string;
+  iterDir: string;
+  iterationRoots: string[];
+  projectRoot: string;
+  state: VariantBatchState;
+}): Promise<void> {
+  const roots = iterationRootsWithPrimary(args.iterDir, args.iterationRoots);
+
+  try {
+    await atomicWriteText(args.found.absolutePath, args.beforeSource);
+    const currentFiles = await snapshotSourceFiles(args.projectRoot);
+    const changedFiles = diffSourceSnapshots(
+      args.state.baselineFiles,
+      currentFiles
+    );
+    await restoreFilesToBaseline(
+      args.projectRoot,
+      changedFiles.keys(),
+      args.state.baselineFiles
+    );
+  } catch (err) {
+    console.warn(
+      `[vite-plugin-comments] failed to restore aborted iteration ${args.id}: ${errorMessage(err)}`
+    );
+  }
+
+  for (const v of args.state.createdVersions) {
+    try {
+      await deleteVersionArtifactsAllRoots(roots, v);
+      await deleteVersionAuxFiles(roots, v);
+    } catch (err) {
+      console.warn(
+        `[vite-plugin-comments] failed to remove aborted iteration ${args.id} v${v}: ${errorMessage(err)}`
+      );
+    }
+  }
+
+  try {
+    await removeBaselineAuxFileEntries(roots, args.state.createdBaselineAuxKeys);
+  } catch (err) {
+    console.warn(
+      `[vite-plugin-comments] failed to prune aborted iteration ${args.id} aux baseline: ${errorMessage(err)}`
+    );
+  }
 }
 
 async function finishSuccessfulBatch(args: {
@@ -1048,10 +1123,21 @@ export async function runNewIteration(
     return;
   }
 
-  if (stream.clientGone() || state.createdVersions.length === 0) {
-    if (state.createdVersions.length === 0 && !stream.clientGone()) {
-      finishNoVariants({ count, agentStartedAt, id, recordRun, state, stream });
-    }
+  if (stream.clientGone()) {
+    await cleanupAbortedBatch({
+      beforeSource,
+      found,
+      id,
+      iterDir,
+      iterationRoots,
+      projectRoot,
+      state,
+    });
+    return;
+  }
+
+  if (state.createdVersions.length === 0) {
+    finishNoVariants({ count, agentStartedAt, id, recordRun, state, stream });
     return;
   }
 

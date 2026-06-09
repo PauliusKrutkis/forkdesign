@@ -287,6 +287,60 @@ describe("runNewIteration multi-variant", () => {
     expect(runAgentMock).toHaveBeenCalledTimes(2);
   });
 
+  it("rolls back live files and artifacts when cancelled after a variant snapshot", async () => {
+    const iterDir = path.join(projectRoot, "designs", "iterations", commentId);
+    const cardPath = path.join(projectRoot, "src", "Card.tsx");
+    const cardBaseline = "export const Card = () => <div>old</div>;\n";
+    writeFileSync(cardPath, cardBaseline, "utf8");
+
+    runAgentMock.mockImplementation(() => {
+      writeFileSync(sourcePath, `${baselineSource}\n// variant 1`, "utf8");
+      writeFileSync(
+        cardPath,
+        "export const Card = () => <div>new</div>;\n",
+        "utf8"
+      );
+      return Promise.resolve({
+        ok: true,
+        modelUsed: "composer-2.5-fast",
+        turnsUsed: 1,
+        toolCalls: 1,
+        attempts: [],
+      });
+    });
+
+    const { stream } = createTestStream();
+    await runNewIteration({
+      projectRoot,
+      found,
+      id: commentId,
+      model: "composer-2.5-fast",
+      count: 2,
+      hooks: {
+        onVariantScreenshotRequested: () => {
+          stream.abortController.abort();
+        },
+      },
+      skills: [],
+      stream,
+    });
+
+    expect(runAgentMock).toHaveBeenCalledTimes(1);
+    expect(readFileSync(sourcePath, "utf8")).toBe(baselineSource);
+    expect(readFileSync(cardPath, "utf8")).toBe(cardBaseline);
+    expect(existsSync(path.join(iterDir, "v1.tsx"))).toBe(false);
+    expect(existsSync(path.join(iterDir, "v1.png"))).toBe(false);
+    expect(existsSync(path.join(iterDir, "v1.files.json"))).toBe(false);
+
+    const baselineAuxPath = path.join(iterDir, "v0.files.json");
+    if (existsSync(baselineAuxPath)) {
+      const baselineAux = JSON.parse(
+        readFileSync(baselineAuxPath, "utf8")
+      ) as Record<string, string>;
+      expect(baselineAux).not.toHaveProperty("src/Card.tsx");
+    }
+  });
+
   it("captures cross-file edits (reused component) as aux snapshots", async () => {
     const iterDir = path.join(projectRoot, "designs", "iterations", commentId);
     const cardPath = path.join(projectRoot, "src", "Card.tsx");

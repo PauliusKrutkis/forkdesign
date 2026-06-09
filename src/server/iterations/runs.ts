@@ -82,6 +82,10 @@ export function cancelIterationRun(commentId: string): boolean {
   return true;
 }
 
+export function isIterationRunActive(commentId: string): boolean {
+  return activeRuns.has(commentId);
+}
+
 export function listActiveIterationRuns(): ActiveIterationRun[] {
   return [...activeRuns.values()].map(
     ({ abortController: _abortController, ...run }) => run
