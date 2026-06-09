@@ -709,6 +709,26 @@ function addAuxPaths(touchedAux: Set<string>, auxFiles?: AuxFileMap): void {
   }
 }
 
+function newBaselineAuxKeys(
+  auxBaseline: AuxFileMap | undefined,
+  knownBaselineAuxKeys: Set<string>
+): string[] {
+  return Object.keys(auxBaseline ?? {}).filter(
+    (rel) => !knownBaselineAuxKeys.has(rel)
+  );
+}
+
+function rememberCreatedBaselineAuxKeys(
+  keys: string[],
+  knownBaselineAuxKeys: Set<string>,
+  createdBaselineAuxKeys: Set<string>
+): void {
+  for (const rel of keys) {
+    knownBaselineAuxKeys.add(rel);
+    createdBaselineAuxKeys.add(rel);
+  }
+}
+
 async function runVariantBatch(args: {
   beforeSource: string;
   count: number;
@@ -825,8 +845,9 @@ async function runVariantBatch(args: {
       continue;
     }
 
-    const newBaselineAuxKeys = Object.keys(result.auxBaseline ?? {}).filter(
-      (rel) => !knownBaselineAuxKeys.has(rel)
+    const newAuxKeys = newBaselineAuxKeys(
+      result.auxBaseline,
+      knownBaselineAuxKeys
     );
     const step = await persistChangedVariant({
       count: args.count,
@@ -861,10 +882,11 @@ async function runVariantBatch(args: {
     state.lastToolCalls = result.toolCalls;
     state.lastPng = step.png;
     addAuxPaths(touchedAux, result.auxFiles);
-    for (const rel of newBaselineAuxKeys) {
-      knownBaselineAuxKeys.add(rel);
-      state.createdBaselineAuxKeys.add(rel);
-    }
+    rememberCreatedBaselineAuxKeys(
+      newAuxKeys,
+      knownBaselineAuxKeys,
+      state.createdBaselineAuxKeys
+    );
 
     const approachSummary =
       lastAgentSummary?.trim() ||
@@ -949,7 +971,10 @@ async function cleanupAbortedBatch(args: {
   }
 
   try {
-    await removeBaselineAuxFileEntries(roots, args.state.createdBaselineAuxKeys);
+    await removeBaselineAuxFileEntries(
+      roots,
+      args.state.createdBaselineAuxKeys
+    );
   } catch (err) {
     console.warn(
       `[vite-plugin-comments] failed to prune aborted iteration ${args.id} aux baseline: ${errorMessage(err)}`

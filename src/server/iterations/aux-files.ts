@@ -65,7 +65,7 @@ async function readVersionAuxFiles(
 export async function readBaselineAuxFiles(
   roots: string[]
 ): Promise<AuxFileMap> {
-  return readVersionAuxFiles(roots, 0);
+  return await readVersionAuxFiles(roots, 0);
 }
 
 export async function writeVersionAuxFiles(
