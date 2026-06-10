@@ -103,18 +103,20 @@ describe("validateIterateDone", () => {
   });
 
   it("surfaces failed done event errors", () => {
-    expect(validateIterateDone({ type: "done", ok: false, error: "boom" }))
-      .toEqual({
-        ok: false,
-        error: "boom",
-      });
+    expect(
+      validateIterateDone({ type: "done", ok: false, error: "boom" })
+    ).toEqual({
+      ok: false,
+      error: "boom",
+    });
   });
 
   it("rejects unchanged successful done events", () => {
-    expect(validateIterateDone({ type: "done", ok: true, changed: false }))
-      .toEqual({
-        ok: false,
-        error: "AI made no changes — try a more specific instruction",
-      });
+    expect(
+      validateIterateDone({ type: "done", ok: true, changed: false })
+    ).toEqual({
+      ok: false,
+      error: "AI made no changes — try a more specific instruction",
+    });
   });
 });
