@@ -852,21 +852,24 @@ async function handleUnsuccessfulVariantStep(args: {
     args.batch.projectRoot,
     args.baselineFiles
   );
-  if (args.step.action === "continue" && restored.ok) {
-    return "continue";
-  }
-  let error: string;
   if (restored.ok) {
-    error = args.step.error;
-  } else {
-    args.state.hadAgentFailure = true;
-    args.state.lastAgentError = restored.error;
-    error = restored.error;
+    if (args.step.action === "continue") {
+      return "continue";
+    }
+    args.batch.stream.endStream({
+      type: "done",
+      ok: false,
+      error: args.step.error,
+    });
+    args.state.terminalReached = true;
+    return "terminal";
   }
+  args.state.hadAgentFailure = true;
+  args.state.lastAgentError = restored.error;
   args.batch.stream.endStream({
     type: "done",
     ok: false,
-    error,
+    error: restored.error,
   });
   args.state.terminalReached = true;
   return "terminal";
