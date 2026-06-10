@@ -136,16 +136,33 @@ async function restoreFilesToBaseline(
     if (baseline === undefined) {
       try {
         await unlink(abs);
-      } catch {
-        // already gone — fine
+      } catch (err) {
+        const code = (err as NodeJS.ErrnoException).code;
+        if (code !== "ENOENT") {
+          throw err;
+        }
       }
       continue;
     }
-    try {
-      await atomicWriteText(abs, baseline);
-    } catch {
-      // best-effort restore; the agent re-reads files before editing
-    }
+    await atomicWriteText(abs, baseline);
+  }
+}
+
+async function restoreCurrentSourceTreeToBaseline(
+  projectRoot: string,
+  baselineFiles: Map<string, string>
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    const currentFiles = await snapshotSourceFiles(projectRoot);
+    const changedFiles = diffSourceSnapshots(baselineFiles, currentFiles);
+    await restoreFilesToBaseline(
+      projectRoot,
+      changedFiles.keys(),
+      baselineFiles
+    );
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, error: errorMessage(err) };
   }
 }
 
@@ -547,6 +564,7 @@ function createAgentRunRecorder(args: {
 }
 
 interface VariantBatchState {
+  baselineFiles?: Map<string, string>;
   createdVersions: number[];
   hadAgentFailure: boolean;
   lastAgentError?: string;
@@ -725,6 +743,7 @@ async function runVariantBatch(args: {
   // variant reveals cross-file edits (e.g. to a reused component's definition);
   // `touchedAux` accumulates them so later variants reset to baseline first.
   const baselineFiles = await snapshotSourceFiles(args.projectRoot);
+  state.baselineFiles = baselineFiles;
   const commentRel = toRelPosix(args.projectRoot, args.found.absolutePath);
   const touchedAux = new Set<string>();
 
@@ -775,16 +794,36 @@ async function runVariantBatch(args: {
     if (!result.ok) {
       state.hadAgentFailure = true;
       state.lastAgentError = result.error;
+      const restored = await restoreCurrentSourceTreeToBaseline(
+        args.projectRoot,
+        baselineFiles
+      );
+      if (!restored.ok) {
+        state.lastAgentError = restored.error;
+      }
       args.recordRun({
         ok: false,
-        stage: result.stage,
-        error: result.error,
+        stage: restored.ok ? result.stage : "restore",
+        error: restored.ok ? result.error : restored.error,
         attempts: result.attempts,
         variantIndex,
         durationMs: Date.now() - variantStartedAt,
       });
       if (args.count === 1) {
-        args.stream.endStream({ type: "done", ok: false, error: result.error });
+        args.stream.endStream({
+          type: "done",
+          ok: false,
+          error: restored.ok ? result.error : restored.error,
+        });
+        state.terminalReached = true;
+        return state;
+      }
+      if (!restored.ok) {
+        args.stream.endStream({
+          type: "done",
+          ok: false,
+          error: restored.error,
+        });
         state.terminalReached = true;
         return state;
       }
@@ -824,11 +863,34 @@ async function runVariantBatch(args: {
     });
 
     if (step.action === "abort") {
-      args.stream.endStream({ type: "done", ok: false, error: step.error });
+      const restored = await restoreCurrentSourceTreeToBaseline(
+        args.projectRoot,
+        baselineFiles
+      );
+      args.stream.endStream({
+        type: "done",
+        ok: false,
+        error: restored.ok ? step.error : restored.error,
+      });
       state.terminalReached = true;
       return state;
     }
     if (step.action === "continue") {
+      const restored = await restoreCurrentSourceTreeToBaseline(
+        args.projectRoot,
+        baselineFiles
+      );
+      if (!restored.ok) {
+        state.hadAgentFailure = true;
+        state.lastAgentError = restored.error;
+        args.stream.endStream({
+          type: "done",
+          ok: false,
+          error: restored.error,
+        });
+        state.terminalReached = true;
+        return state;
+      }
       continue;
     }
 
@@ -1048,8 +1110,26 @@ export async function runNewIteration(
     return;
   }
 
-  if (stream.clientGone() || state.createdVersions.length === 0) {
-    if (state.createdVersions.length === 0 && !stream.clientGone()) {
+  if (stream.clientGone()) {
+    if (state.baselineFiles) {
+      const restored = await restoreCurrentSourceTreeToBaseline(
+        projectRoot,
+        state.baselineFiles
+      );
+      if (!restored.ok) {
+        recordRun({
+          ok: false,
+          stage: "restore",
+          error: restored.error,
+          changed: true,
+        });
+      }
+    }
+    return;
+  }
+
+  if (state.createdVersions.length === 0) {
+    if (!stream.clientGone()) {
       finishNoVariants({ count, agentStartedAt, id, recordRun, state, stream });
     }
     return;

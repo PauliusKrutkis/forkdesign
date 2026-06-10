@@ -290,12 +290,6 @@ export async function applyIterationVersionToSource(
     return writeErrorToApplyResult(err);
   }
 
-  try {
-    await atomicWriteText(found.absolutePath, sourceWithActive);
-  } catch (err) {
-    return writeErrorToApplyResult(err);
-  }
-
   // Restore files the agent changed outside the comment's file (e.g. a reused
   // component's definition), reverting any the target version did not touch.
   let auxWritten: string[] = [];
@@ -306,6 +300,24 @@ export async function applyIterationVersionToSource(
       v
     );
   } catch (err) {
+    return writeErrorToApplyResult(err);
+  }
+
+  try {
+    await atomicWriteText(found.absolutePath, sourceWithActive);
+  } catch (err) {
+    const currentActive = found.comment.active ?? 0;
+    if (currentActive !== v) {
+      try {
+        await restoreAuxFilesForVersion(
+          projectRoot,
+          iterationRoots,
+          currentActive
+        );
+      } catch {
+        // Best-effort rollback; preserve the original write error.
+      }
+    }
     return writeErrorToApplyResult(err);
   }
 

@@ -448,6 +448,10 @@ export async function handleIterationsNew(
     model,
     startedAt,
   });
+  if (!abortController) {
+    sendError(res, 409, `iteration already running for comment ${id}`);
+    return;
+  }
 
   openNdjsonResponse(res);
   const stream = createNdjsonStream(req, res, {

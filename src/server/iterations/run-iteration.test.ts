@@ -353,6 +353,69 @@ describe("runNewIteration multi-variant", () => {
     expect(done).toMatchObject({ ok: true, changed: true });
   });
 
+  it("restores live source when a run is cancelled after saving a variant", async () => {
+    runAgentMock.mockImplementation(() => {
+      writeFileSync(sourcePath, `${baselineSource}\n// cancelled edit`, "utf8");
+      return Promise.resolve({
+        ok: true,
+        modelUsed: "composer-2.5-fast",
+        turnsUsed: 1,
+        toolCalls: 1,
+        attempts: [],
+      });
+    });
+
+    const { stream } = createTestStream();
+    await runNewIteration({
+      projectRoot,
+      found,
+      id: commentId,
+      model: "composer-2.5-fast",
+      count: 1,
+      hooks: {
+        onVariantScreenshotRequested: () => {
+          stream.abortController.abort();
+        },
+      },
+      skills: [],
+      stream,
+    });
+
+    expect(
+      readFileSync(
+        path.join(projectRoot, "designs", "iterations", commentId, "v1.tsx"),
+        "utf8"
+      )
+    ).toContain("// cancelled edit");
+    expect(readFileSync(sourcePath, "utf8")).toBe(baselineSource);
+  });
+
+  it("restores live source when the agent fails after editing files", async () => {
+    runAgentMock.mockImplementation(() => {
+      writeFileSync(sourcePath, `${baselineSource}\n// failed edit`, "utf8");
+      return Promise.resolve({
+        ok: false,
+        error: "agent aborted",
+        attempts: [],
+      });
+    });
+
+    const { events, stream } = createTestStream();
+    await runNewIteration({
+      projectRoot,
+      found,
+      id: commentId,
+      model: "composer-2.5-fast",
+      count: 1,
+      skills: [],
+      stream,
+    });
+
+    expect(readFileSync(sourcePath, "utf8")).toBe(baselineSource);
+    const done = events.at(-1) as { ok: boolean; error?: string };
+    expect(done).toMatchObject({ ok: false, error: "agent aborted" });
+  });
+
   it("returns changed false when every variant makes no diff", async () => {
     runAgentMock.mockResolvedValue({
       ok: true,

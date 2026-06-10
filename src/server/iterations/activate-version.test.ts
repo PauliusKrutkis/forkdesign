@@ -234,4 +234,71 @@ describe("applyIterationVersionToSource", () => {
     expect(toV0.ok).toBe(true);
     expect(await readFile(cardPath, "utf8")).toContain("BASELINE");
   });
+
+  it("does not update the primary source when auxiliary restore fails", async () => {
+    projectRoot = await mkdtemp(path.join(tmpdir(), "redline-activate-"));
+    const sourcePath = path.join(projectRoot, "src", "Page.tsx");
+    const iterDir = path.join(
+      projectRoot,
+      "designs",
+      "iterations",
+      "comment-a"
+    );
+    await mkdir(path.dirname(sourcePath), { recursive: true });
+    await mkdir(iterDir, { recursive: true });
+
+    const currentSource = `export function Page() {
+  return (
+    <main>
+      <Card data-comment-anchor="anchor-a" />
+      {/* @comment id="comment-a" anchor="anchor-a" text="punch it up" author="dev@local" date="2026-01-01T00:00:00.000Z" active=0 */}
+    </main>
+  );
+}
+`;
+    const variantSource = currentSource.replace(
+      "<main>",
+      '<main className="v1">'
+    );
+    await writeFile(sourcePath, currentSource, "utf8");
+    await writeFile(path.join(iterDir, "v0.tsx"), currentSource, "utf8");
+    await writeFile(path.join(iterDir, "v1.tsx"), variantSource, "utf8");
+    await writeFile(
+      path.join(iterDir, "v0.files.json"),
+      JSON.stringify({
+        "src/missing/Card.tsx": "export const Card = () => <div>old</div>;\n",
+      }),
+      "utf8"
+    );
+    await writeFile(
+      path.join(iterDir, "v1.files.json"),
+      JSON.stringify({
+        "src/missing/Card.tsx": "export const Card = () => <div>new</div>;\n",
+      }),
+      "utf8"
+    );
+
+    const found: FoundComment = {
+      absolutePath: sourcePath,
+      relativePath: "src/Page.tsx",
+      siblingIds: [],
+      comment: {
+        id: "comment-a",
+        anchor: "anchor-a",
+        text: "punch it up",
+        active: 0,
+      },
+    };
+
+    const result = await applyIterationVersionToSource(
+      found,
+      [iterDir],
+      "comment-a",
+      1,
+      projectRoot
+    );
+
+    expect(result.ok).toBe(false);
+    expect(await readFile(sourcePath, "utf8")).toBe(currentSource);
+  });
 });

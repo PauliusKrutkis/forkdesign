@@ -22,9 +22,11 @@ export function startIterationRun(args: {
   count: number;
   model: AgentModel;
   startedAt: number;
-}): AbortController {
+}): AbortController | null {
   const existing = activeRuns.get(args.commentId);
-  existing?.abortController.abort();
+  if (existing) {
+    return null;
+  }
 
   const abortController = new AbortController();
   activeRuns.set(args.commentId, {
