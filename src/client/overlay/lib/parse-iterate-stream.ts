@@ -90,6 +90,16 @@ export async function readIterateStream(
         break;
       }
     }
+    const tail = decoder.decode();
+    if (!(done || signal?.aborted) && tail) {
+      buffer += tail;
+    }
+    if (!(done || signal?.aborted)) {
+      const parsed = parseIterateLine(buffer.trim(), callbacks);
+      if (parsed !== "continue") {
+        done = parsed;
+      }
+    }
   } finally {
     if (signal) {
       signal.removeEventListener("abort", onAbort);
