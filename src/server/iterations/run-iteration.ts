@@ -717,14 +717,14 @@ function addAuxPaths(touchedAux: Set<string>, auxFiles?: AuxFileMap): void {
   }
 }
 
-async function runVariantBatch(args: {
+interface RunVariantBatchArgs {
   beforeSource: string;
   count: number;
   found: FoundComment;
   hooks?: RunNewIterationHooks;
   id: string;
-  iterDir: string;
   iterationRoots: string[];
+  iterDir: string;
   model: AgentModel;
   projectRoot: string;
   recordRun: RecordRunFn;
@@ -732,7 +732,176 @@ async function runVariantBatch(args: {
   runId: string;
   skills: AgentSkill[];
   stream: NdjsonStream;
-}): Promise<VariantBatchState> {
+}
+
+type VariantRunOutput = Awaited<ReturnType<typeof runSingleAgentVariant>>;
+
+async function runAgentVariantWithNotifications(args: {
+  baselineFiles: Map<string, string>;
+  batch: RunVariantBatchArgs;
+  commentRel: string;
+  priorVariantApproaches: string[];
+  touchedAux: Set<string>;
+  variantIndex: number;
+}): Promise<VariantRunOutput> {
+  const { baselineFiles, batch, commentRel, priorVariantApproaches } = args;
+  const internalSourceEvent = {
+    absolutePath: batch.found.absolutePath,
+    active: 0,
+    file: batch.found.relativePath,
+    id: batch.id,
+  };
+  await notifyInternalSourceWork(
+    batch.hooks?.onInternalSourceWorkStart,
+    internalSourceEvent
+  );
+  try {
+    return await runSingleAgentVariant({
+      baselineFiles,
+      beforeSource: batch.beforeSource,
+      commentRel,
+      count: batch.count,
+      found: batch.found,
+      model: batch.model,
+      priorVariantApproaches,
+      projectRoot: batch.projectRoot,
+      skills: batch.skills,
+      stream: batch.stream,
+      touchedAux: args.touchedAux,
+      variantIndex: args.variantIndex,
+    });
+  } finally {
+    await notifyInternalSourceWork(
+      batch.hooks?.onInternalSourceWorkFinish,
+      internalSourceEvent
+    );
+  }
+}
+
+async function handleFailedVariant(args: {
+  baselineFiles: Map<string, string>;
+  batch: RunVariantBatchArgs;
+  result: VariantRunOutcome;
+  state: VariantBatchState;
+  variantIndex: number;
+  variantStartedAt: number;
+}): Promise<"continue" | "terminal"> {
+  const {
+    baselineFiles,
+    batch,
+    result,
+    state,
+    variantIndex,
+    variantStartedAt,
+  } = args;
+  state.hadAgentFailure = true;
+  state.lastAgentError = result.error;
+  const restored = await restoreCurrentSourceTreeToBaseline(
+    batch.projectRoot,
+    baselineFiles
+  );
+  if (!restored.ok) {
+    state.lastAgentError = restored.error;
+  }
+  batch.recordRun({
+    ok: false,
+    stage: restored.ok ? result.stage : "restore",
+    error: restored.ok ? result.error : restored.error,
+    attempts: result.attempts,
+    variantIndex,
+    durationMs: Date.now() - variantStartedAt,
+  });
+  if (batch.count > 1 && restored.ok) {
+    return "continue";
+  }
+  batch.stream.endStream({
+    type: "done",
+    ok: false,
+    error: restored.ok ? result.error : restored.error,
+  });
+  state.terminalReached = true;
+  return "terminal";
+}
+
+function recordUnchangedVariant(args: {
+  batch: RunVariantBatchArgs;
+  result: VariantRunOutcome;
+  variantIndex: number;
+  variantStartedAt: number;
+}): void {
+  args.batch.recordRun({
+    ok: true,
+    stage: "done",
+    changed: false,
+    modelUsed: args.result.modelUsed,
+    turnsUsed: args.result.turnsUsed,
+    toolCalls: args.result.toolCalls,
+    attempts: args.result.attempts,
+    variantIndex: args.variantIndex,
+    durationMs: Date.now() - args.variantStartedAt,
+  });
+}
+
+async function handleUnsuccessfulVariantStep(args: {
+  baselineFiles: Map<string, string>;
+  batch: RunVariantBatchArgs;
+  state: VariantBatchState;
+  step: Exclude<VariantStepResult, { action: "success" }>;
+}): Promise<"continue" | "terminal"> {
+  const restored = await restoreCurrentSourceTreeToBaseline(
+    args.batch.projectRoot,
+    args.baselineFiles
+  );
+  if (args.step.action === "continue" && restored.ok) {
+    return "continue";
+  }
+  let error: string;
+  if (restored.ok) {
+    error = args.step.error;
+  } else {
+    args.state.hadAgentFailure = true;
+    args.state.lastAgentError = restored.error;
+    error = restored.error;
+  }
+  args.batch.stream.endStream({
+    type: "done",
+    ok: false,
+    error,
+  });
+  args.state.terminalReached = true;
+  return "terminal";
+}
+
+function applySuccessfulVariantStep(args: {
+  batch: RunVariantBatchArgs;
+  lastAgentSummary: string | undefined;
+  result: VariantRunOutcome;
+  state: VariantBatchState;
+  step: Extract<VariantStepResult, { action: "success" }>;
+  touchedAux: Set<string>;
+  variantIndex: number;
+  priorVariantApproaches: string[];
+}): void {
+  const { batch, lastAgentSummary, result, state, step } = args;
+  state.createdVersions.push(step.nextV);
+  state.lastSuccessfulSource = step.afterSource;
+  state.lastModelUsed = result.modelUsed;
+  state.lastTurnsUsed = result.turnsUsed;
+  state.lastToolCalls = result.toolCalls;
+  state.lastPng = step.png;
+  addAuxPaths(args.touchedAux, result.auxFiles);
+
+  const approachSummary =
+    lastAgentSummary?.trim() ||
+    summarizeAgentSourceDiff(batch.beforeSource, step.afterSource);
+  args.priorVariantApproaches.push(
+    `Variant ${args.variantIndex}: ${approachSummary}`
+  );
+}
+
+async function runVariantBatch(
+  args: RunVariantBatchArgs
+): Promise<VariantBatchState> {
   const state: VariantBatchState = {
     createdVersions: [],
     hadAgentFailure: false,
@@ -753,38 +922,14 @@ async function runVariantBatch(args: {
     }
 
     const variantStartedAt = Date.now();
-    const internalSourceEvent = {
-      absolutePath: args.found.absolutePath,
-      active: 0,
-      file: args.found.relativePath,
-      id: args.id,
-    };
-    await notifyInternalSourceWork(
-      args.hooks?.onInternalSourceWorkStart,
-      internalSourceEvent
-    );
-    let variantOutput: Awaited<ReturnType<typeof runSingleAgentVariant>>;
-    try {
-      variantOutput = await runSingleAgentVariant({
-        baselineFiles,
-        beforeSource: args.beforeSource,
-        commentRel,
-        count: args.count,
-        found: args.found,
-        model: args.model,
-        priorVariantApproaches,
-        projectRoot: args.projectRoot,
-        skills: args.skills,
-        stream: args.stream,
-        touchedAux,
-        variantIndex,
-      });
-    } finally {
-      await notifyInternalSourceWork(
-        args.hooks?.onInternalSourceWorkFinish,
-        internalSourceEvent
-      );
-    }
+    const variantOutput = await runAgentVariantWithNotifications({
+      baselineFiles,
+      batch: args,
+      commentRel,
+      priorVariantApproaches,
+      touchedAux,
+      variantIndex,
+    });
     const { result, lastAgentSummary } = variantOutput;
 
     if (args.stream.clientGone()) {
@@ -792,55 +937,26 @@ async function runVariantBatch(args: {
     }
 
     if (!result.ok) {
-      state.hadAgentFailure = true;
-      state.lastAgentError = result.error;
-      const restored = await restoreCurrentSourceTreeToBaseline(
-        args.projectRoot,
-        baselineFiles
-      );
-      if (!restored.ok) {
-        state.lastAgentError = restored.error;
-      }
-      args.recordRun({
-        ok: false,
-        stage: restored.ok ? result.stage : "restore",
-        error: restored.ok ? result.error : restored.error,
-        attempts: result.attempts,
+      const failureAction = await handleFailedVariant({
+        baselineFiles,
+        batch: args,
+        result,
+        state,
         variantIndex,
-        durationMs: Date.now() - variantStartedAt,
+        variantStartedAt,
       });
-      if (args.count === 1) {
-        args.stream.endStream({
-          type: "done",
-          ok: false,
-          error: restored.ok ? result.error : restored.error,
-        });
-        state.terminalReached = true;
-        return state;
-      }
-      if (!restored.ok) {
-        args.stream.endStream({
-          type: "done",
-          ok: false,
-          error: restored.error,
-        });
-        state.terminalReached = true;
+      if (failureAction === "terminal") {
         return state;
       }
       continue;
     }
 
     if (!result.changed) {
-      args.recordRun({
-        ok: true,
-        stage: "done",
-        changed: false,
-        modelUsed: result.modelUsed,
-        turnsUsed: result.turnsUsed,
-        toolCalls: result.toolCalls,
-        attempts: result.attempts,
+      recordUnchangedVariant({
+        batch: args,
+        result,
         variantIndex,
-        durationMs: Date.now() - variantStartedAt,
+        variantStartedAt,
       });
       continue;
     }
@@ -862,50 +978,29 @@ async function runVariantBatch(args: {
       variantStartedAt,
     });
 
-    if (step.action === "abort") {
-      const restored = await restoreCurrentSourceTreeToBaseline(
-        args.projectRoot,
-        baselineFiles
-      );
-      args.stream.endStream({
-        type: "done",
-        ok: false,
-        error: restored.ok ? step.error : restored.error,
+    if (step.action !== "success") {
+      const stepAction = await handleUnsuccessfulVariantStep({
+        baselineFiles,
+        batch: args,
+        state,
+        step,
       });
-      state.terminalReached = true;
-      return state;
-    }
-    if (step.action === "continue") {
-      const restored = await restoreCurrentSourceTreeToBaseline(
-        args.projectRoot,
-        baselineFiles
-      );
-      if (!restored.ok) {
-        state.hadAgentFailure = true;
-        state.lastAgentError = restored.error;
-        args.stream.endStream({
-          type: "done",
-          ok: false,
-          error: restored.error,
-        });
-        state.terminalReached = true;
+      if (stepAction === "terminal") {
         return state;
       }
       continue;
     }
 
-    state.createdVersions.push(step.nextV);
-    state.lastSuccessfulSource = step.afterSource;
-    state.lastModelUsed = result.modelUsed;
-    state.lastTurnsUsed = result.turnsUsed;
-    state.lastToolCalls = result.toolCalls;
-    state.lastPng = step.png;
-    addAuxPaths(touchedAux, result.auxFiles);
-
-    const approachSummary =
-      lastAgentSummary?.trim() ||
-      summarizeAgentSourceDiff(args.beforeSource, step.afterSource);
-    priorVariantApproaches.push(`Variant ${variantIndex}: ${approachSummary}`);
+    applySuccessfulVariantStep({
+      batch: args,
+      lastAgentSummary,
+      result,
+      state,
+      step,
+      touchedAux,
+      variantIndex,
+      priorVariantApproaches,
+    });
   }
 
   return state;
