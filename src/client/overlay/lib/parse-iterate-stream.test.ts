@@ -111,12 +111,12 @@ describe("validateIterateDone", () => {
   });
 
   it("uses done error details when the agent fails", () => {
-    expect(validateIterateDone({ type: "done", ok: false, error: "bad" })).toEqual(
-      {
-        ok: false,
-        error: "bad",
-      }
-    );
+    expect(
+      validateIterateDone({ type: "done", ok: false, error: "bad" })
+    ).toEqual({
+      ok: false,
+      error: "bad",
+    });
   });
 
   it("rejects no-change success results with a user-facing retry hint", () => {
