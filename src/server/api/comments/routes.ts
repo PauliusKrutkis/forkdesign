@@ -23,11 +23,7 @@ import { WriteError } from "../../comments/writer-errors.ts";
 import { applyIterationVersionToSource } from "../../iterations/activate-version.ts";
 import { seedBaselineIteration } from "../../iterations/baseline.ts";
 import { resolveCommentIterationContext } from "../../iterations/context.ts";
-import {
-  readJsonBody,
-  sendError,
-  sendJson,
-} from "../../platform/http.ts";
+import { readJsonBody, sendError, sendJson } from "../../platform/http.ts";
 import { decodeScreenshotPng } from "../../platform/media.ts";
 import { resolveSafePagePath } from "../../platform/path-safety.ts";
 import { parsePatchBody, parsePostBody } from "./parse-body.ts";

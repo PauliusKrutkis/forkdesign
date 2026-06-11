@@ -4,13 +4,13 @@ import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { writeCommentToFile } from "../../comments/writer.ts";
 import {
-  createJsonRequest,
-  createMockResponse,
-} from "../../platform/http-test-helpers.ts";
-import {
   finishIterationRun,
   startIterationRun,
 } from "../../iterations/runs.ts";
+import {
+  createJsonRequest,
+  createMockResponse,
+} from "../../platform/http-test-helpers.ts";
 import {
   handleIterationsActivate,
   handleIterationsDelete,
