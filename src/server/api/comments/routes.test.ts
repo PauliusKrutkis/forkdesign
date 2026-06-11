@@ -41,6 +41,7 @@ afterAll(() => {
 beforeEach(() => {
   rmSync(path.join(projectRoot, "src"), { recursive: true, force: true });
   rmSync(path.join(projectRoot, "public"), { recursive: true, force: true });
+  rmSync(path.join(projectRoot, "designs"), { recursive: true, force: true });
   mkdirSync(path.dirname(absoluteFile), { recursive: true });
   writeFileSync(absoluteFile, SOURCE, "utf8");
 });
@@ -315,6 +316,46 @@ describe("handleDelete", () => {
     const source = readFileSync(absoluteFile, "utf8");
     expect(source).not.toContain("v1-edit");
     expect(source).not.toContain("@comment");
+  });
+
+  it("delete with revert=baseline restores auxiliary files", async () => {
+    const { id } = await seedCommentWithActiveV1();
+    const iterDir = path.join(
+      projectRoot,
+      "public",
+      "designs",
+      "iterations",
+      id
+    );
+    const auxRelativeFile = "src/components/Card.tsx";
+    const auxAbsoluteFile = path.join(projectRoot, auxRelativeFile);
+    const baselineCard = "export const Card = () => <div>baseline</div>;\n";
+    const variantCard = "export const Card = () => <div>variant</div>;\n";
+    mkdirSync(path.dirname(auxAbsoluteFile), { recursive: true });
+    writeFileSync(auxAbsoluteFile, variantCard, "utf8");
+    writeFileSync(
+      path.join(iterDir, "v0.files.json"),
+      `${JSON.stringify({ [auxRelativeFile]: baselineCard }, null, 2)}\n`,
+      "utf8"
+    );
+    writeFileSync(
+      path.join(iterDir, "v1.files.json"),
+      `${JSON.stringify({ [auxRelativeFile]: variantCard }, null, 2)}\n`,
+      "utf8"
+    );
+
+    const mock = createMockResponse();
+    const req = createJsonRequest(undefined, {
+      method: "DELETE",
+      url: `/${id}?revert=baseline`,
+    });
+    req.headers = {};
+
+    await handleDelete(req, mock.res, projectRoot, []);
+
+    expect(mock.getStatus()).toBe(200);
+    expect(mock.getJson()).toMatchObject({ ok: true, reverted: true });
+    expect(readFileSync(auxAbsoluteFile, "utf8")).toBe(baselineCard);
   });
 
   it("rejects invalid revert query param", async () => {

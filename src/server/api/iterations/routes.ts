@@ -30,6 +30,7 @@ import {
   activeIterationRunVisibleActive,
   cancelIterationRun,
   finishIterationRun,
+  isIterationRunActive,
   listActiveIterationRuns,
   startIterationRun,
   updateIterationRunStatus,
@@ -263,6 +264,11 @@ export async function handleIterationsActivate(
   }
   const { id, v } = parsed.value;
 
+  if (isIterationRunActive(id)) {
+    sendError(res, 409, "cannot activate versions while iteration is running");
+    return;
+  }
+
   const ctx = await resolveCommentIterationContext(
     projectRoot,
     id,
@@ -329,6 +335,11 @@ export async function handleIterationsDelete(
     return;
   }
   const { id, v } = parsed.value;
+
+  if (isIterationRunActive(id)) {
+    sendError(res, 409, "cannot delete versions while iteration is running");
+    return;
+  }
 
   const ctx = await resolveCommentIterationContext(
     projectRoot,
@@ -437,6 +448,11 @@ export async function handleIterationsNew(
   );
   if (!ctx.ok) {
     sendError(res, ctx.status, ctx.message);
+    return;
+  }
+
+  if (isIterationRunActive(id)) {
+    sendError(res, 409, "iteration already running");
     return;
   }
 

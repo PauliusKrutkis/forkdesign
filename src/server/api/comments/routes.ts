@@ -20,12 +20,10 @@ import {
   writeCommentToFile,
 } from "../../comments/writer.ts";
 import { WriteError } from "../../comments/writer-errors.ts";
+import { applyIterationVersionToSource } from "../../iterations/activate-version.ts";
 import { seedBaselineIteration } from "../../iterations/baseline.ts";
 import { resolveCommentIterationContext } from "../../iterations/context.ts";
-import { findVersionSnapshotPath } from "../../iterations/manifest.ts";
-import { atomicWriteText } from "../../platform/atomic-write.ts";
 import {
-  errorMessage,
   readJsonBody,
   sendError,
   sendJson,
@@ -427,20 +425,19 @@ async function maybeRevertBeforeDelete(
     return { ok: false, status: ctx.status, message: ctx.message };
   }
 
-  const baselinePath = findVersionSnapshotPath(ctx.iterationRoots, 0);
-  if (!baselinePath) {
+  const applied = await applyIterationVersionToSource(
+    ctx.found,
+    ctx.iterationRoots,
+    id,
+    0,
+    projectRoot
+  );
+  if (!applied.ok) {
     return {
       ok: false,
-      status: 400,
-      message: "version snapshot not found: v0.tsx",
+      status: applied.status,
+      message: applied.message,
     };
-  }
-
-  try {
-    const baselineSource = await readFile(baselinePath, "utf8");
-    await atomicWriteText(ctx.found.absolutePath, baselineSource);
-  } catch (err) {
-    return { ok: false, status: 500, message: errorMessage(err) };
   }
 
   return { ok: true, reverted: true };

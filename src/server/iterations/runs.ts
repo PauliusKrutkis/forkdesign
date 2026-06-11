@@ -63,6 +63,10 @@ export function activeIterationRunVisibleActive(
   return activeRuns.get(commentId)?.visibleActive;
 }
 
+export function isIterationRunActive(commentId: string): boolean {
+  return activeRuns.has(commentId);
+}
+
 export function finishIterationRun(
   commentId: string,
   abortController: AbortController
