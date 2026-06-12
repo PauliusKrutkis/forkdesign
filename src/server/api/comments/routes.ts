@@ -23,6 +23,10 @@ import { WriteError } from "../../comments/writer-errors.ts";
 import { seedBaselineIteration } from "../../iterations/baseline.ts";
 import { resolveCommentIterationContext } from "../../iterations/context.ts";
 import { findVersionSnapshotPath } from "../../iterations/manifest.ts";
+import {
+  cancelIterationRun,
+  hasActiveIterationRun,
+} from "../../iterations/runs.ts";
 import { atomicWriteText } from "../../platform/atomic-write.ts";
 import {
   errorMessage,
@@ -294,6 +298,11 @@ export async function handlePatch(
     return;
   }
 
+  if (hasActiveIterationRun(id)) {
+    sendError(res, 409, "cannot edit comment while an iteration is running");
+    return;
+  }
+
   try {
     if (parsed.value.kind === "text") {
       await updateCommentText({
@@ -477,6 +486,15 @@ export async function handleDelete(
   );
   if (!resolved.ok) {
     sendError(res, 400, resolved.reason);
+    return;
+  }
+
+  if (cancelIterationRun(id)) {
+    sendError(
+      res,
+      409,
+      "iteration was running for this comment and has been cancelled; retry delete once it stops"
+    );
     return;
   }
 

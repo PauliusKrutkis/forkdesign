@@ -15,6 +15,10 @@ import {
   writeCommentToFile,
 } from "../../comments/writer.ts";
 import {
+  finishIterationRun,
+  startIterationRun,
+} from "../../iterations/runs.ts";
+import {
   createJsonRequest,
   createMockResponse,
 } from "../../platform/http-test-helpers.ts";
@@ -279,6 +283,34 @@ describe("handleDelete", () => {
 
     const { comments } = await readCommentsFromFile(absoluteFile);
     expect(comments.some((c) => c.id === created.id)).toBe(false);
+  });
+
+  it("cancels and rejects delete while an iteration is running for the comment", async () => {
+    const created = await seedComment();
+    const abortController = startIterationRun({
+      anchor: created.anchor,
+      commentId: created.id,
+      count: 1,
+      model: "composer-2.5-fast",
+      startedAt: Date.now(),
+    });
+    const mock = createMockResponse();
+    const req = createJsonRequest(undefined, {
+      method: "DELETE",
+      url: `/${created.id}`,
+    });
+    req.headers = {};
+
+    try {
+      await handleDelete(req, mock.res, projectRoot, []);
+    } finally {
+      finishIterationRun(created.id, abortController);
+    }
+
+    expect(mock.getStatus()).toBe(409);
+    expect(abortController.signal.aborted).toBe(true);
+    const { comments } = await readCommentsFromFile(absoluteFile);
+    expect(comments.some((c) => c.id === created.id)).toBe(true);
   });
 
   it("delete without revert keeps active source edits", async () => {
