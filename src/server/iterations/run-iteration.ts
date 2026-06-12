@@ -598,6 +598,18 @@ async function restoreSourceTreeToSnapshot(
   await restoreFilesToBaseline(projectRoot, changedFiles.keys(), baselineFiles);
 }
 
+async function restoreSourceTreeIfCancelled(args: {
+  baselineFiles: Map<string, string>;
+  projectRoot: string;
+  stream: NdjsonStream;
+}): Promise<boolean> {
+  if (!args.stream.clientGone()) {
+    return false;
+  }
+  await restoreSourceTreeToSnapshot(args.projectRoot, args.baselineFiles);
+  return true;
+}
+
 async function persistChangedVariant(args: {
   count: number;
   found: FoundComment;
@@ -773,8 +785,13 @@ async function runVariantBatch(args: {
   const touchedAux = new Set<string>();
 
   for (let variantIndex = 1; variantIndex <= args.count; variantIndex += 1) {
-    if (args.stream.clientGone()) {
-      await restoreSourceTreeToSnapshot(args.projectRoot, baselineFiles);
+    if (
+      await restoreSourceTreeIfCancelled({
+        baselineFiles,
+        projectRoot: args.projectRoot,
+        stream: args.stream,
+      })
+    ) {
       break;
     }
 
@@ -813,8 +830,13 @@ async function runVariantBatch(args: {
     }
     const { result, lastAgentSummary } = variantOutput;
 
-    if (args.stream.clientGone()) {
-      await restoreSourceTreeToSnapshot(args.projectRoot, baselineFiles);
+    if (
+      await restoreSourceTreeIfCancelled({
+        baselineFiles,
+        projectRoot: args.projectRoot,
+        stream: args.stream,
+      })
+    ) {
       break;
     }
 
@@ -877,9 +899,11 @@ async function runVariantBatch(args: {
       return state;
     }
     if (step.action === "continue") {
-      if (args.stream.clientGone()) {
-        await restoreSourceTreeToSnapshot(args.projectRoot, baselineFiles);
-      }
+      await restoreSourceTreeIfCancelled({
+        baselineFiles,
+        projectRoot: args.projectRoot,
+        stream: args.stream,
+      });
       continue;
     }
 
@@ -946,8 +970,13 @@ async function finishSuccessfulBatch(args: {
 }): Promise<void> {
   const lastV = args.state.createdVersions.at(-1) as number;
 
-  if (args.stream.clientGone()) {
-    await restoreSourceTreeToSnapshot(args.projectRoot, args.state.baselineFiles);
+  if (
+    await restoreSourceTreeIfCancelled({
+      baselineFiles: args.state.baselineFiles,
+      projectRoot: args.projectRoot,
+      stream: args.stream,
+    })
+  ) {
     return;
   }
 
