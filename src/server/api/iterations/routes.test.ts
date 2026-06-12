@@ -10,18 +10,19 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import {
-  createJsonRequest,
-  createMockResponse,
-} from "../../platform/http-test-helpers.ts";
-import {
   finishIterationRun,
   startIterationRun,
   updateIterationRunVisibleActive,
 } from "../../iterations/runs.ts";
+import {
+  createJsonRequest,
+  createMockResponse,
+} from "../../platform/http-test-helpers.ts";
 import { handleIterationsDelete, handleIterationsList } from "./routes.ts";
 
 const COMMENT_ID = "comment-route-test";
 const ANCHOR_ID = "anchor-route-test";
+const ACTIVE_V1_RE = /\bactive=1\b/;
 
 function sourceForVersion(label: string, active: number): string {
   return `export function Page() {
@@ -42,12 +43,7 @@ function seedProject(active: number): {
 } {
   const projectRoot = mkdtempSync(path.join(tmpdir(), "redline-routes-"));
   const sourcePath = path.join(projectRoot, "src", "Page.tsx");
-  const iterDir = path.join(
-    projectRoot,
-    "designs",
-    "iterations",
-    COMMENT_ID
-  );
+  const iterDir = path.join(projectRoot, "designs", "iterations", COMMENT_ID);
   mkdirSync(path.dirname(sourcePath), { recursive: true });
   mkdirSync(iterDir, { recursive: true });
   writeFileSync(sourcePath, sourceForVersion(`Version ${active}`, active));
@@ -150,6 +146,6 @@ describe("handleIterationsDelete", () => {
     const source = readFileSync(seeded.sourcePath, "utf8");
     expect(source).toContain("Version 1");
     expect(source).not.toContain("Version 2");
-    expect(source).toMatch(/\bactive=1\b/);
+    expect(source).toMatch(ACTIVE_V1_RE);
   });
 });

@@ -32,6 +32,8 @@ vi.mock("../agent/run-log.ts", () => ({
 
 import { createNdjsonStream, runNewIteration } from "./run-iteration.ts";
 
+const ACTIVE_V2_RE = /\bactive=2\b/;
+
 function createTestStream(): {
   events: object[];
   req: IncomingMessage;
@@ -158,7 +160,7 @@ describe("runNewIteration multi-variant", () => {
     ).toContain("// variant 2");
     const finalSource = readFileSync(sourcePath, "utf8");
     expect(finalSource).toContain("// variant 2");
-    expect(finalSource).toMatch(/\bactive=2\b/);
+    expect(finalSource).toMatch(ACTIVE_V2_RE);
     expect(updateCommentActiveMock).not.toHaveBeenCalled();
     expect(sourceAppliedEvents).toEqual([
       {
