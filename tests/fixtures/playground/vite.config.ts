@@ -22,8 +22,8 @@ export default defineConfig({
       // copy is required, and `forkdesign/styles.css` at the REAL compiled
       // Tailwind output so the browser tests exercise the styles users actually
       // ship with — a CSS regression that hides an overlay element fails
-      // `toBeVisible()`. `dist/styles.css` is (re)built by
-      // tests/e2e/global-setup.ts before the dev server boots.
+      // `toBeVisible()`. The built `dist/` (styles.css + index.mjs) is produced
+      // by the playwright `webServer` command before the dev server boots.
       "forkdesign/styles.css": resolve("dist/styles.css"),
       "forkdesign": resolve("src/index.ts"),
     },

@@ -15,10 +15,6 @@ const isCI = !!process.env.CI;
 
 export default defineConfig({
   testDir: "tests/e2e",
-  // Build the real shipped stylesheet (dist/styles.css) before anything starts,
-  // so the playground loads the actual CSS instead of an empty stub. Runs before
-  // `webServer`, which the aliased `forkdesign/styles.css` import depends on.
-  globalSetup: "./tests/e2e/global-setup.ts",
   // The specs share ONE on-disk fixture (tests/fixtures/playground/src/App.tsx)
   // that comment-creating tests mutate then restore, and one dev server. Running
   // them in parallel would let one test's afterEach-restore clobber another's
@@ -45,7 +41,17 @@ export default defineConfig({
     },
   ],
   webServer: {
-    command: `pnpm exec vite --config tests/fixtures/playground/vite.config.ts --port ${PORT} --strictPort`,
+    // Build the real shipped package (tsup + the npm-identical build:css
+    // pipeline) BEFORE Vite boots, in the same `&&` chain so it's strictly
+    // sequential. The auto-mounted overlay's virtual client module imports
+    // `forkdesign` / `forkdesign/styles.css` by bare specifier; the playground
+    // alias resolves those locally, but on CI the alias does NOT fire from a
+    // virtual (`\0`) importer, so the comments plugin re-resolves them via node
+    // self-reference through `package.json` exports — which needs the built
+    // `dist/` (index.mjs + styles.css) to exist as the real target. Building
+    // here (not in a globalSetup) guarantees `dist/` is present before Vite
+    // resolves anything, avoiding the race where Vite caches a resolve failure.
+    command: `pnpm run build && pnpm exec vite --config tests/fixtures/playground/vite.config.ts --port ${PORT} --strictPort`,
     url: baseURL,
     // Stub the agent so agent-mode specs are deterministic and never invoke the
     // real Claude/Cursor strategies. Read at the top of `runAgent`.
