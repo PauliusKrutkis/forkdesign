@@ -237,6 +237,7 @@ export async function captureAgentVariantScreenshots(args: {
   instance?: number;
   versions: number[];
   activeV: number;
+  shouldRestoreActive?: () => boolean;
 }): Promise<void> {
   const instance = args.instance ?? 0;
   const agentVersions = args.versions.filter((v) => v > 0);
@@ -284,7 +285,11 @@ export async function captureAgentVariantScreenshots(args: {
     });
   }
 
-  if (others.length > 0 || args.activeV !== firstCaptureV) {
+  const shouldRestoreActive = args.shouldRestoreActive?.() ?? true;
+  if (
+    shouldRestoreActive &&
+    (others.length > 0 || args.activeV !== firstCaptureV)
+  ) {
     const previousSignature = anchorRenderSignature(args.anchor, instance);
     if (await activateIterationVersion(args.id, args.activeV)) {
       await waitForVersionRender({

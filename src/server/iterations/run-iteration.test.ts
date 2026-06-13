@@ -34,6 +34,8 @@ vi.mock("../agent/run-log.ts", () => ({
 
 import { createNdjsonStream, runNewIteration } from "./run-iteration.ts";
 
+const ACTIVE_2_RE = /\bactive=2\b/;
+
 function createTestStream(): {
   events: object[];
   req: IncomingMessage;
@@ -287,6 +289,44 @@ describe("runNewIteration multi-variant", () => {
     await runPromise;
 
     expect(runAgentMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("restores the source tree when cancelled after the agent edited files", async () => {
+    const cardPath = path.join(projectRoot, "src", "Card.tsx");
+    const baselineCard = "export const Card = () => <div>old</div>;\n";
+    writeFileSync(cardPath, baselineCard, "utf8");
+
+    const { stream } = createTestStream();
+    runAgentMock.mockImplementation(() => {
+      writeFileSync(sourcePath, `${baselineSource}\n// cancelled edit`, "utf8");
+      writeFileSync(cardPath, "export const Card = () => <div>new</div>;\n");
+      stream.abortController.abort();
+      return Promise.resolve({
+        ok: true,
+        modelUsed: "composer-2.5-fast",
+        turnsUsed: 1,
+        toolCalls: 1,
+        attempts: [],
+      });
+    });
+
+    await runNewIteration({
+      projectRoot,
+      found,
+      id: commentId,
+      model: "composer-2.5-fast",
+      count: 1,
+      skills: [],
+      stream,
+    });
+
+    expect(readFileSync(sourcePath, "utf8")).toBe(baselineSource);
+    expect(readFileSync(cardPath, "utf8")).toBe(baselineCard);
+    expect(
+      existsSync(
+        path.join(projectRoot, "designs", "iterations", commentId, "v1.tsx")
+      )
+    ).toBe(false);
   });
 
   it("captures cross-file edits (reused component) as aux snapshots", async () => {

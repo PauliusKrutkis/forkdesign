@@ -312,6 +312,12 @@ export function CommentBubble({
       instance,
       versions: pendingVersions,
       activeV: activeVersion,
+      shouldRestoreActive: () => {
+        const preferredActiveNow = preferredActiveRef.current;
+        return (
+          preferredActiveNow === null || preferredActiveNow === activeVersion
+        );
+      },
       onDone: () => {
         Promise.resolve(reloadIterations()).catch(ignorePromiseRejection);
       },

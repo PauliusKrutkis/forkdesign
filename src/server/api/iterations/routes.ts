@@ -30,6 +30,7 @@ import {
   activeIterationRunVisibleActive,
   cancelIterationRun,
   finishIterationRun,
+  hasActiveIterationRun,
   listActiveIterationRuns,
   startIterationRun,
   updateIterationRunStatus,
@@ -282,6 +283,15 @@ export async function handleIterationsActivate(
     return;
   }
 
+  if (hasActiveIterationRun(id)) {
+    sendError(
+      res,
+      409,
+      "cannot activate an iteration while an iteration is running"
+    );
+    return;
+  }
+
   const applied = await applyIterationVersionToSource(
     ctx.found,
     ctx.iterationRoots,
@@ -346,6 +356,15 @@ export async function handleIterationsDelete(
   );
   if (!ctx.ok) {
     sendError(res, ctx.status, ctx.message);
+    return;
+  }
+
+  if (hasActiveIterationRun(id)) {
+    sendError(
+      res,
+      409,
+      "cannot delete an iteration while an iteration is running"
+    );
     return;
   }
 
