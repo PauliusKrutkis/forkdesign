@@ -1,4 +1,5 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
+import { fileURLToPath } from "node:url";
 import type { Plugin, ViteDevServer } from "vite";
 import { configureAgentRuntime } from "../agent/config.ts";
 import type { AgentModel } from "../agent/models.ts";
@@ -28,6 +29,22 @@ const AUTO_MOUNT_MARKER = "<!-- comment-overlay auto-mount -->";
 const VIRTUAL_CLIENT_ID = "virtual:comment-overlay/client";
 const RESOLVED_VIRTUAL_CLIENT_ID = `\0${VIRTUAL_CLIENT_ID}`;
 const LOOPBACK_IPV6 = new Set(["::1", "0:0:0:0:0:0:0:1"]);
+
+/** Public package name; matches `package.json#name`. */
+const PACKAGE_NAME = "forkdesign";
+/** Bare specifiers the auto-mounted virtual client module imports. */
+const CLIENT_BARE_IMPORTS = new Set([
+  PACKAGE_NAME,
+  `${PACKAGE_NAME}/styles.css`,
+]);
+/**
+ * A real file inside this package, used to anchor resolution of the virtual
+ * client module's bare imports. Vite can't resolve bare specifiers when the
+ * importer is a virtual (`\0`-prefixed) id, so we re-resolve them as if they
+ * were imported from here — node self-reference resolution (or a consumer's
+ * `forkdesign` alias) then has a real directory to work from.
+ */
+const SELF_MODULE_PATH = fileURLToPath(import.meta.url);
 
 interface SourceChangeController {
   onInternalSourceWorkFinish: (event: IterationSourceAppliedEvent) => void;
@@ -336,9 +353,19 @@ export function comments(options: CommentsPluginOptions = {}): Plugin {
       });
     },
 
-    resolveId(id) {
+    resolveId(id, importer) {
       if (mountOverlay && id === VIRTUAL_CLIENT_ID) {
         return RESOLVED_VIRTUAL_CLIENT_ID;
+      }
+      // The virtual client module imports the package's public entrypoints by
+      // bare specifier. Those can't be resolved relative to a virtual importer,
+      // so anchor them to a real file inside the package.
+      if (
+        mountOverlay &&
+        importer === RESOLVED_VIRTUAL_CLIENT_ID &&
+        CLIENT_BARE_IMPORTS.has(id)
+      ) {
+        return this.resolve(id, SELF_MODULE_PATH, { skipSelf: true });
       }
       return null;
     },
