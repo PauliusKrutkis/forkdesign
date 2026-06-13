@@ -97,7 +97,11 @@
     "./styles.css": "./dist/styles.css"
   },
   "files": [
-    "dist",
+    "dist/**/*.mjs",
+    "dist/**/*.cjs",
+    "dist/**/*.d.ts",
+    "dist/**/*.d.cts",
+    "dist/styles.css",
     "docs/assets",
     "CHANGELOG.md",
     "CONTRIBUTING.md",

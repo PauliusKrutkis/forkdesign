@@ -58,11 +58,14 @@ Supporting messages, in priority order:
 
 > Status note: stale cursor PRs (#17–#20) already closed; EOF parser fix committed on `release-candidate`; multi-comment + agent-eval scaffolding added.
 
-- [ ] Merge `release-candidate` → `main` (PR #15) and delete the branch.
-- [ ] Resolve the `main` vs `release-candidate` divergence so `main` is the single source of truth.
-- [ ] Triage the stale `dependabot/*` branches (open PRs or delete the branches).
-- [ ] Tag a release (`v0.1.0`) and confirm `npm publish` works end-to-end (`prepublishOnly` gate already wired).
-- [ ] Confirm CI is green and badges (build/tests/npm) are on the README.
+- [ ] Auto-publish + first release (trusted publishing via npm OIDC)
+  - [x] `.github/workflows/publish.yml`: on push to `main`, publishes only when `package.json` version is new; gates on lint/typecheck/test/build **and a non-empty `dist/` check** so an empty build can't ship; tags `v<version>` after publish. (2026-06-13)
+  - [x] Trimmed source maps from the npm tarball — `files` allowlist now excludes `*.map` (package 1.7 MB → 899 kB, unpacked 5.7 MB → 2.1 MB). (2026-06-13)
+  - [ ] **First publish must be manual:** run `npm publish` for `0.1.0` once with your auth — trusted publishing requires the package to already exist on npm.
+  - [ ] Configure npm **Trusted Publisher** (package Settings → Trusted Publisher → GitHub Actions): org `PauliusKrutkis`, repo `forkdesign`, workflow filename `publish.yml`, environment blank.
+  - [ ] *(optional hardening)* Add a GitHub Environment (e.g. `npm-publish`) with required reviewers as a manual approval gate; set `environment:` on the publish job and reference it in the npm trusted-publisher config.
+  - [ ] Confirm end-to-end: bump to `0.1.1`, merge to `main`, watch the workflow auto-publish + push the tag.
+- [x] Tag a release (`v0.1.0`) — annotated tag pushed to origin (2026-06-13). `npm publish` still pending (see manual-first-publish step above).
 - [x] Decide on the name: **renamed `design-crit` → `forkdesign`** (2026-06-13). "fork" is git-native dev vocabulary that reinforces the iteration/variants positioning; "design-crit" wrongly signalled the stakeholder-feedback audience. npm name + `forkdesign` GitHub org both free. **TODO:** rename the GitHub repo on github.com (auto-redirects old links) — git remote left untouched for now.
 
 ## Phase 1 — Sharpen the story (days)
@@ -71,7 +74,6 @@ Supporting messages, in priority order:
 - [ ] **Record a 10-second demo GIF** for the very top of the README. *Single highest-leverage asset.* Show: click element → type instruction → get variants → switch versions → the resulting git diff.
 - [ ] Add an honest **"forkdesign vs v0 / Lovable / Onlook"** comparison section (where it wins: local-first, in-repo history, focused; where it doesn't: not a generator, React/Vite only).
 - [ ] Add a crisp **"Is this for you? / Not for you?"** section (repel the wrong users on purpose).
-- [ ] Write the **decision blog post**: *"Why I put design feedback in git instead of a SaaS database."* The story is the marketing.
 
 ## Phase 2 — Make it tryable in 30 seconds (days–1 week)
 

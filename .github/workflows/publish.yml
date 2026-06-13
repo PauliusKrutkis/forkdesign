@@ -1,0 +1,104 @@
+name: Publish
+
+on:
+  push:
+    branches: [main]
+
+concurrency:
+  group: publish-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write # tag the release
+  id-token: write # npm trusted publishing (OIDC)
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: pnpm/action-setup@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+          cache: pnpm
+
+      # Trusted publishing (OIDC) requires npm >= 11.5.1; setup-node ships an older npm.
+      - name: Upgrade npm
+        run: npm install -g npm@latest
+
+      - name: Check whether this version is already published
+        id: version
+        run: |
+          set -euo pipefail
+          NAME="$(node -p "require('./package.json').name")"
+          VERSION="$(node -p "require('./package.json').version")"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          if npm view "$NAME@$VERSION" version >/dev/null 2>&1; then
+            echo "published=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::$NAME@$VERSION is already on npm — nothing to publish."
+          else
+            echo "published=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::$NAME@$VERSION is not on npm — will verify and publish."
+          fi
+
+      - name: Install dependencies
+        if: steps.version.outputs.published == 'false'
+        run: pnpm install --frozen-lockfile
+
+      - name: Verify (lint, typecheck, test)
+        if: steps.version.outputs.published == 'false'
+        run: |
+          pnpm lint
+          pnpm typecheck
+          pnpm test
+
+      - name: Build
+        if: steps.version.outputs.published == 'false'
+        run: pnpm build
+
+      - name: Verify build output is non-empty
+        if: steps.version.outputs.published == 'false'
+        run: |
+          set -euo pipefail
+          required=(
+            dist/index.mjs
+            dist/index.cjs
+            dist/index.d.ts
+            dist/index.d.cts
+            dist/plugin/index.mjs
+            dist/plugin/index.cjs
+            dist/plugin/index.d.ts
+            dist/plugin/index.d.cts
+            dist/styles.css
+          )
+          for f in "${required[@]}"; do
+            if [ ! -s "$f" ]; then
+              echo "::error::Missing or empty build artifact: $f — refusing to publish an empty build."
+              exit 1
+            fi
+          done
+          echo "All required build artifacts present and non-empty."
+
+      # Scripts already ran above; --ignore-scripts skips the redundant prepublishOnly rebuild.
+      # Provenance is generated automatically under trusted publishing.
+      - name: Publish to npm (trusted publishing)
+        if: steps.version.outputs.published == 'false'
+        run: npm publish --ignore-scripts
+
+      - name: Tag release
+        if: steps.version.outputs.published == 'false'
+        run: |
+          set -euo pipefail
+          TAG="v${{ steps.version.outputs.version }}"
+          if [ -n "$(git ls-remote --tags origin "refs/tags/$TAG")" ]; then
+            echo "Tag $TAG already exists on origin — skipping."
+          else
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git tag -a "$TAG" -m "forkdesign $TAG"
+            git push origin "$TAG"
+          fi

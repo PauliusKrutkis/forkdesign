@@ -14,6 +14,52 @@ iteration snapshots live under `designs/`.
 
 ![ForkDesign agent iteration thread with version previews](./docs/assets/forkdesign-agent-iterations.png)
 
+## Is this for you?
+
+**Yes, if:**
+
+- You build UIs with **React + Vite** and want to iterate on design in the
+  running app, against real components.
+- You want feedback and variants to live **in your repo** — JSX markers and
+  on-disk snapshots you commit, `git diff`, and `git checkout` — not in a vendor
+  database.
+- You're fine with a dev-only tool that edits your source, *because* every edit
+  is a reviewable, revertable diff.
+- You want one focused workflow, not a platform.
+
+**No, if:**
+
+- You need a hosted space for **non-technical stakeholders** to leave feedback.
+  ForkDesign runs on a developer's dev server; it is not a SaaS and there is no
+  hosted mode.
+- You're **not on React + Vite**. There is no other framework support (0.x
+  targets React 19 and Vite 8).
+- You want an **app generator** that builds whole pages or products from a
+  prompt. ForkDesign iterates on components you already have — it is not v0 or
+  Lovable.
+
+## How it compares
+
+ForkDesign is deliberately narrow. It is not a generator and not a design
+platform — it is local-first design iteration that keeps its history in your
+git.
+
+| | **ForkDesign** | v0 / Lovable | Onlook |
+| --- | --- | --- | --- |
+| Where it runs | Your local Vite dev server | Hosted SaaS | Local app on your project |
+| Where state lives | **Your git repo** (JSX markers + on-disk snapshots) | Vendor cloud | Your source files |
+| Primary job | Iterate on existing components | Generate apps/pages from a prompt | Visual editing |
+| AI | Your local agent (Cursor / Claude), your keys | Provider-hosted | Provider-hosted |
+| Frameworks | React + Vite only | Flexible / Next.js-first | React |
+| Each change is | A git diff you review and revert | Cloud state you export | Edits to source |
+
+**Where ForkDesign wins:** local-first (no vendor database, no account), every
+change is a reviewable diff in your repo, and it does one workflow well.
+
+**Where it doesn't:** it won't generate an app from scratch, it's React + Vite
+only, and it's built for a single developer's local loop — there's no built-in
+team/collaboration layer.
+
 ## Install
 
 ```sh
