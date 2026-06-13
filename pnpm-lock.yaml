@@ -133,7 +133,7 @@ importers:
       '@vitejs/plugin-react':
         specifier: ^5.0.0
         version: 5.2.0(vite@8.0.14(@types/node@25.9.3)(esbuild@0.27.7)(jiti@2.7.0)(yaml@2.9.0))
-      design-crit:
+      forkdesign:
         specifier: workspace:*
         version: link:../..
       typescript:

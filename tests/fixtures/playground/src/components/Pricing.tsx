@@ -1,28 +1,35 @@
 /**
- * STUB FIXTURE COMPONENT — multi-component playground (Tier 1 scenarios).
+ * Fixture component — a third component with REPEATED sibling structure
+ * (pricing tiers). The repetition is deliberate: it lets the multi-comment
+ * tests anchor several comments on near-identical elements and prove each
+ * resolves to the correct distinct source location.
  *
- * Purpose: a THIRD distinct component with REPEATED sibling structure (pricing
- * tiers). The repetition is deliberate — it lets the multi-variant + multi-
- * comment tests anchor several comments on near-identical elements and prove
- * each comment resolves to the correct distinct anchor/source location.
- *
- * TODO(tier1): render 3 pricing cards as siblings, each independently
- *   anchorable, each on its own stable line:
- *     - card root            data-testid="tier-{free,pro,team}"
- *     - card title           data-testid="tier-{...}-title"
- *     - card CTA button      data-testid="tier-{...}-cta"
- * TODO(multi-variant): the "pro" CTA is the target for the N-variant batch
- *   scenario (count>1) — keep it on a single stable line.
- * TODO(cross-file): render the SHARED Button component here too (see SiteNav
- *   TODO) so a cross-file agent edit shows up as an aux-file snapshot.
- * TODO(tier1): mount in src/App.tsx alongside (not replacing) existing elements.
+ * The "pro" CTA is the target for the multi-variant batch scenario (count>1),
+ * so it is kept on a single stable line.
  */
+import Button from "./Button.tsx";
 
 export default function Pricing() {
-  // TODO(tier1): replace with the 3-tier layout described above.
   return (
-    <section data-testid="pricing" aria-label="pricing">
-      {/* TODO: free / pro / team cards, each with stable testids per element */}
+    <section aria-label="pricing" data-testid="pricing">
+      <article data-testid="tier-free">
+        <h3 data-testid="tier-free-title">Free</h3>
+        <Button testId="tier-free-cta" variant="secondary">
+          Start free
+        </Button>
+      </article>
+      <article data-testid="tier-pro">
+        <h3 data-testid="tier-pro-title">Pro</h3>
+        <Button testId="tier-pro-cta" variant="primary">
+          Go Pro
+        </Button>
+      </article>
+      <article data-testid="tier-team">
+        <h3 data-testid="tier-team-title">Team</h3>
+        <Button testId="tier-team-cta" variant="secondary">
+          Contact sales
+        </Button>
+      </article>
     </section>
   );
 }

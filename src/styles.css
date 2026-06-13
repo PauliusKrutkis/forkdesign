@@ -1,6 +1,6 @@
 /**
- * Design Crit overlay theme — shadcn zinc tokens (plain CSS variables).
- * Bundled into design-crit/styles.css with the overlay's generated utilities.
+ * ForkDesign overlay theme — shadcn zinc tokens (plain CSS variables).
+ * Bundled into forkdesign/styles.css with the overlay's generated utilities.
  */
 :root {
   --radius: 0.5rem;

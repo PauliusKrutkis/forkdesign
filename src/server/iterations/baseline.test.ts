@@ -17,7 +17,7 @@ describe("seedBaselineIteration", () => {
   });
 
   it("writes v0 artifacts under public/designs/iterations", async () => {
-    projectRoot = await mkdtemp(path.join(tmpdir(), "design-crit-baseline-"));
+    projectRoot = await mkdtemp(path.join(tmpdir(), "forkdesign-baseline-"));
     const commentId = "abc-123";
     const source = `/** @comment id="${commentId}" anchor="x" */`;
 
@@ -45,7 +45,7 @@ describe("seedBaselineIteration", () => {
   });
 
   it("returns null when there is nothing to persist", async () => {
-    projectRoot = await mkdtemp(path.join(tmpdir(), "design-crit-baseline-"));
+    projectRoot = await mkdtemp(path.join(tmpdir(), "forkdesign-baseline-"));
     const url = await seedBaselineIteration(projectRoot, "id", null, null);
     expect(url).toBeNull();
     expect(
@@ -56,7 +56,7 @@ describe("seedBaselineIteration", () => {
   });
 
   it("writes tsx-only baseline without screenshot", async () => {
-    projectRoot = await mkdtemp(path.join(tmpdir(), "design-crit-baseline-"));
+    projectRoot = await mkdtemp(path.join(tmpdir(), "forkdesign-baseline-"));
     const commentId = "tsx-only";
     await seedBaselineIteration(projectRoot, commentId, null, "source");
     const tsxPath = path.join(

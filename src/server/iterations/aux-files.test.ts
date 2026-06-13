@@ -18,7 +18,7 @@ describe("restoreAuxFilesForVersion", () => {
   });
 
   it("skips aux snapshot paths that escape the project root", async () => {
-    projectRoot = await mkdtemp(path.join(tmpdir(), "design-crit-aux-"));
+    projectRoot = await mkdtemp(path.join(tmpdir(), "forkdesign-aux-"));
     const iterDir = path.join(
       projectRoot,
       "designs",
@@ -28,12 +28,12 @@ describe("restoreAuxFilesForVersion", () => {
     await mkdir(path.join(projectRoot, "src"), { recursive: true });
     await mkdir(iterDir, { recursive: true });
 
-    const outside = path.join(projectRoot, "..", "outside-design-crit-aux.txt");
+    const outside = path.join(projectRoot, "..", "outside-forkdesign-aux.txt");
     await rm(outside, { force: true });
 
     await writeVersionAuxFiles(iterDir, 0, {
       "src/safe.ts": "safe",
-      "../outside-design-crit-aux.txt": "outside",
+      "../outside-forkdesign-aux.txt": "outside",
     });
 
     const written = await restoreAuxFilesForVersion(projectRoot, [iterDir], 0);

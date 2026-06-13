@@ -602,7 +602,7 @@ function PickerPreview({
       <div
         className="pointer-events-auto fixed z-[9310] w-[340px] select-none overflow-hidden rounded-xl border bg-popover/95 text-popover-foreground shadow-[0_18px_40px_-18px_rgba(0,0,0,0.45),0_0_0_1px_rgba(255,255,255,0.04)] backdrop-blur"
         data-comment-overlay="true"
-        data-testid="design-crit-picker-chip"
+        data-testid="forkdesign-picker-chip"
         style={{ left: chipLeft, top: chipTop }}
       >
         <div className="flex items-center justify-between gap-3 border-b px-3 py-2">
@@ -775,7 +775,7 @@ function ComposerPanel({
     <div
       className="pointer-events-auto fixed z-[9300] flex flex-col overflow-hidden rounded-lg border bg-background shadow-lg"
       data-comment-overlay="true"
-      data-testid="design-crit-composer-panel"
+      data-testid="forkdesign-composer-panel"
       onPointerDown={(e) => e.stopPropagation()}
       style={{ left, top, width: PANEL_WIDTH }}
     >

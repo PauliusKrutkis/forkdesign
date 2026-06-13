@@ -1,6 +1,6 @@
 # Tests
 
-`design-crit` is tested in three layers, ordered from fastest/most-isolated to
+`forkdesign` is tested in three layers, ordered from fastest/most-isolated to
 slowest/most-integrated.
 
 ## 1. Unit — `src/**/*.test.ts` (existing)

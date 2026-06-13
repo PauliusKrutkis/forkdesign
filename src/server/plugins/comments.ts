@@ -63,21 +63,21 @@ function rejectRemoteApiRequest(
   sendError(
     res,
     403,
-    "design-crit API is local-only; pass allowRemoteAccess: true only on trusted networks"
+    "forkdesign API is local-only; pass allowRemoteAccess: true only on trusted networks"
   );
   return true;
 }
 
-function designCritClientModule(): string {
+function forkDesignClientModule(): string {
   return `
 import { createElement } from "react";
 import { createRoot } from "react-dom/client";
-import { CommentOverlay } from "design-crit";
-import "design-crit/styles.css";
+import { CommentOverlay } from "forkdesign";
+import "forkdesign/styles.css";
 
 const ROOT_ID = "overlay-root";
 
-function mountDesignCritOverlay() {
+function mountForkDesignOverlay() {
   if (!import.meta.env.DEV || typeof document === "undefined") {
     return;
   }
@@ -96,9 +96,9 @@ function mountDesignCritOverlay() {
 }
 
 if (document.readyState === "loading") {
-  document.addEventListener("DOMContentLoaded", mountDesignCritOverlay, { once: true });
+  document.addEventListener("DOMContentLoaded", mountForkDesignOverlay, { once: true });
 } else {
-  mountDesignCritOverlay();
+  mountForkDesignOverlay();
 }
 `;
 }
@@ -251,7 +251,7 @@ export interface CommentsPluginOptions {
   excludeSrcPrefixes?: string[];
   /**
    * Inject and mount `<CommentOverlay />` automatically in dev. The low-level
-   * `comments()` middleware keeps this off by default; use `designCrit()` for the
+   * `comments()` middleware keeps this off by default; use `forkDesign()` for the
    * streamlined setup.
    */
   mountOverlay?: boolean;
@@ -345,7 +345,7 @@ export function comments(options: CommentsPluginOptions = {}): Plugin {
 
     load(id) {
       if (mountOverlay && id === RESOLVED_VIRTUAL_CLIENT_ID) {
-        return designCritClientModule();
+        return forkDesignClientModule();
       }
       return null;
     },
@@ -372,7 +372,7 @@ export function comments(options: CommentsPluginOptions = {}): Plugin {
   };
 }
 
-export interface DesignCritPluginOptions extends CommentsPluginOptions {
+export interface ForkDesignPluginOptions extends CommentsPluginOptions {
   /**
    * Source-location stamping for DOM target picking. Enabled by default.
    * Pass `false` only when you mount the overlay manually and provide another
@@ -386,14 +386,14 @@ export interface DesignCritPluginOptions extends CommentsPluginOptions {
       };
 }
 
-export type DesignCritPluginOption =
+export type ForkDesignPluginOption =
   | { name: string }
-  | DesignCritPluginOption[];
+  | ForkDesignPluginOption[];
 
 /** Streamlined dev setup: source locations + API middleware + overlay mount. */
-export function designCrit(
-  options: DesignCritPluginOptions = {}
-): DesignCritPluginOption {
+export function forkDesign(
+  options: ForkDesignPluginOptions = {}
+): ForkDesignPluginOption {
   const {
     sourceLoc: sourceLocOptions,
     mountOverlay = true,
@@ -413,7 +413,7 @@ export function designCrit(
   ];
 }
 
-/** Re-exported for `design-crit/plugin` consumers configuring the dev source-loc stamper. */
+/** Re-exported for `forkdesign/plugin` consumers configuring the dev source-loc stamper. */
 export function sourceLoc(
   options: Parameters<typeof createSourceLocPlugin>[0] = {}
 ): ReturnType<typeof createSourceLocPlugin> {

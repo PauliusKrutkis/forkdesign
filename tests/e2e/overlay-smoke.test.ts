@@ -1,5 +1,5 @@
 /**
- * E2E SMOKE: the design-crit overlay mounts in dev and its dock toggles work.
+ * E2E SMOKE: the forkdesign overlay mounts in dev and its dock toggles work.
  *
  * Drives a real Chromium against the fixture playground Vite dev server (see
  * playwright.config.ts `webServer` + tests/fixtures/playground/). NO agent is
@@ -8,8 +8,8 @@
  * DOM hooks (from src/client/overlay/**):
  *   - Overlay root:        [data-overlay-root="true"]
  *   - Dock container:      [data-dock="true"]
- *   - Dock pill button:    button[aria-label="design-crit comments"] (aria-haspopup="menu")
- *   - Dock menu:           [role="menu"][aria-label="design-crit actions"]
+ *   - Dock pill button:    button[aria-label="forkdesign comments"] (aria-haspopup="menu")
+ *   - Dock menu:           [role="menu"][aria-label="forkdesign actions"]
  *   - Menu items:          role=menuitem "Add comment" | "Comments" | "Settings"
  *   - Review toggle:       #review-toggle (a Switch)
  */
@@ -28,20 +28,20 @@ test.describe("overlay smoke", () => {
     await page.goto("/");
   });
 
-  test("design-crit dock pill mounts in dev", async ({ page }) => {
+  test("forkdesign dock pill mounts in dev", async ({ page }) => {
     await expect(
       page.locator('[data-overlay-root="true"]')
     ).toBeAttached();
     await expect(page.locator('[data-dock="true"]')).toBeVisible();
     await expect(
-      page.getByRole("button", { name: "design-crit comments" })
+      page.getByRole("button", { name: "forkdesign comments" })
     ).toBeVisible();
   });
 
   test("dock menu opens and lists actions", async ({ page }) => {
-    await page.getByRole("button", { name: "design-crit comments" }).click();
+    await page.getByRole("button", { name: "forkdesign comments" }).click();
 
-    const menu = page.getByRole("menu", { name: "design-crit actions" });
+    const menu = page.getByRole("menu", { name: "forkdesign actions" });
     await expect(menu).toBeVisible();
     await expect(
       menu.getByRole("menuitem", { name: "Add comment" })
@@ -66,7 +66,7 @@ test.describe("overlay smoke", () => {
   test("toggling Paused hides comment affordances, restoring them on Reviewing", async ({
     page,
   }) => {
-    await page.getByRole("button", { name: "design-crit comments" }).click();
+    await page.getByRole("button", { name: "forkdesign comments" }).click();
     const toggle = page.locator("#review-toggle");
     await expect(toggle).toBeChecked();
 
@@ -75,7 +75,7 @@ test.describe("overlay smoke", () => {
     await toggle.click();
     await expect(toggle).not.toBeChecked();
 
-    const menu = page.getByRole("menu", { name: "design-crit actions" });
+    const menu = page.getByRole("menu", { name: "forkdesign actions" });
     await expect(menu).toBeVisible();
     await expect(
       menu.getByRole("menuitem", { name: "Add comment" })
@@ -96,15 +96,15 @@ test.describe("overlay smoke", () => {
     page,
   }) => {
     // Activate via the dock menu.
-    await page.getByRole("button", { name: "design-crit comments" }).click();
+    await page.getByRole("button", { name: "forkdesign comments" }).click();
     await page
-      .getByRole("menu", { name: "design-crit actions" })
+      .getByRole("menu", { name: "forkdesign actions" })
       .getByRole("menuitem", { name: "Add comment" })
       .click();
 
     // Hovering an element draws the picker chip ("target" label, z-[9310]).
     await page.getByTestId("title").hover();
-    const pickerChip = page.getByTestId("design-crit-picker-chip");
+    const pickerChip = page.getByTestId("forkdesign-picker-chip");
     await expect(pickerChip).toBeVisible();
 
     // Escape exits composer capture mode (picker chip disappears).
@@ -115,6 +115,6 @@ test.describe("overlay smoke", () => {
     await page.locator("body").click();
     await page.keyboard.press("c");
     await page.getByTestId("title").hover();
-    await expect(page.getByTestId("design-crit-picker-chip")).toBeVisible();
+    await expect(page.getByTestId("forkdesign-picker-chip")).toBeVisible();
   });
 });

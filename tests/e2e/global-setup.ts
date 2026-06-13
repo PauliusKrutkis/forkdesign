@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 
 // Build the REAL shipped stylesheet before the e2e suite runs.
 //
-// The playground vite.config aliases `design-crit/styles.css` to the compiled
+// The playground vite.config aliases `forkdesign/styles.css` to the compiled
 // Tailwind output (`dist/styles.css`). That file is a build artifact, so we
 // regenerate it here — via the exact same `build:css` pipeline that ships to
 // npm (tailwind + unwrap-css-layers) — so the browser tests exercise the

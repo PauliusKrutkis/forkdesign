@@ -1,24 +1,24 @@
-# design-crit
+# forkdesign
 
 Dev-only comments for **Vite + React design playgrounds**. Click an element,
 leave feedback, and optionally let an agent generate source-backed iterations.
 
-Design Crit stores feedback in your repo: comment markers live in `.tsx` files and
+ForkDesign stores feedback in your repo: comment markers live in `.tsx` files and
 iteration snapshots live under `designs/`.
 
 > 0.x scope: React 19 and Vite 8. APIs may change before 1.0.
 
 ## Screenshots
 
-![Design Crit comment composer over a Vite React design playground](./docs/assets/design-crit-commenting.png)
+![ForkDesign comment composer over a Vite React design playground](./docs/assets/forkdesign-commenting.png)
 
-![Design Crit agent iteration thread with version previews](./docs/assets/design-crit-agent-iterations.png)
+![ForkDesign agent iteration thread with version previews](./docs/assets/forkdesign-agent-iterations.png)
 
 ## Install
 
 ```sh
-pnpm add -D design-crit
-# or: npm install --save-dev design-crit
+pnpm add -D forkdesign
+# or: npm install --save-dev forkdesign
 ```
 
 Peer dependencies: `react`, `react-dom`, `vite`.
@@ -34,21 +34,21 @@ Add the Vite plugin:
 // vite.config.ts
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
-import { designCrit } from "design-crit/plugin";
+import { forkDesign } from "forkdesign/plugin";
 
 export default defineConfig({
-  plugins: [designCrit(), react()],
+  plugins: [forkDesign(), react()],
 });
 ```
 
-That is the only setup for the default path. `designCrit()` runs in dev only,
+That is the only setup for the default path. `forkDesign()` runs in dev only,
 stamps JSX source locations, installs the comment/iteration API, imports the
 compiled overlay CSS, and mounts the overlay. Your app does not need to scan
-design-crit with Tailwind.
+forkdesign with Tailwind.
 
-## Using Design Crit
+## Using ForkDesign
 
-Open your app in dev, click the design-crit button, then click an element to leave a
+Open your app in dev, click the forkdesign button, then click an element to leave a
 comment. New comments are written as JSX markers:
 
 ```tsx
@@ -72,7 +72,7 @@ pnpm build
 pnpm example
 ```
 
-That app is only the default `designCrit()` plugin plus a small React surface. It
+That app is only the default `forkDesign()` plugin plus a small React surface. It
 does not manually import the overlay or use Tailwind. Comment markers are
 written into `examples/basic-vite/src/`; local iteration artifacts land under
 `examples/basic-vite/designs/`.
@@ -87,7 +87,7 @@ Agent mode uses your configured local tools:
   `agent`.
 
 Copy `.env.example` if you want to document local agent credentials for a host
-app. Design Crit does not send keys to the browser; local agent tools read their own
+app. ForkDesign does not send keys to the browser; local agent tools read their own
 credentials.
 
 Default model order:
@@ -99,7 +99,7 @@ composer-2.5-fast -> composer-2.5 -> claude-sonnet-4-6 -> default
 Override it in `vite.config.ts`:
 
 ```ts
-designCrit({
+forkDesign({
   agentModelPriority: ["composer-2.5-fast", "claude-sonnet-4-6", "default"],
   agentSkills: ["frontend-design"], // pass [] to disable skill guidance
 });
@@ -108,7 +108,7 @@ designCrit({
 ## Options
 
 ```ts
-designCrit({
+forkDesign({
   allowRemoteAccess: false,
   excludeSrcPrefixes: ["src/dev/"],
   cursorAgentPath: "/usr/local/bin/agent",
@@ -123,7 +123,7 @@ If you want to mount the overlay yourself, use the lower-level plugins:
 // vite.config.ts
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
-import { comments, sourceLoc } from "design-crit/plugin";
+import { comments, sourceLoc } from "forkdesign/plugin";
 
 export default defineConfig({
   plugins: [sourceLoc(), react(), comments()],
@@ -131,8 +131,8 @@ export default defineConfig({
 ```
 
 ```tsx
-import { CommentOverlay } from "design-crit";
-import "design-crit/styles.css";
+import { CommentOverlay } from "forkdesign";
+import "forkdesign/styles.css";
 
 export function App() {
   return (
@@ -146,9 +146,9 @@ export function App() {
 
 ## Safety
 
-Design Crit is a local development tool. Its Vite middleware can read and write app
+ForkDesign is a local development tool. Its Vite middleware can read and write app
 source files, write screenshots and iteration artifacts, and run configured AI
-agents. Do not expose a Vite dev server running design-crit to an untrusted network
+agents. Do not expose a Vite dev server running forkdesign to an untrusted network
 or run it with `vite --host` unless the network is trusted.
 
 The API rejects non-loopback clients by default. Pass `allowRemoteAccess: true`
@@ -161,9 +161,9 @@ and feedback may be sent to your configured provider. See [`SECURITY.md`](./SECU
 
 | Import | Exports |
 | --- | --- |
-| `design-crit` | `CommentOverlay` and public types |
-| `design-crit/plugin` | `designCrit()`, `comments()`, `sourceLoc()` |
-| `design-crit/styles.css` | Compiled overlay CSS |
+| `forkdesign` | `CommentOverlay` and public types |
+| `forkdesign/plugin` | `forkDesign()`, `comments()`, `sourceLoc()` |
+| `forkdesign/styles.css` | Compiled overlay CSS |
 
 ## Development
 

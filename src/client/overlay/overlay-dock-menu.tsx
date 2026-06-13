@@ -56,7 +56,7 @@ function DockRow({
   );
 }
 
-function DesignCritMark({ className }: { className?: string }) {
+function ForkDesignMark({ className }: { className?: string }) {
   return (
     <svg
       aria-hidden="true"
@@ -114,7 +114,7 @@ export function OverlayDockMenu({
 }: OverlayDockMenuProps) {
   return (
     <div
-      aria-label="design-crit actions"
+      aria-label="forkdesign actions"
       className={cn(
         "pointer-events-auto w-56 overflow-hidden rounded-xl border border-border/70 p-1",
         "bg-popover/95 text-popover-foreground backdrop-blur-md",
@@ -192,8 +192,8 @@ export function OverlayDockMenu({
 
       <div className="mt-1 flex items-center justify-between px-2.5 pt-1.5 pb-1">
         <span className="inline-flex items-center gap-1.5 font-mono text-[10px] text-muted-foreground lowercase tracking-wide">
-          <DesignCritMark className="h-3 w-3" />
-          design-crit
+          <ForkDesignMark className="h-3 w-3" />
+          forkdesign
         </span>
         {enabled && totalCount > 0 ? (
           <span className="font-mono text-[10px] text-muted-foreground tabular-nums">
@@ -220,7 +220,7 @@ export function OverlayDockPill({
     <button
       aria-expanded={open}
       aria-haspopup="menu"
-      aria-label="design-crit comments"
+      aria-label="forkdesign comments"
       className={cn(
         "group pointer-events-auto relative inline-flex h-9 items-center gap-2 rounded-full border px-2.5",
         "border-border/70 bg-popover/80 text-popover-foreground backdrop-blur-md",
@@ -233,7 +233,7 @@ export function OverlayDockPill({
       onClick={onToggle}
       type="button"
     >
-      <DesignCritMark className="h-4 w-4 text-foreground" />
+      <ForkDesignMark className="h-4 w-4 text-foreground" />
       {enabled && totalCount > 0 ? (
         <span
           className={cn(

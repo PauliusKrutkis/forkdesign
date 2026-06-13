@@ -1,10 +1,10 @@
 import { defineConfig, devices } from "@playwright/test";
 
-// Playwright E2E config for the design-crit Vite + React dev plugin.
+// Playwright E2E config for the forkdesign Vite + React dev plugin.
 // E2E specs live in the top-level `tests/e2e/` dir.
 //
 // The `webServer` below boots the fixture playground Vite dev server
-// (`tests/fixtures/playground/`) with the design-crit plugin mounted from LOCAL
+// (`tests/fixtures/playground/`) with the forkdesign plugin mounted from LOCAL
 // SOURCE (no prior `pnpm build` required — see the playground vite.config.ts).
 // The overlay only mounts under `import.meta.env.DEV`, which a Vite dev server
 // satisfies.
@@ -17,7 +17,7 @@ export default defineConfig({
   testDir: "tests/e2e",
   // Build the real shipped stylesheet (dist/styles.css) before anything starts,
   // so the playground loads the actual CSS instead of an empty stub. Runs before
-  // `webServer`, which the aliased `design-crit/styles.css` import depends on.
+  // `webServer`, which the aliased `forkdesign/styles.css` import depends on.
   globalSetup: "./tests/e2e/global-setup.ts",
   // The specs share ONE on-disk fixture (tests/fixtures/playground/src/App.tsx)
   // that comment-creating tests mutate then restore, and one dev server. Running
@@ -47,6 +47,12 @@ export default defineConfig({
   webServer: {
     command: `pnpm exec vite --config tests/fixtures/playground/vite.config.ts --port ${PORT} --strictPort`,
     url: baseURL,
+    // Stub the agent so agent-mode specs are deterministic and never invoke the
+    // real Claude/Cursor strategies. Read at the top of `runAgent`.
+    env: { FORKDESIGN_E2E_STUB: "1" },
+    // Locally we may reuse a server already on the port — if it was started
+    // without FORKDESIGN_E2E_STUB, the agent specs would try the real agent.
+    // Start fresh on CI; locally, stop any stale dev server before running.
     reuseExistingServer: !isCI,
     timeout: 120_000,
   },

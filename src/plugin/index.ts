@@ -2,10 +2,10 @@
 
 export type {
   CommentsPluginOptions,
-  DesignCritPluginOptions,
+  ForkDesignPluginOptions,
 } from "../server/plugins/comments.ts";
 export {
   comments,
-  designCrit,
+  forkDesign,
   sourceLoc,
 } from "../server/plugins/comments.ts";

@@ -1,4 +1,4 @@
-# design-crit — Execution & Launch Plan
+# forkdesign — Execution & Launch Plan
 
 > Living strategy doc. Created 2026-06-10. Owner: @PauliusKrutkis.
 > Update the checkboxes as you go; revisit the goal section if reality diverges.
@@ -63,13 +63,13 @@ Supporting messages, in priority order:
 - [ ] Triage the stale `dependabot/*` branches (open PRs or delete the branches).
 - [ ] Tag a release (`v0.1.0`) and confirm `npm publish` works end-to-end (`prepublishOnly` gate already wired).
 - [ ] Confirm CI is green and badges (build/tests/npm) are on the README.
-- [ ] Decide on the name: keep "design-crit" (and let the README reposition) **or** rename toward the iteration/variants angle. Do NOT let this block launch — pick fast, move on.
+- [x] Decide on the name: **renamed `design-crit` → `forkdesign`** (2026-06-13). "fork" is git-native dev vocabulary that reinforces the iteration/variants positioning; "design-crit" wrongly signalled the stakeholder-feedback audience. npm name + `forkdesign` GitHub org both free. **TODO:** rename the GitHub repo on github.com (auto-redirects old links) — git remote left untouched for now.
 
 ## Phase 1 — Sharpen the story (days)
 
 - [ ] **Rewrite README** around the positioning sentence: dev-iteration value + git-native hook first; commenting demoted; trust story explicit.
 - [ ] **Record a 10-second demo GIF** for the very top of the README. *Single highest-leverage asset.* Show: click element → type instruction → get variants → switch versions → the resulting git diff.
-- [ ] Add an honest **"design-crit vs v0 / Lovable / Onlook"** comparison section (where it wins: local-first, in-repo history, focused; where it doesn't: not a generator, React/Vite only).
+- [ ] Add an honest **"forkdesign vs v0 / Lovable / Onlook"** comparison section (where it wins: local-first, in-repo history, focused; where it doesn't: not a generator, React/Vite only).
 - [ ] Add a crisp **"Is this for you? / Not for you?"** section (repel the wrong users on purpose).
 - [ ] Write the **decision blog post**: *"Why I put design feedback in git instead of a SaaS database."* The story is the marketing.
 

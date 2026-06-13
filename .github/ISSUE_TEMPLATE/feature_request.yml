@@ -14,7 +14,7 @@ body:
     id: proposal
     attributes:
       label: Proposal
-      description: What would you like Design Crit to support?
+      description: What would you like ForkDesign to support?
     validations:
       required: true
   - type: textarea

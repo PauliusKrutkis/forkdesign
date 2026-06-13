@@ -12,6 +12,7 @@ import {
 } from "./models.ts";
 import { claudeStrategy } from "./strategies/claude.ts";
 import { cursorCliStrategy } from "./strategies/cursor-cli.ts";
+import { isStubAgentEnabled, runStubAgent } from "./strategies/stub.ts";
 import type {
   AgentAttemptResult,
   AgentAttemptTiming,
@@ -36,6 +37,12 @@ export function resolveAgentStrategy(model: AgentModel): AgentStrategy {
 }
 
 export async function runAgent(input: AgentRunInput): Promise<AgentResult> {
+  // E2E seam: a deterministic stub stands in for the real strategies (and skips
+  // the Cursor CLI probe below, which would fail without the binary installed).
+  if (isStubAgentEnabled()) {
+    return runStubAgent(input);
+  }
+
   const config = getAgentRuntimeConfig();
   const priority = config.agentModelPriority ?? DEFAULT_AGENT_MODEL_PRIORITY;
   const chain = buildAgentModelChain(input.model, priority);

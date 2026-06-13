@@ -29,9 +29,9 @@ let originalAppSource = "";
 
 /** Create a comment-mode comment on the heading and return its text. */
 async function seedComment(page: Page): Promise<string> {
-  await page.getByRole("button", { name: "design-crit comments" }).click();
+  await page.getByRole("button", { name: "forkdesign comments" }).click();
   await page
-    .getByRole("menu", { name: "design-crit actions" })
+    .getByRole("menu", { name: "forkdesign actions" })
     .getByRole("menuitem", { name: "Add comment" })
     .click();
 
@@ -39,7 +39,7 @@ async function seedComment(page: Page): Promise<string> {
   await title.hover();
   await title.click();
 
-  const panel = page.getByTestId("design-crit-composer-panel");
+  const panel = page.getByTestId("forkdesign-composer-panel");
   await expect(panel).toBeVisible();
 
   await panel.getByRole("button", { name: "Agent", exact: true }).click();

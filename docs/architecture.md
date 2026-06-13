@@ -1,15 +1,15 @@
 # Architecture & folder layout
 
-Guidance for organizing the design-crit codebase: predictable paths and clear runtime boundaries.
+Guidance for organizing the forkdesign codebase: predictable paths and clear runtime boundaries.
 
 ## Runtime boundaries
 
-Design Crit ships two public entry points (see `package.json` exports):
+ForkDesign ships two public entry points (see `package.json` exports):
 
 | Entry | Import | Runtime | Role |
 |-------|--------|---------|------|
-| Client | `design-crit` | Browser | React overlay UI |
-| Server | `design-crit/plugin` | Node (Vite dev) | Vite plugins + dev API middleware |
+| Client | `forkdesign` | Browser | React overlay UI |
+| Server | `forkdesign/plugin` | Node (Vite dev) | Vite plugins + dev API middleware |
 
 **Critical constraint:** the browser module graph must never import Node builtins, `recast`, or `@babel/*`. The split in `src/index.ts` vs `src/plugin/index.ts` exists for this reason.
 
@@ -77,7 +77,7 @@ Colocated `*.test.ts` beside source.
 - Expanding `shared/` for same-runtime reuse — pick a domain owner instead
 - Generic top-level trees (`models/`, `services/`, `controllers/`)
 - Central `tests/` mirror
-- Renaming package exports (`design-crit`, `design-crit/plugin`)
+- Renaming package exports (`forkdesign`, `forkdesign/plugin`)
 
 ## Domain map
 

@@ -1,7 +1,7 @@
 import react from "@vitejs/plugin-react";
-import { designCrit } from "design-crit/plugin";
+import { forkDesign } from "forkdesign/plugin";
 import { defineConfig } from "vite";
 
 export default defineConfig({
-  plugins: [designCrit(), react()],
+  plugins: [forkDesign(), react()],
 });

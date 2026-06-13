@@ -2,7 +2,7 @@
 
 ## Supported versions
 
-Design Crit is pre-1.0. Security fixes are handled on the latest released version.
+ForkDesign is pre-1.0. Security fixes are handled on the latest released version.
 
 ## Reporting a vulnerability
 
@@ -18,7 +18,7 @@ development.
 
 ## Trust boundary
 
-Design Crit is a local development tool. Its Vite middleware can read and write app
+ForkDesign is a local development tool. Its Vite middleware can read and write app
 source files, write screenshots and iteration artifacts under `designs/`, and
 run configured AI agents. Do not run it on an untrusted network or against
 repositories whose source/screenshots cannot be shared with your configured AI

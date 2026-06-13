@@ -1,7 +1,7 @@
 # Browser E2E tests (Playwright)
 
 These tests drive a **real browser** against a **real Vite dev server** running
-the fixture playground with the `design-crit` plugin enabled. They cover only the
+the fixture playground with the `forkdesign` plugin enabled. They cover only the
 interactions that cannot be exercised headless: real DOM pointer events, the
 element picker, comment-pin / bubble placement geometry, the overlay chrome, and
 the iteration/version thumbnail UI.
@@ -11,17 +11,33 @@ markers, transcript building, mutations) is already covered by the unit tests
 colocated under `src/**` (e.g. `lib/placement.test.ts`,
 `src/server/comments/*.test.ts`). Do not duplicate that here.
 
-## Hard rule: the real agent is NEVER invoked
+## Hard rule: the REAL agent is NEVER invoked
 
-The Claude agent must not run in e2e. Concretely:
+The real Claude/Cursor strategies must not run in e2e — but the iteration UI
+(progress streaming, the version switcher, cancellation) is still exercised
+through a **deterministic stub**. Concretely:
 
-- Never `POST /api/iterations/new` (the live-iterate stream).
-- Create comments in **"comment" mode**, not "agent" mode (the composer defaults
-  to "agent", so tests must flip the mode toggle, or stub `/api/iterations/*`).
-- Iteration/version results in `comment-thread.test.ts` are **pre-seeded
-  fixtures** on disk, served by the dev server via `GET /api/iterations?id=...`.
+- The dev server boots with `FORKDESIGN_E2E_STUB=1` (set in
+  `playwright.config.ts`'s `webServer.env`). `runAgent` reads this at the top and
+  short-circuits to `src/server/agent/strategies/stub.ts`, which makes a small,
+  deterministic edit to the comment's target file instead of calling a real
+  strategy (and skips the Cursor-CLI probe, which has no binary in CI).
+- Agent-mode flows (`POST /api/iterations/new`) ARE allowed in e2e **because** of
+  the stub. The stub appends `// forkdesign-stub variant N: …`, so the normal
+  pipeline produces real versions; a multi-variant batch yields v1..vN.
+- Slow/cancellable runs: an instruction containing `[[slow]]` makes the stub wait
+  (abortably) before editing — used by the cancellation spec.
+- Comment-only flows still use **"comment" mode** (flip the mode toggle), and
+  `comment-thread.test.ts` reads **pre-seeded fixtures** via
+  `GET /api/iterations?id=...`.
 - Activating a different version (`POST /api/iterations/activate`) is a plain
-  file write, not an agent run, and is allowed.
+  file write, not an agent run.
+
+Locally, `reuseExistingServer` is on: stop any stale playground dev server before
+running so the suite boots a fresh one with `FORKDESIGN_E2E_STUB=1`.
+
+The shared composer-drive steps live in `helpers.ts`
+(`placeComment`, `runAgentOnTarget`, …) so specs read as scenarios.
 
 ## Files
 
@@ -30,9 +46,7 @@ The Claude agent must not run in e2e. Concretely:
 | `overlay-smoke.test.ts` | Overlay/dock mounts in dev and toggles enabled/paused; composer toggles. |
 | `create-comment.test.ts` | Activate composer → pick element → place panel → type → submit (comment mode) → assert dot/bubble + source marker; viewport-edge placement matrix. |
 | `comment-thread.test.ts` | Open a pre-seeded comment → browse variant grid → thumbnail loading state → switch live version → lightbox. |
-
-All tests are currently `test.fixme(...)` skeletons with detailed TODOs; they are
-structurally valid but unimplemented.
+| `multi-comment-flow.test.ts` | Multi-component pins; a stubbed agent run isolated to one file; a multi-variant batch + version switching; cancelling an in-flight run. Uses the stub agent. |
 
 ## Source-mutation cleanup
 
@@ -49,8 +63,8 @@ playground source. Otherwise the suite is not idempotent.
 
 - Overlay root: `[data-overlay-root="true"]` (all overlay chrome also
   carries `[data-comment-overlay="true"]`, used by `isOverlayElement`).
-- Dock: `[data-dock="true"]`; pill `button[aria-label="design-crit comments"]`;
-  menu `[role="menu"][aria-label="design-crit actions"]` with menuitems "Add comment",
+- Dock: `[data-dock="true"]`; pill `button[aria-label="forkdesign comments"]`;
+  menu `[role="menu"][aria-label="forkdesign actions"]` with menuitems "Add comment",
   "Comments", "Settings"; review switch `input#review-toggle`.
 - Comment pin (CommentDot): `button[aria-label*="comment"]`, fixed `z-[9100]`.
 - Composer panel: fixed `z-[9300]`, "New comment" header; picker chip `z-[9310]`.
@@ -66,27 +80,13 @@ playground source. Otherwise the suite is not idempotent.
 - Lightbox: `[aria-label="Version screenshot"]`, close via
   `[aria-label="Close screenshot"]`; `document.body[data-lightbox="open"]`.
 
-## TODO — `playwright.config.ts` (NOT in this directory; owned by another agent)
+## Running
 
-This directory intentionally contains **no** `playwright.config.ts`. The config
-and the `package.json` test scripts are owned by the **config/CI agent**. That
-config must define at least:
+```bash
+pnpm test:e2e
+```
 
-- **`webServer`**: command that boots the fixture Vite playground
-  (`tests/fixtures/playground/`, created by another agent) in **dev** with the
-  design-crit plugin active (the overlay only mounts under `import.meta.env.DEV`).
-  Set `reuseExistingServer: !process.env.CI`, a `url`/`port` matching `baseURL`,
-  and a generous `timeout` for cold Vite starts.
-- **`use.baseURL`**: the dev server origin (e.g. `http://localhost:<port>`), so
-  tests can `page.goto("/")`.
-- **`testDir`**: this `tests/e2e` directory (and a `*.test.ts` / `*.spec.ts`
-  `testMatch`).
-- **`use.headless`**: `true` in CI (`!!process.env.CI`); headed locally is fine.
-- **`retries`**: `> 0` on CI (e.g. `2`), `0` locally.
-- **`use.trace`**: `"on-first-retry"` (or `"retain-on-failure"`) plus
-  screenshot/video `"on-failure"` for debuggable CI artifacts.
-- A single Chromium project is sufficient; add Firefox/WebKit only if needed.
-- `forbidOnly: !!process.env.CI` to keep stray `test.only` out of CI.
-
-`@playwright/test` is not yet installed; the config/CI agent adds the dependency
-and the `test:e2e` script.
+The runner is configured in the repo-root `playwright.config.ts` (serial,
+single Chromium project, `globalSetup` builds `dist/styles.css`, `webServer`
+boots the playground Vite dev server with `FORKDESIGN_E2E_STUB=1`). Override the
+port/origin with `E2E_PORT` / `E2E_BASE_URL` if 5179 is taken.

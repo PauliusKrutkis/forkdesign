@@ -37,7 +37,7 @@
     "ultracite": "7.8.1",
     "vitest": "^4.1.8"
   },
-  "name": "design-crit",
+  "name": "forkdesign",
   "peerDependencies": {
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
@@ -45,7 +45,7 @@
   },
   "scripts": {
     "build": "tsup && pnpm build:css",
-    "build:css": "tailwindcss -i ./src/design-crit.css -o ./dist/styles.css --minify && node ./scripts/unwrap-css-layers.mjs ./dist/styles.css",
+    "build:css": "tailwindcss -i ./src/forkdesign.css -o ./dist/styles.css --minify && node ./scripts/unwrap-css-layers.mjs ./dist/styles.css",
     "check": "ultracite check",
     "dev": "tsup --watch",
     "example": "pnpm --dir examples/basic-vite dev",
@@ -63,15 +63,15 @@
   "type": "module",
   "version": "0.1.0",
   "packageManager": "pnpm@10.33.0",
-  "description": "Inline design feedback for Vite + React playgrounds — comments live in source as JSX markers with per-comment iteration snapshots on disk.",
+  "description": "Local-first AI design iteration for Vite + React — comment on a component, get source-backed variants, and keep the whole history in your repo. Every change is a git diff.",
   "license": "MIT",
   "author": "Paulius Krutkis",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/PauliusKrutkis/design-crit.git"
+    "url": "git+https://github.com/PauliusKrutkis/forkdesign.git"
   },
-  "bugs": "https://github.com/PauliusKrutkis/design-crit/issues",
-  "homepage": "https://github.com/PauliusKrutkis/design-crit#readme",
+  "bugs": "https://github.com/PauliusKrutkis/forkdesign/issues",
+  "homepage": "https://github.com/PauliusKrutkis/forkdesign#readme",
   "sideEffects": [
     "**/*.css"
   ],
@@ -109,6 +109,10 @@
     "vite",
     "react",
     "design",
+    "variants",
+    "iteration",
+    "git",
+    "local-first",
     "feedback",
     "comments",
     "playground",

@@ -19,7 +19,7 @@ describe("applyIterationVersionToSource — full design revert", () => {
   });
 
   it("reverts agent edits made OUTSIDE the anchored element when switching to v0", async () => {
-    projectRoot = await mkdtemp(path.join(tmpdir(), "design-crit-fullrevert-"));
+    projectRoot = await mkdtemp(path.join(tmpdir(), "forkdesign-fullrevert-"));
     const sourcePath = path.join(projectRoot, "src", "Page.tsx");
     const iterDir = path.join(
       projectRoot,
@@ -81,7 +81,7 @@ describe("applyIterationVersionToSource — full design revert", () => {
   });
 
   it("leaves sibling comments untouched while reverting the target's full design", async () => {
-    projectRoot = await mkdtemp(path.join(tmpdir(), "design-crit-fullrevert-sib-"));
+    projectRoot = await mkdtemp(path.join(tmpdir(), "forkdesign-fullrevert-sib-"));
     const sourcePath = path.join(projectRoot, "src", "Page.tsx");
     const iterDir = path.join(
       projectRoot,
