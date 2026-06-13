@@ -2,10 +2,10 @@
 
 export type {
   CommentsPluginOptions,
-  RedlinePluginOptions,
+  ForkDesignPluginOptions,
 } from "../server/plugins/comments.ts";
 export {
   comments,
-  redline,
+  forkDesign,
   sourceLoc,
 } from "../server/plugins/comments.ts";

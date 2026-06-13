@@ -30,6 +30,7 @@ import {
   activeIterationRunVisibleActive,
   cancelIterationRun,
   finishIterationRun,
+  hasActiveIterationRun,
   listActiveIterationRuns,
   startIterationRun,
   updateIterationRunStatus,
@@ -44,6 +45,7 @@ import {
   sendJson,
 } from "../../platform/http.ts";
 import { decodeScreenshotPng } from "../../platform/media.ts";
+import { isSafePathSegment } from "../../platform/path-safety.ts";
 import {
   parseActivateBody,
   parseDeleteVersionBody,
@@ -149,6 +151,10 @@ export async function handleIterationsList(
     sendError(res, 400, "missing query param: id");
     return;
   }
+  if (!isSafePathSegment(id)) {
+    sendError(res, 400, "query param `id` contains unsafe path characters");
+    return;
+  }
 
   const ctx = await resolveCommentIterationContext(
     projectRoot,
@@ -231,6 +237,10 @@ export async function handleIterationsCancel(
     sendError(res, 400, "missing field: id");
     return;
   }
+  if (!isSafePathSegment(id)) {
+    sendError(res, 400, "field `id` contains unsafe path characters");
+    return;
+  }
   const cancelled = cancelIterationRun(id);
   sendJson(res, { ok: true, cancelled });
 }
@@ -270,6 +280,15 @@ export async function handleIterationsActivate(
   );
   if (!ctx.ok) {
     sendError(res, ctx.status, ctx.message);
+    return;
+  }
+
+  if (hasActiveIterationRun(id)) {
+    sendError(
+      res,
+      409,
+      "cannot activate an iteration while an iteration is running"
+    );
     return;
   }
 
@@ -337,6 +356,15 @@ export async function handleIterationsDelete(
   );
   if (!ctx.ok) {
     sendError(res, ctx.status, ctx.message);
+    return;
+  }
+
+  if (hasActiveIterationRun(id)) {
+    sendError(
+      res,
+      409,
+      "cannot delete an iteration while an iteration is running"
+    );
     return;
   }
 

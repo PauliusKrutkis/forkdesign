@@ -1,4 +1,5 @@
 import path from "node:path";
+import { isSafeIterationScreenshotPath } from "../platform/path-safety.ts";
 import { type AgentSkill, buildAgentSkillPromptSection } from "./skills.ts";
 
 const EXPLICIT_TEXT_COLOR_RE =
@@ -12,7 +13,6 @@ const EXPLICIT_MAKE_CHANGE_RE =
   /\b(make|change|set|add|use)\s+(it\s+)?(red|blue|green|bold|larger|smaller|bigger)\b/;
 const EXPLICIT_BACKTICK_RE = /`[^`]+`/;
 const EXPLICIT_CLASS_RE = /class(?:name)?[=:\s]/;
-const LEADING_SLASH_RE = /^\//;
 
 const EXPLICIT_FEEDBACK_PATTERNS = [
   EXPLICIT_TEXT_COLOR_RE,
@@ -34,6 +34,7 @@ export interface PromptReply {
 export interface PromptInput {
   activeVersion?: number;
   anchor: string;
+  commentId?: string;
   file: string;
   /** Summaries of earlier variants in this multi-agent batch (variant 2+). */
   priorVariantApproaches?: string[];
@@ -163,11 +164,15 @@ export function buildIteratePrompt(input: PromptInput): string {
     "Modify code AROUND that element to address the feedback."
   );
 
-  if (input.screenshot && shouldIncludeScreenshotInPrompt(input.text)) {
+  if (
+    input.screenshot &&
+    isSafeIterationScreenshotPath(input.screenshot, input.commentId) &&
+    shouldIncludeScreenshotInPrompt(input.text)
+  ) {
     const absScreenshot = path.join(
       input.projectRoot,
       "public",
-      input.screenshot.replace(LEADING_SLASH_RE, "")
+      input.screenshot.slice(1)
     );
     parts.push(
       "",

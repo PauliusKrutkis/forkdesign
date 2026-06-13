@@ -17,6 +17,7 @@ import {
   patchIterationsManifest,
   readIterationsManifest,
   removeVersionFromManifest,
+  resolveIterationDirRoots,
 } from "./manifest.ts";
 
 describe("parseManifestJson", () => {
@@ -123,11 +124,23 @@ describe("iterationPngUrl", () => {
       "/designs/iterations/abc/v1.png"
     );
   });
+
+  it("rejects unsafe IDs", () => {
+    expect(() => iterationPngUrl("../evil", 1, null)).toThrow(
+      "invalid iteration id"
+    );
+  });
+});
+
+describe("resolveIterationDirRoots", () => {
+  it("rejects unsafe IDs before resolving paths", () => {
+    expect(resolveIterationDirRoots("/tmp/project", "../evil")).toEqual([]);
+  });
 });
 
 describe("deleteVersionArtifactsAllRoots", () => {
   it("removes version files from every iteration root", async () => {
-    const base = await mkdtemp(path.join(tmpdir(), "redline-iter-"));
+    const base = await mkdtemp(path.join(tmpdir(), "forkdesign-iter-"));
     const primary = path.join(base, "designs");
     const legacy = path.join(base, "public");
     await mkdir(primary, { recursive: true });
@@ -159,7 +172,7 @@ describe("deleteVersionArtifactsAllRoots", () => {
 
 describe("listCompleteIterationVersionsAllRoots", () => {
   it("merges tsx/png across split roots", async () => {
-    const base = await mkdtemp(path.join(tmpdir(), "redline-merge-"));
+    const base = await mkdtemp(path.join(tmpdir(), "forkdesign-merge-"));
     const primary = path.join(base, "designs");
     const legacy = path.join(base, "public");
     await mkdir(primary, { recursive: true });
@@ -196,13 +209,13 @@ describe("mergeVersionSlotsFromDirEntries", () => {
 
 describe("nextIterationVersion", () => {
   it("returns 1 for a new directory", async () => {
-    const dir = await mkdtemp(path.join(tmpdir(), "redline-next-v-"));
+    const dir = await mkdtemp(path.join(tmpdir(), "forkdesign-next-v-"));
     const result = await nextIterationVersion(dir);
     expect(result).toEqual({ ok: true, nextV: 1 });
   });
 
   it("increments from highest existing v{N}.tsx", async () => {
-    const dir = await mkdtemp(path.join(tmpdir(), "redline-next-v-"));
+    const dir = await mkdtemp(path.join(tmpdir(), "forkdesign-next-v-"));
     await writeFile(path.join(dir, "v0.tsx"), "baseline", "utf8");
     await writeFile(path.join(dir, "v2.tsx"), "fix", "utf8");
     const result = await nextIterationVersion(dir);
@@ -214,7 +227,7 @@ describe("patchIterationsManifest", () => {
   let dir: string;
 
   beforeEach(async () => {
-    dir = await mkdtemp(path.join(tmpdir(), "redline-manifest-"));
+    dir = await mkdtemp(path.join(tmpdir(), "forkdesign-manifest-"));
   });
 
   afterEach(async () => {

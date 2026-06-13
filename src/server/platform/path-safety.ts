@@ -2,9 +2,53 @@ import path from "node:path";
 
 export const SRC_REL = "src";
 
+const SAFE_PATH_SEGMENT_RE = /^[A-Za-z0-9_-]+$/;
+const ITERATION_SCREENSHOT_RE =
+  /^\/designs\/iterations\/([A-Za-z0-9_-]+)\/v\d+\.png(?:\?t=\d+)?$/;
+
 export type SafePathResult =
   | { ok: true; absolutePath: string; relativePath: string }
   | { ok: false; reason: string };
+
+export function isSafePathSegment(value: string): boolean {
+  return SAFE_PATH_SEGMENT_RE.test(value);
+}
+
+export function isSafeIterationScreenshotPath(
+  value: string,
+  expectedId?: string
+): boolean {
+  const match = value.match(ITERATION_SCREENSHOT_RE);
+  const id = match?.[1];
+  return (
+    id !== undefined &&
+    isSafePathSegment(id) &&
+    (expectedId === undefined || id === expectedId)
+  );
+}
+
+export function resolveSafeProjectRelativePath(
+  projectRoot: string,
+  relPosix: string
+): SafePathResult {
+  if (path.isAbsolute(relPosix)) {
+    return { ok: false, reason: "path must be relative" };
+  }
+  const normalized = relPosix.split("\\").join(path.posix.sep);
+  if (!(normalized && normalized === path.posix.normalize(normalized))) {
+    return { ok: false, reason: "path traversal rejected" };
+  }
+  const candidateAbs = path.resolve(projectRoot, normalized);
+  const rel = path.relative(projectRoot, candidateAbs);
+  if (rel.startsWith("..") || path.isAbsolute(rel)) {
+    return { ok: false, reason: "path traversal rejected" };
+  }
+  return {
+    ok: true,
+    absolutePath: candidateAbs,
+    relativePath: normalized,
+  };
+}
 
 /**
  * Accept any `.tsx` under `src/` except configured exclude prefixes.

@@ -1,6 +1,6 @@
 import type { OverlayModel } from "../../settings.ts";
 import type { CommentData } from "../../types.ts";
-import { readApiError } from "./api.ts";
+import { postJson, readApiError } from "./api.ts";
 import {
   captureAndUploadVersionAfterHmr,
   captureAndUploadVersionNow,
@@ -16,22 +16,14 @@ import {
 export type AgentIterationOutcome = "ok" | "cancelled" | "failed";
 
 export async function cancelAgentIterationRequest(id: string): Promise<void> {
-  await fetch("/api/iterations/cancel", {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ id }),
-  });
+  await postJson("/api/iterations/cancel", { id });
 }
 
 async function activateIterationVersion(
   id: string,
   v: number
 ): Promise<boolean> {
-  const res = await fetch("/api/iterations/activate", {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ id, v }),
-  });
+  const res = await postJson("/api/iterations/activate", { id, v });
   return res.ok;
 }
 
@@ -95,16 +87,15 @@ export async function runAgentIterationRequest(args: {
       }
     }
 
-    const res = await fetch("/api/iterations/new", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
+    const res = await postJson(
+      "/api/iterations/new",
+      {
         id: lead.id,
         model: agentModel,
         count: agentVersionCount,
-      }),
-      signal,
-    });
+      },
+      { signal }
+    );
     if (signal.aborted) {
       return "cancelled";
     }

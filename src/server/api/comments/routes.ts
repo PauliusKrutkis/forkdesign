@@ -20,10 +20,13 @@ import {
   writeCommentToFile,
 } from "../../comments/writer.ts";
 import { WriteError } from "../../comments/writer-errors.ts";
+import { applyIterationVersionToSource } from "../../iterations/activate-version.ts";
 import { seedBaselineIteration } from "../../iterations/baseline.ts";
 import { resolveCommentIterationContext } from "../../iterations/context.ts";
-import { findVersionSnapshotPath } from "../../iterations/manifest.ts";
-import { atomicWriteText } from "../../platform/atomic-write.ts";
+import {
+  cancelIterationRun,
+  hasActiveIterationRun,
+} from "../../iterations/runs.ts";
 import {
   errorMessage,
   readJsonBody,
@@ -31,7 +34,10 @@ import {
   sendJson,
 } from "../../platform/http.ts";
 import { decodeScreenshotPng } from "../../platform/media.ts";
-import { resolveSafePagePath } from "../../platform/path-safety.ts";
+import {
+  isSafePathSegment,
+  resolveSafePagePath,
+} from "../../platform/path-safety.ts";
 import { parsePatchBody, parsePostBody } from "./parse-body.ts";
 
 const LEADING_SLASHES_RE = /^\/+/;
@@ -57,17 +63,13 @@ async function handleGetAllComments(
         all.push({ ...c, file: relativePath });
       }
     } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
+      const message = errorMessage(err);
       console.warn(
         `[vite-plugin-comments] ${relativePath}: parse error — ${message}`
       );
     }
   }
   return all;
-}
-
-function sendJsonOk(res: ServerResponse, body: unknown): void {
-  sendJson(res, body);
 }
 
 export async function handleGet(
@@ -86,10 +88,10 @@ export async function handleGet(
   if (!file) {
     try {
       const all = await handleGetAllComments(projectRoot, excludeSrcPrefixes);
-      sendJsonOk(res, { comments: all });
+      sendJson(res, { comments: all });
       return;
     } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
+      const message = errorMessage(err);
       sendError(res, 500, `scan error: ${message}`);
       return;
     }
@@ -122,12 +124,12 @@ export async function handleGet(
       console.warn(`[vite-plugin-comments] ${file}: ${w}`);
     }
 
-    sendJsonOk(res, {
+    sendJson(res, {
       file: resolved.relativePath,
       comments: list,
     });
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
+    const message = errorMessage(err);
     sendError(res, 500, `parse error: ${message}`);
   }
 }
@@ -173,7 +175,7 @@ export async function handlePost(
   // The baseline file snapshot (`v0.tsx`) is captured AFTER the writer
   // succeeds (see step 5 below) so it includes the freshly-written marker.
   // If v0.tsx lacked the marker, activating v0 later would wipe the marker
-  // entirely — bug #24.
+  // entirely.
   const commentId = randomUUID();
 
   // Decode and validate the optional screenshot BEFORE running the writer.
@@ -211,7 +213,7 @@ export async function handlePost(
       sendError(res, err.status, err.message);
       return;
     }
-    sendError(res, 500, err instanceof Error ? err.message : String(err));
+    sendError(res, 500, errorMessage(err));
     return;
   }
 
@@ -245,7 +247,7 @@ export async function handlePost(
     view = null;
   }
 
-  sendJsonOk(res, {
+  sendJson(res, {
     id: result.id,
     anchor: result.anchor,
     view,
@@ -264,6 +266,10 @@ export async function handlePatch(
   const id = url.pathname.replace(LEADING_SLASHES_RE, "");
   if (id.length === 0) {
     sendError(res, 400, "PATCH /api/comments/:id requires a non-empty id");
+    return;
+  }
+  if (!isSafePathSegment(id)) {
+    sendError(res, 400, "comment id contains unsafe path characters");
     return;
   }
 
@@ -291,6 +297,11 @@ export async function handlePatch(
   );
   if (!resolved.ok) {
     sendError(res, 400, resolved.reason);
+    return;
+  }
+
+  if (hasActiveIterationRun(id)) {
+    sendError(res, 409, "cannot edit comment while an iteration is running");
     return;
   }
 
@@ -398,7 +409,7 @@ export async function handlePatch(
       sendError(res, err.status, err.message);
       return;
     }
-    sendError(res, 500, err instanceof Error ? err.message : String(err));
+    sendError(res, 500, errorMessage(err));
   }
 }
 
@@ -427,20 +438,18 @@ async function maybeRevertBeforeDelete(
     return { ok: false, status: ctx.status, message: ctx.message };
   }
 
-  const baselinePath = findVersionSnapshotPath(ctx.iterationRoots, 0);
-  if (!baselinePath) {
-    return {
-      ok: false,
-      status: 400,
-      message: "version snapshot not found: v0.tsx",
-    };
-  }
-
-  try {
-    const baselineSource = await readFile(baselinePath, "utf8");
-    await atomicWriteText(ctx.found.absolutePath, baselineSource);
-  } catch (err) {
-    return { ok: false, status: 500, message: errorMessage(err) };
+  // Route through the shared activation logic so auxiliary files captured in
+  // v0.files.json are restored alongside the primary v0.tsx snapshot. Writing
+  // only the primary snapshot left agent edits to reused components on disk.
+  const applied = await applyIterationVersionToSource(
+    ctx.found,
+    ctx.iterationRoots,
+    id,
+    0,
+    projectRoot
+  );
+  if (!applied.ok) {
+    return { ok: false, status: applied.status, message: applied.message };
   }
 
   return { ok: true, reverted: true };
@@ -460,6 +469,10 @@ export async function handleDelete(
     sendError(res, 400, "DELETE /api/comments/:id requires a non-empty id");
     return;
   }
+  if (!isSafePathSegment(id)) {
+    sendError(res, 400, "comment id contains unsafe path characters");
+    return;
+  }
 
   const found = await findCommentById(projectRoot, id, excludeSrcPrefixes);
   if (!found) {
@@ -477,6 +490,15 @@ export async function handleDelete(
   );
   if (!resolved.ok) {
     sendError(res, 400, resolved.reason);
+    return;
+  }
+
+  if (cancelIterationRun(id)) {
+    sendError(
+      res,
+      409,
+      "iteration was running for this comment and has been cancelled; retry delete once it stops"
+    );
     return;
   }
 
@@ -516,7 +538,7 @@ export async function handleDelete(
       sendError(res, err.status, err.message);
       return;
     }
-    sendError(res, 500, err instanceof Error ? err.message : String(err));
+    sendError(res, 500, errorMessage(err));
     return;
   }
 
@@ -530,7 +552,7 @@ export async function handleDelete(
       await rm(dir, { recursive: true, force: true });
     } catch (err) {
       console.warn(
-        `[vite-plugin-comments] failed to remove ${dir}: ${err instanceof Error ? err.message : String(err)}`
+        `[vite-plugin-comments] failed to remove ${dir}: ${errorMessage(err)}`
       );
     }
   }

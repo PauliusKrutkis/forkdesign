@@ -90,6 +90,16 @@ export async function readIterateStream(
         break;
       }
     }
+    // Flush any final line that arrived without a trailing newline. Without
+    // this, a `done` event at EOF with no closing "\n" stays buffered and is
+    // silently dropped, leaving the overlay on stale status.
+    if (!(done || signal?.aborted)) {
+      buffer += decoder.decode();
+      const parsed = parseIterateLine(buffer.trim(), callbacks);
+      if (parsed !== "continue") {
+        done = parsed;
+      }
+    }
   } finally {
     if (signal) {
       signal.removeEventListener("abort", onAbort);

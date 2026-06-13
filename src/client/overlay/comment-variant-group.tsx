@@ -31,9 +31,7 @@ function VariantThumbnail({ src }: { src: string }) {
 
   return (
     <>
-      {ready ? null : (
-        <div aria-hidden className="redline-shimmer absolute inset-0" />
-      )}
+      {ready ? null : <div aria-hidden className="shimmer absolute inset-0" />}
       {/* biome-ignore lint/a11y/noNoninteractiveElementInteractions: track decode for skeleton */}
       <img
         alt=""

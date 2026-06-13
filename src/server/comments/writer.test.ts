@@ -171,6 +171,7 @@ export function Card() {
       column: 7,
       text: "needs a redesign",
       author: "dev@local",
+      id: "abc-123",
       screenshot,
     });
 
@@ -644,6 +645,7 @@ describe("injectExistingMarkerIntoSource", () => {
       column: 7,
       text: 'has "quotes" and a\nnewline',
       author: "alice@example.com",
+      id: "abc",
       screenshot: "/designs/iterations/abc/v0.png",
     });
     const liveSource = readFileSync(file, "utf8");

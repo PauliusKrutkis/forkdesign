@@ -1,6 +1,7 @@
 import { existsSync, statSync } from "node:fs";
 import { mkdir, readdir, readFile, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { isSafePathSegment } from "../platform/path-safety.ts";
 
 export interface VersionManifestEntry {
   createdAt: string;
@@ -180,6 +181,9 @@ export function resolveIterationDirRoots(
   projectRoot: string,
   id: string
 ): string[] {
+  if (!isSafePathSegment(id)) {
+    return [];
+  }
   const roots: string[] = [];
   const primary = path.join(projectRoot, "designs", "iterations", id);
   const legacy = path.join(projectRoot, "public", "designs", "iterations", id);
@@ -419,6 +423,9 @@ export function iterationPngUrl(
   v: number,
   mtimeMs: number | null
 ): string {
+  if (!isSafePathSegment(id)) {
+    throw new Error("invalid iteration id");
+  }
   const base = `/designs/iterations/${id}/v${v}.png`;
   if (mtimeMs === null || mtimeMs <= 0) {
     return base;

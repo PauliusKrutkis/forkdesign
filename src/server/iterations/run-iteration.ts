@@ -21,6 +21,7 @@ import { setCommentActiveInSource } from "../comments/writer-directive.ts";
 import { WriteError } from "../comments/writer-errors.ts";
 import { atomicWriteText } from "../platform/atomic-write.ts";
 import { errorMessage } from "../platform/http.ts";
+import { resolveSafeProjectRelativePath } from "../platform/path-safety.ts";
 import {
   type AuxFileMap,
   mergeBaselineAuxFiles,
@@ -37,7 +38,6 @@ import {
 } from "./manifest.ts";
 import {
   diffSourceSnapshots,
-  fromRelPosix,
   snapshotSourceFiles,
   toRelPosix,
 } from "./source-files.ts";
@@ -131,7 +131,11 @@ async function restoreFilesToBaseline(
   baselineFiles: Map<string, string>
 ): Promise<void> {
   for (const rel of rels) {
-    const abs = fromRelPosix(projectRoot, rel);
+    const resolved = resolveSafeProjectRelativePath(projectRoot, rel);
+    if (!resolved.ok) {
+      continue;
+    }
+    const abs = resolved.absolutePath;
     const baseline = baselineFiles.get(rel);
     if (baseline === undefined) {
       try {
@@ -338,6 +342,7 @@ interface VariantRunOutcome {
 async function runSingleAgentVariant(args: {
   baselineFiles: Map<string, string>;
   beforeSource: string;
+  commentId: string;
   commentRel: string;
   count: number;
   found: FoundComment;
@@ -352,6 +357,7 @@ async function runSingleAgentVariant(args: {
   const {
     baselineFiles,
     beforeSource,
+    commentId,
     commentRel,
     count,
     found,
@@ -364,6 +370,17 @@ async function runSingleAgentVariant(args: {
     variantIndex,
   } = args;
   const variantPrefix = variantProgressPrefix(variantIndex, count);
+
+  if (stream.clientGone()) {
+    return {
+      result: {
+        ok: false,
+        changed: false,
+        stage: "cancelled",
+        error: "iteration cancelled",
+      },
+    };
+  }
 
   try {
     await atomicWriteText(found.absolutePath, beforeSource);
@@ -389,6 +406,7 @@ async function runSingleAgentVariant(args: {
   let lastAgentSummary: string | undefined;
   const agentResult = await runAgent({
     projectRoot,
+    commentId,
     file: found.relativePath,
     anchor: found.comment.anchor,
     text: found.comment.text,
@@ -417,6 +435,20 @@ async function runSingleAgentVariant(args: {
       });
     },
   });
+
+  if (stream.clientGone()) {
+    return {
+      result: {
+        ok: false,
+        changed: false,
+        stage: "cancelled",
+        error: "iteration cancelled",
+        modelUsed: agentResult.ok ? agentResult.modelUsed : undefined,
+        attempts: agentResult.attempts,
+      },
+      lastAgentSummary,
+    };
+  }
 
   if (!agentResult.ok) {
     return {
@@ -547,6 +579,7 @@ function createAgentRunRecorder(args: {
 }
 
 interface VariantBatchState {
+  baselineFiles: Map<string, string>;
   createdVersions: number[];
   hadAgentFailure: boolean;
   lastAgentError?: string;
@@ -562,6 +595,27 @@ type VariantStepResult =
   | { action: "continue" }
   | { action: "abort"; error: string }
   | { action: "success"; nextV: number; png: string; afterSource: string };
+
+async function restoreSourceTreeToSnapshot(
+  projectRoot: string,
+  baselineFiles: Map<string, string>
+): Promise<void> {
+  const currentFiles = await snapshotSourceFiles(projectRoot);
+  const changedFiles = diffSourceSnapshots(baselineFiles, currentFiles);
+  await restoreFilesToBaseline(projectRoot, changedFiles.keys(), baselineFiles);
+}
+
+async function restoreSourceTreeIfCancelled(args: {
+  baselineFiles: Map<string, string>;
+  projectRoot: string;
+  stream: NdjsonStream;
+}): Promise<boolean> {
+  if (!args.stream.clientGone()) {
+    return false;
+  }
+  await restoreSourceTreeToSnapshot(args.projectRoot, args.baselineFiles);
+  return true;
+}
 
 async function persistChangedVariant(args: {
   count: number;
@@ -596,6 +650,10 @@ async function persistChangedVariant(args: {
     variantStartedAt,
   } = args;
 
+  if (stream.clientGone()) {
+    return { action: "continue" };
+  }
+
   const versionResult = await nextIterationVersion(iterDir);
   if (!versionResult.ok) {
     recordRun({
@@ -617,6 +675,9 @@ async function persistChangedVariant(args: {
 
   const nextV = versionResult.nextV;
   const variantPrefix = variantProgressPrefix(variantIndex, count);
+  if (stream.clientGone()) {
+    return { action: "continue" };
+  }
   const persisted = await persistNewIterationSnapshot(
     found,
     id,
@@ -700,6 +761,7 @@ function addAuxPaths(touchedAux: Set<string>, auxFiles?: AuxFileMap): void {
 }
 
 async function runVariantBatch(args: {
+  baselineFiles: Map<string, string>;
   beforeSource: string;
   count: number;
   found: FoundComment;
@@ -715,7 +777,9 @@ async function runVariantBatch(args: {
   skills: AgentSkill[];
   stream: NdjsonStream;
 }): Promise<VariantBatchState> {
+  const { baselineFiles } = args;
   const state: VariantBatchState = {
+    baselineFiles,
     createdVersions: [],
     hadAgentFailure: false,
   };
@@ -724,12 +788,17 @@ async function runVariantBatch(args: {
   // Pre-agent snapshot of the whole source tree. Diffing against it after each
   // variant reveals cross-file edits (e.g. to a reused component's definition);
   // `touchedAux` accumulates them so later variants reset to baseline first.
-  const baselineFiles = await snapshotSourceFiles(args.projectRoot);
   const commentRel = toRelPosix(args.projectRoot, args.found.absolutePath);
   const touchedAux = new Set<string>();
 
   for (let variantIndex = 1; variantIndex <= args.count; variantIndex += 1) {
-    if (args.stream.clientGone()) {
+    if (
+      await restoreSourceTreeIfCancelled({
+        baselineFiles,
+        projectRoot: args.projectRoot,
+        stream: args.stream,
+      })
+    ) {
       break;
     }
 
@@ -749,6 +818,7 @@ async function runVariantBatch(args: {
       variantOutput = await runSingleAgentVariant({
         baselineFiles,
         beforeSource: args.beforeSource,
+        commentId: args.id,
         commentRel,
         count: args.count,
         found: args.found,
@@ -768,11 +838,18 @@ async function runVariantBatch(args: {
     }
     const { result, lastAgentSummary } = variantOutput;
 
-    if (args.stream.clientGone()) {
+    if (
+      await restoreSourceTreeIfCancelled({
+        baselineFiles,
+        projectRoot: args.projectRoot,
+        stream: args.stream,
+      })
+    ) {
       break;
     }
 
     if (!result.ok) {
+      await restoreSourceTreeToSnapshot(args.projectRoot, baselineFiles);
       state.hadAgentFailure = true;
       state.lastAgentError = result.error;
       args.recordRun({
@@ -824,11 +901,17 @@ async function runVariantBatch(args: {
     });
 
     if (step.action === "abort") {
+      await restoreSourceTreeToSnapshot(args.projectRoot, baselineFiles);
       args.stream.endStream({ type: "done", ok: false, error: step.error });
       state.terminalReached = true;
       return state;
     }
     if (step.action === "continue") {
+      await restoreSourceTreeIfCancelled({
+        baselineFiles,
+        projectRoot: args.projectRoot,
+        stream: args.stream,
+      });
       continue;
     }
 
@@ -895,6 +978,16 @@ async function finishSuccessfulBatch(args: {
 }): Promise<void> {
   const lastV = args.state.createdVersions.at(-1) as number;
 
+  if (
+    await restoreSourceTreeIfCancelled({
+      baselineFiles: args.state.baselineFiles,
+      projectRoot: args.projectRoot,
+      stream: args.stream,
+    })
+  ) {
+    return;
+  }
+
   let sourceWithActive: string;
   try {
     sourceWithActive = setCommentActiveInSource(
@@ -920,6 +1013,13 @@ async function finishSuccessfulBatch(args: {
   }
 
   try {
+    if (args.stream.clientGone()) {
+      await restoreSourceTreeToSnapshot(
+        args.projectRoot,
+        args.state.baselineFiles
+      );
+      return;
+    }
     await atomicWriteText(args.found.absolutePath, sourceWithActive);
   } catch (err) {
     args.recordRun({
@@ -949,6 +1049,13 @@ async function finishSuccessfulBatch(args: {
   // (the final variant may have touched a different file set than earlier ones)
   // and trigger HMR for each.
   try {
+    if (args.stream.clientGone()) {
+      await restoreSourceTreeToSnapshot(
+        args.projectRoot,
+        args.state.baselineFiles
+      );
+      return;
+    }
     const auxWritten = await restoreAuxFilesForVersion(
       args.projectRoot,
       args.iterationRoots,
@@ -1027,7 +1134,9 @@ export async function runNewIteration(
 
   const iterDir = path.join(projectRoot, "designs", "iterations", id);
   const iterationRoots = resolveIterationDirRoots(projectRoot, id);
+  const baselineFiles = await snapshotSourceFiles(projectRoot);
   const state = await runVariantBatch({
+    baselineFiles,
     beforeSource,
     count,
     found,
@@ -1049,6 +1158,9 @@ export async function runNewIteration(
   }
 
   if (stream.clientGone() || state.createdVersions.length === 0) {
+    if (stream.clientGone()) {
+      await restoreSourceTreeToSnapshot(projectRoot, state.baselineFiles);
+    }
     if (state.createdVersions.length === 0 && !stream.clientGone()) {
       finishNoVariants({ count, agentStartedAt, id, recordRun, state, stream });
     }

@@ -9,6 +9,7 @@ describe("buildIteratePrompt", () => {
   const base = {
     projectRoot: "/proj",
     file: "src/pages/Home.tsx",
+    commentId: "abc",
     anchor: "550e8400-e29b-41d4-a716-446655440000",
     text: "Too heavy",
   };
@@ -36,6 +37,24 @@ describe("buildIteratePrompt", () => {
     expect(prompt).toContain(
       "Read this image only if the text feedback above is ambiguous"
     );
+  });
+
+  it("omits unsafe screenshot paths", () => {
+    const prompt = buildIteratePrompt({
+      ...base,
+      screenshot: "/../../etc/passwd",
+    });
+    expect(prompt).not.toContain("Visual context");
+    expect(prompt).not.toContain("/etc/passwd");
+  });
+
+  it("omits screenshots for a different comment id", () => {
+    const prompt = buildIteratePrompt({
+      ...base,
+      screenshot: "/designs/iterations/other/v0.png",
+    });
+    expect(prompt).not.toContain("Visual context");
+    expect(prompt).not.toContain("other/v0.png");
   });
 
   it("omits screenshot section for explicit className feedback", () => {

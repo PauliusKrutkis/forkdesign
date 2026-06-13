@@ -15,6 +15,10 @@ import {
   writeCommentToFile,
 } from "../../comments/writer.ts";
 import {
+  finishIterationRun,
+  startIterationRun,
+} from "../../iterations/runs.ts";
+import {
   createJsonRequest,
   createMockResponse,
 } from "../../platform/http-test-helpers.ts";
@@ -188,6 +192,21 @@ describe("handleGet", () => {
 });
 
 describe("handlePatch", () => {
+  it("rejects unsafe ids", async () => {
+    const mock = createMockResponse();
+    const req = createJsonRequest(
+      { text: "updated text" },
+      { method: "PATCH", url: "/nested/id" }
+    );
+
+    await handlePatch(req, mock.res, projectRoot, []);
+
+    expect(mock.getStatus()).toBe(400);
+    expect(mock.getJson()).toEqual({
+      error: "comment id contains unsafe path characters",
+    });
+  });
+
   it("updates comment text by id", async () => {
     const created = await seedComment();
     const mock = createMockResponse();
@@ -259,6 +278,21 @@ describe("handlePatch", () => {
 });
 
 describe("handleDelete", () => {
+  it("rejects unsafe ids", async () => {
+    const mock = createMockResponse();
+    const req = createJsonRequest(undefined, {
+      method: "DELETE",
+      url: "/nested/id",
+    });
+
+    await handleDelete(req, mock.res, projectRoot, []);
+
+    expect(mock.getStatus()).toBe(400);
+    expect(mock.getJson()).toEqual({
+      error: "comment id contains unsafe path characters",
+    });
+  });
+
   it("removes a comment marker", async () => {
     const created = await seedComment();
     const mock = createMockResponse();
@@ -279,6 +313,34 @@ describe("handleDelete", () => {
 
     const { comments } = await readCommentsFromFile(absoluteFile);
     expect(comments.some((c) => c.id === created.id)).toBe(false);
+  });
+
+  it("cancels and rejects delete while an iteration is running for the comment", async () => {
+    const created = await seedComment();
+    const abortController = startIterationRun({
+      anchor: created.anchor,
+      commentId: created.id,
+      count: 1,
+      model: "composer-2.5-fast",
+      startedAt: Date.now(),
+    });
+    const mock = createMockResponse();
+    const req = createJsonRequest(undefined, {
+      method: "DELETE",
+      url: `/${created.id}`,
+    });
+    req.headers = {};
+
+    try {
+      await handleDelete(req, mock.res, projectRoot, []);
+    } finally {
+      finishIterationRun(created.id, abortController);
+    }
+
+    expect(mock.getStatus()).toBe(409);
+    expect(abortController.signal.aborted).toBe(true);
+    const { comments } = await readCommentsFromFile(absoluteFile);
+    expect(comments.some((c) => c.id === created.id)).toBe(true);
   });
 
   it("delete without revert keeps active source edits", async () => {
@@ -315,6 +377,46 @@ describe("handleDelete", () => {
     const source = readFileSync(absoluteFile, "utf8");
     expect(source).not.toContain("v1-edit");
     expect(source).not.toContain("@comment");
+  });
+
+  it("delete with revert=baseline restores auxiliary files", async () => {
+    const { id } = await seedCommentWithActiveV1();
+    const iterDir = path.join(
+      projectRoot,
+      "public",
+      "designs",
+      "iterations",
+      id
+    );
+    const auxRelativeFile = "src/components/Card.tsx";
+    const auxAbsoluteFile = path.join(projectRoot, auxRelativeFile);
+    const baselineCard = "export const Card = () => <div>baseline</div>;\n";
+    const variantCard = "export const Card = () => <div>variant</div>;\n";
+    mkdirSync(path.dirname(auxAbsoluteFile), { recursive: true });
+    writeFileSync(auxAbsoluteFile, variantCard, "utf8");
+    writeFileSync(
+      path.join(iterDir, "v0.files.json"),
+      `${JSON.stringify({ [auxRelativeFile]: baselineCard }, null, 2)}\n`,
+      "utf8"
+    );
+    writeFileSync(
+      path.join(iterDir, "v1.files.json"),
+      `${JSON.stringify({ [auxRelativeFile]: variantCard }, null, 2)}\n`,
+      "utf8"
+    );
+
+    const mock = createMockResponse();
+    const req = createJsonRequest(undefined, {
+      method: "DELETE",
+      url: `/${id}?revert=baseline`,
+    });
+    req.headers = {};
+
+    await handleDelete(req, mock.res, projectRoot, []);
+
+    expect(mock.getStatus()).toBe(200);
+    expect(mock.getJson()).toMatchObject({ ok: true, reverted: true });
+    expect(readFileSync(auxAbsoluteFile, "utf8")).toBe(baselineCard);
   });
 
   it("rejects invalid revert query param", async () => {

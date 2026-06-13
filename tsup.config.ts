@@ -15,19 +15,17 @@ export default defineConfig({
   // The exports map (and external CJS consumers) explicitly resolve to .mjs/.cjs.
   outExtension: ({ format }) => ({ js: format === "esm" ? ".mjs" : ".cjs" }),
   // Peer/runtime deps stay external; UI stack is bundled so hosts never
-  // resolve lucide/Radix from redline/node_modules (duplicate React in Vite dev).
+  // resolve lucide/Radix from forkdesign/node_modules (duplicate React in Vite dev).
   noExternal: [
     "lucide-react",
     /^@radix-ui\//,
     "class-variance-authority",
     "clsx",
     "tailwind-merge",
-    "html-to-image",
   ],
   external: [
     "react",
     "react-dom",
-    "react-router-dom",
     "vite",
     "@anthropic-ai/claude-agent-sdk",
     "recast",

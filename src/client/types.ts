@@ -18,7 +18,6 @@ export interface CommentProps {
   date: string;
   /** uuid v4, matches data-comment-anchor on the target element */
   id: string;
-  /** flat replies for now (threaded is a future enhancement) */
   replies?: CommentReply[];
   /** when true, comment is resolved */
   resolved?: boolean;
@@ -27,7 +26,7 @@ export interface CommentProps {
    * Used by the list panel to navigate back to the page hosting the anchor.
    */
   route?: string;
-  /** repo-root absolute path to cropped PNG, e.g. /designs/runs-preview/comments/<uuid>.png */
+  /** Iteration screenshot path, e.g. /designs/iterations/<uuid>/v0.png */
   screenshot?: string;
   /** content hash of the view snapshot this comment was written against */
   snapshot?: string;

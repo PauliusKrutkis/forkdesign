@@ -83,7 +83,7 @@ const DEFAULT_SETTINGS: OverlaySettings = {
   hideResolved: false,
 };
 
-const STORAGE_KEY = "redline.overlay.settings";
+const STORAGE_KEY = "overlay.settings";
 
 const VALID_POSITIONS: ReadonlySet<OverlayPosition> = new Set([
   "bottom-right",

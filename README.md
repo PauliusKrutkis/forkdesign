@@ -1,33 +1,30 @@
-# redline
+# forkdesign
 
 Dev-only comments for **Vite + React design playgrounds**. Click an element,
 leave feedback, and optionally let an agent generate source-backed iterations.
 
-Redline stores feedback in your repo: comment markers live in `.tsx` files and
+ForkDesign stores feedback in your repo: comment markers live in `.tsx` files and
 iteration snapshots live under `designs/`.
 
-> 0.x scope: React 19, Vite 8, and React Router 7. APIs may change before 1.0.
+> 0.x scope: React 19 and Vite 8. APIs may change before 1.0.
 
 ## Screenshots
 
-![Redline comment composer over a Vite React design playground](./docs/assets/redline-commenting.png)
+![ForkDesign comment composer over a Vite React design playground](./docs/assets/forkdesign-commenting.png)
 
-![Redline agent iteration thread with version previews](./docs/assets/redline-agent-iterations.png)
+![ForkDesign agent iteration thread with version previews](./docs/assets/forkdesign-agent-iterations.png)
 
 ## Install
 
 ```sh
-pnpm add -D redline
-# or: npm install --save-dev redline
+pnpm add -D forkdesign
+# or: npm install --save-dev forkdesign
 ```
 
-Before npm publish:
+Peer dependencies: `react`, `react-dom`, `vite`.
 
-```sh
-pnpm add -D github:PauliusKrutkis/redline
-```
-
-Peer dependencies: `react`, `react-dom`, `react-router-dom`, `vite`.
+Requirements: Node 20 or newer. The development commands in this repository use
+pnpm.
 
 ## Quick Start
 
@@ -37,21 +34,21 @@ Add the Vite plugin:
 // vite.config.ts
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
-import { redline } from "redline/plugin";
+import { forkDesign } from "forkdesign/plugin";
 
 export default defineConfig({
-  plugins: [redline(), react()],
+  plugins: [forkDesign(), react()],
 });
 ```
 
-That is the only setup for the default path. `redline()` runs in dev only,
+That is the only setup for the default path. `forkDesign()` runs in dev only,
 stamps JSX source locations, installs the comment/iteration API, imports the
 compiled overlay CSS, and mounts the overlay. Your app does not need to scan
-redline with Tailwind.
+forkdesign with Tailwind.
 
-## Using Redline
+## Using ForkDesign
 
-Open your app in dev, click the redline button, then click an element to leave a
+Open your app in dev, click the forkdesign button, then click an element to leave a
 comment. New comments are written as JSX markers:
 
 ```tsx
@@ -65,12 +62,33 @@ Screenshots and agent iterations are written under `designs/`. Add `designs/`
 and `public/designs/` to the host app's `.gitignore` if those artifacts should
 stay local.
 
+## Example
+
+Try the minimal Vite app in [`examples/basic-vite`](./examples/basic-vite):
+
+```sh
+pnpm install
+pnpm build
+pnpm example
+```
+
+That app is only the default `forkDesign()` plugin plus a small React surface. It
+does not manually import the overlay or use Tailwind. Comment markers are
+written into `examples/basic-vite/src/`; local iteration artifacts land under
+`examples/basic-vite/designs/`.
+
 ## AI Iteration
 
 Agent mode uses your configured local tools:
 
 - Cursor CLI (`agent`): run `agent login` or set `CURSOR_API_KEY`.
 - Claude: set `ANTHROPIC_API_KEY` or use Claude Code login.
+- Optional: set `CURSOR_AGENT_PATH` when the Cursor CLI binary is not named
+  `agent`.
+
+Copy `.env.example` if you want to document local agent credentials for a host
+app. ForkDesign does not send keys to the browser; local agent tools read their own
+credentials.
 
 Default model order:
 
@@ -81,7 +99,7 @@ composer-2.5-fast -> composer-2.5 -> claude-sonnet-4-6 -> default
 Override it in `vite.config.ts`:
 
 ```ts
-redline({
+forkDesign({
   agentModelPriority: ["composer-2.5-fast", "claude-sonnet-4-6", "default"],
   agentSkills: ["frontend-design"], // pass [] to disable skill guidance
 });
@@ -90,7 +108,8 @@ redline({
 ## Options
 
 ```ts
-redline({
+forkDesign({
+  allowRemoteAccess: false,
   excludeSrcPrefixes: ["src/dev/"],
   cursorAgentPath: "/usr/local/bin/agent",
   agentModelPriority: ["composer-2.5-fast", "composer-2.5", "default"],
@@ -104,7 +123,7 @@ If you want to mount the overlay yourself, use the lower-level plugins:
 // vite.config.ts
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
-import { comments, sourceLoc } from "redline/plugin";
+import { comments, sourceLoc } from "forkdesign/plugin";
 
 export default defineConfig({
   plugins: [sourceLoc(), react(), comments()],
@@ -112,8 +131,8 @@ export default defineConfig({
 ```
 
 ```tsx
-import { CommentOverlay } from "redline";
-import "redline/styles.css";
+import { CommentOverlay } from "forkdesign";
+import "forkdesign/styles.css";
 
 export function App() {
   return (
@@ -127,9 +146,13 @@ export function App() {
 
 ## Safety
 
-Redline is a local development tool. Its Vite middleware can read and write app
+ForkDesign is a local development tool. Its Vite middleware can read and write app
 source files, write screenshots and iteration artifacts, and run configured AI
-agents. Do not expose a Vite dev server running redline to an untrusted network.
+agents. Do not expose a Vite dev server running forkdesign to an untrusted network
+or run it with `vite --host` unless the network is trusted.
+
+The API rejects non-loopback clients by default. Pass `allowRemoteAccess: true`
+only when the dev server is intentionally reachable from a trusted network.
 
 When AI iteration is enabled, selected source context, comments, screenshots,
 and feedback may be sent to your configured provider. See [`SECURITY.md`](./SECURITY.md).
@@ -138,11 +161,16 @@ and feedback may be sent to your configured provider. See [`SECURITY.md`](./SECU
 
 | Import | Exports |
 | --- | --- |
-| `redline` | `CommentOverlay` and public types |
-| `redline/plugin` | `redline()`, `comments()`, `sourceLoc()` |
-| `redline/styles.css` | Compiled overlay CSS |
+| `forkdesign` | `CommentOverlay` and public types |
+| `forkdesign/plugin` | `forkDesign()`, `comments()`, `sourceLoc()` |
+| `forkdesign/styles.css` | Compiled overlay CSS |
 
 ## Development
+
+Architecture notes live in [`docs/architecture.md`](./docs/architecture.md).
+`AGENTS.md` is guidance for AI coding assistants; human contributors should
+start with [`CONTRIBUTING.md`](./CONTRIBUTING.md).
+For a manual smoke check in a real Vite dev server, use `pnpm example`.
 
 ```sh
 pnpm install

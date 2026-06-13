@@ -1,4 +1,5 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
+import { fileURLToPath } from "node:url";
 import type { Plugin, ViteDevServer } from "vite";
 import { configureAgentRuntime } from "../agent/config.ts";
 import type { AgentModel } from "../agent/models.ts";
@@ -24,9 +25,26 @@ import { errorMessage, sendError, wrapApiHandler } from "../platform/http.ts";
 import { sourceLoc as createSourceLocPlugin } from "./source-loc.ts";
 
 const INJECT_MARKER = "<!-- vite-plugin-comments injected -->";
-const AUTO_MOUNT_MARKER = "<!-- redline overlay auto-mount -->";
-const VIRTUAL_CLIENT_ID = "virtual:redline/client";
+const AUTO_MOUNT_MARKER = "<!-- comment-overlay auto-mount -->";
+const VIRTUAL_CLIENT_ID = "virtual:comment-overlay/client";
 const RESOLVED_VIRTUAL_CLIENT_ID = `\0${VIRTUAL_CLIENT_ID}`;
+const LOOPBACK_IPV6 = new Set(["::1", "0:0:0:0:0:0:0:1"]);
+
+/** Public package name; matches `package.json#name`. */
+const PACKAGE_NAME = "forkdesign";
+/** Bare specifiers the auto-mounted virtual client module imports. */
+const CLIENT_BARE_IMPORTS = new Set([
+  PACKAGE_NAME,
+  `${PACKAGE_NAME}/styles.css`,
+]);
+/**
+ * A real file inside this package, used to anchor resolution of the virtual
+ * client module's bare imports. Vite can't resolve bare specifiers when the
+ * importer is a virtual (`\0`-prefixed) id, so we re-resolve them as if they
+ * were imported from here — node self-reference resolution (or a consumer's
+ * `forkdesign` alias) then has a real directory to work from.
+ */
+const SELF_MODULE_PATH = fileURLToPath(import.meta.url);
 
 interface SourceChangeController {
   onInternalSourceWorkFinish: (event: IterationSourceAppliedEvent) => void;
@@ -39,16 +57,44 @@ const sourceChangeControllers = new WeakMap<
   SourceChangeController
 >();
 
-function redlineClientModule(): string {
+export function isLoopbackRemoteAddress(
+  remoteAddress: string | undefined
+): boolean {
+  if (!remoteAddress) {
+    return false;
+  }
+  const address = remoteAddress.startsWith("::ffff:")
+    ? remoteAddress.slice("::ffff:".length)
+    : remoteAddress;
+  return address.startsWith("127.") || LOOPBACK_IPV6.has(address);
+}
+
+function rejectRemoteApiRequest(
+  req: IncomingMessage,
+  res: ServerResponse,
+  allowRemoteAccess: boolean
+): boolean {
+  if (allowRemoteAccess || isLoopbackRemoteAddress(req.socket.remoteAddress)) {
+    return false;
+  }
+  sendError(
+    res,
+    403,
+    "forkdesign API is local-only; pass allowRemoteAccess: true only on trusted networks"
+  );
+  return true;
+}
+
+function forkDesignClientModule(): string {
   return `
 import { createElement } from "react";
 import { createRoot } from "react-dom/client";
-import { CommentOverlay } from "redline";
-import "redline/styles.css";
+import { CommentOverlay } from "forkdesign";
+import "forkdesign/styles.css";
 
-const ROOT_ID = "redline-overlay-root";
+const ROOT_ID = "overlay-root";
 
-function mountRedlineOverlay() {
+function mountForkDesignOverlay() {
   if (!import.meta.env.DEV || typeof document === "undefined") {
     return;
   }
@@ -67,9 +113,9 @@ function mountRedlineOverlay() {
 }
 
 if (document.readyState === "loading") {
-  document.addEventListener("DOMContentLoaded", mountRedlineOverlay, { once: true });
+  document.addEventListener("DOMContentLoaded", mountForkDesignOverlay, { once: true });
 } else {
-  mountRedlineOverlay();
+  mountForkDesignOverlay();
 }
 `;
 }
@@ -208,6 +254,11 @@ export interface CommentsPluginOptions {
    * Defaults to `["frontend-design"]`; pass `[]` to disable.
    */
   agentSkills?: AgentSkill[];
+  /**
+   * Allow API requests from non-loopback clients. Keep false unless the Vite
+   * dev server is on a trusted network.
+   */
+  allowRemoteAccess?: boolean;
   /** Path to the Cursor CLI `agent` binary. Default: `"agent"` (must be on PATH). */
   cursorAgentPath?: string;
   /**
@@ -217,7 +268,7 @@ export interface CommentsPluginOptions {
   excludeSrcPrefixes?: string[];
   /**
    * Inject and mount `<CommentOverlay />` automatically in dev. The low-level
-   * `comments()` middleware keeps this off by default; use `redline()` for the
+   * `comments()` middleware keeps this off by default; use `forkDesign()` for the
    * streamlined setup.
    */
   mountOverlay?: boolean;
@@ -225,6 +276,7 @@ export interface CommentsPluginOptions {
 
 export function comments(options: CommentsPluginOptions = {}): Plugin {
   const excludeSrcPrefixes = options.excludeSrcPrefixes ?? [];
+  const allowRemoteAccess = options.allowRemoteAccess ?? false;
   const cursorAgentPath = options.cursorAgentPath;
   const agentModelPriority = options.agentModelPriority;
   const agentSkills = options.agentSkills;
@@ -246,6 +298,9 @@ export function comments(options: CommentsPluginOptions = {}): Plugin {
 
     configureServer(server) {
       server.middlewares.use("/api/comments", (req, res, next) => {
+        if (rejectRemoteApiRequest(req, res, allowRemoteAccess)) {
+          return;
+        }
         if (req.method === "OPTIONS") {
           res.statusCode = 204;
           res.end();
@@ -279,6 +334,9 @@ export function comments(options: CommentsPluginOptions = {}): Plugin {
       });
 
       server.middlewares.use("/api/iterations", (req, res, next) => {
+        if (rejectRemoteApiRequest(req, res, allowRemoteAccess)) {
+          return;
+        }
         if (req.method === "OPTIONS") {
           res.statusCode = 204;
           res.end();
@@ -295,16 +353,26 @@ export function comments(options: CommentsPluginOptions = {}): Plugin {
       });
     },
 
-    resolveId(id) {
+    resolveId(id, importer) {
       if (mountOverlay && id === VIRTUAL_CLIENT_ID) {
         return RESOLVED_VIRTUAL_CLIENT_ID;
+      }
+      // The virtual client module imports the package's public entrypoints by
+      // bare specifier. Those can't be resolved relative to a virtual importer,
+      // so anchor them to a real file inside the package.
+      if (
+        mountOverlay &&
+        importer === RESOLVED_VIRTUAL_CLIENT_ID &&
+        CLIENT_BARE_IMPORTS.has(id)
+      ) {
+        return this.resolve(id, SELF_MODULE_PATH, { skipSelf: true });
       }
       return null;
     },
 
     load(id) {
       if (mountOverlay && id === RESOLVED_VIRTUAL_CLIENT_ID) {
-        return redlineClientModule();
+        return forkDesignClientModule();
       }
       return null;
     },
@@ -331,7 +399,7 @@ export function comments(options: CommentsPluginOptions = {}): Plugin {
   };
 }
 
-export interface RedlinePluginOptions extends CommentsPluginOptions {
+export interface ForkDesignPluginOptions extends CommentsPluginOptions {
   /**
    * Source-location stamping for DOM target picking. Enabled by default.
    * Pass `false` only when you mount the overlay manually and provide another
@@ -345,12 +413,14 @@ export interface RedlinePluginOptions extends CommentsPluginOptions {
       };
 }
 
-export type RedlinePluginOption = { name: string } | RedlinePluginOption[];
+export type ForkDesignPluginOption =
+  | { name: string }
+  | ForkDesignPluginOption[];
 
 /** Streamlined dev setup: source locations + API middleware + overlay mount. */
-export function redline(
-  options: RedlinePluginOptions = {}
-): RedlinePluginOption {
+export function forkDesign(
+  options: ForkDesignPluginOptions = {}
+): ForkDesignPluginOption {
   const {
     sourceLoc: sourceLocOptions,
     mountOverlay = true,
@@ -370,7 +440,7 @@ export function redline(
   ];
 }
 
-/** Re-exported for `redline/plugin` consumers configuring the dev source-loc stamper. */
+/** Re-exported for `forkdesign/plugin` consumers configuring the dev source-loc stamper. */
 export function sourceLoc(
   options: Parameters<typeof createSourceLocPlugin>[0] = {}
 ): ReturnType<typeof createSourceLocPlugin> {

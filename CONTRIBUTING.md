@@ -1,6 +1,6 @@
 # Contributing
 
-Thanks for taking a look at redline.
+Thanks for taking a look at forkdesign.
 
 ## Local setup
 
@@ -23,8 +23,8 @@ pnpm build
 
 - Keep browser code under `src/client/` free of Node-only imports.
 - Keep Vite middleware and filesystem work under `src/server/`.
-- Public imports should go through `redline` and `redline/plugin`.
+- Public imports should go through `forkdesign` and `forkdesign/plugin`.
 - Add focused colocated tests for parser, writer, API, and iteration behavior.
 
-Redline writes local iteration artifacts under `designs/` in host apps. Avoid
+ForkDesign writes local iteration artifacts under `designs/` in host apps. Avoid
 committing those artifacts unless you intentionally want design history in git.

@@ -16,7 +16,7 @@ describe("applyIterationVersionToSource", () => {
   });
 
   it("switches only the selected anchor and preserves other comments in the file", async () => {
-    projectRoot = await mkdtemp(path.join(tmpdir(), "redline-activate-"));
+    projectRoot = await mkdtemp(path.join(tmpdir(), "forkdesign-activate-"));
     const sourcePath = path.join(projectRoot, "src", "Page.tsx");
     const iterDir = path.join(
       projectRoot,
@@ -90,7 +90,7 @@ describe("applyIterationVersionToSource", () => {
   });
 
   it("switches the repeated instance next to the comment marker when anchors are duplicated", async () => {
-    projectRoot = await mkdtemp(path.join(tmpdir(), "redline-activate-"));
+    projectRoot = await mkdtemp(path.join(tmpdir(), "forkdesign-activate-"));
     const sourcePath = path.join(projectRoot, "src", "Page.tsx");
     const iterDir = path.join(
       projectRoot,
@@ -158,7 +158,7 @@ describe("applyIterationVersionToSource", () => {
   });
 
   it("restores and reverts cross-file (reused-component) edits when switching", async () => {
-    projectRoot = await mkdtemp(path.join(tmpdir(), "redline-activate-"));
+    projectRoot = await mkdtemp(path.join(tmpdir(), "forkdesign-activate-"));
     const sourcePath = path.join(projectRoot, "src", "Page.tsx");
     const cardPath = path.join(projectRoot, "src", "Card.tsx");
     const iterDir = path.join(

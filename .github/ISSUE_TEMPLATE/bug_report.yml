@@ -1,0 +1,34 @@
+name: Bug report
+description: Report something that is broken or confusing.
+title: "Bug: "
+labels: ["bug"]
+body:
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: What happened?
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Reproduction
+      description: Steps or a minimal repo that reproduces the issue.
+      placeholder: |
+        1. Install forkdesign...
+        2. Run vite...
+        3. Click...
+    validations:
+      required: true
+  - type: input
+    id: versions
+    attributes:
+      label: Versions
+      description: ForkDesign, React, Vite, Node, and browser versions.
+      placeholder: "forkdesign 0.1.0, React 19, Vite 8, Node 22, Chrome 120"
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs or screenshots
+      description: Paste relevant terminal/browser output. Do not include secrets.

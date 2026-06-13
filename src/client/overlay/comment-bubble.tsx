@@ -312,6 +312,12 @@ export function CommentBubble({
       instance,
       versions: pendingVersions,
       activeV: activeVersion,
+      shouldRestoreActive: () => {
+        const preferredActiveNow = preferredActiveRef.current;
+        return (
+          preferredActiveNow === null || preferredActiveNow === activeVersion
+        );
+      },
       onDone: () => {
         Promise.resolve(reloadIterations()).catch(ignorePromiseRejection);
       },
@@ -573,7 +579,7 @@ export function CommentBubble({
 
       <div
         aria-label="Comment"
-        className="pointer-events-auto fixed z-[9200] flex animate-redline-bubble-in flex-col overflow-hidden rounded-lg border bg-background shadow-lg"
+        className="pointer-events-auto fixed z-[9200] flex animate-bubble-in flex-col overflow-hidden rounded-lg border bg-background shadow-lg"
         data-comment-overlay="true"
         onPointerDown={(e) => e.stopPropagation()}
         ref={containerRef}
@@ -817,10 +823,10 @@ function LeaderLine({
     >
       <title>Connector to the anchored element</title>
       <path
-        className="redline-leader-line"
+        className="leader-line"
         d={`M${dotCx},${dotCy} C${midX},${dotCy} ${midX},${edgeY} ${edgeX},${edgeY}`}
       />
-      <circle className="redline-leader-dot" cx={dotCx} cy={dotCy} r={3.5} />
+      <circle className="leader-dot" cx={dotCx} cy={dotCy} r={3.5} />
     </svg>
   );
 }

@@ -9,14 +9,29 @@ export async function assertOk(res: Response): Promise<void> {
   }
 }
 
+export function postJson(
+  path: string,
+  body: unknown,
+  init: RequestInit = {}
+): Promise<Response> {
+  const headers = new Headers(init.headers);
+  if (!headers.has("content-type")) {
+    headers.set("content-type", "application/json");
+  }
+  return fetch(path, {
+    ...init,
+    method: init.method ?? "POST",
+    headers,
+    body: JSON.stringify(body),
+  });
+}
+
 export async function patchComment(
   id: string,
   body: Record<string, unknown>
 ): Promise<void> {
-  const res = await fetch(`/api/comments/${encodeURIComponent(id)}`, {
+  const res = await postJson(`/api/comments/${encodeURIComponent(id)}`, body, {
     method: "PATCH",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(body),
   });
   await assertOk(res);
 }

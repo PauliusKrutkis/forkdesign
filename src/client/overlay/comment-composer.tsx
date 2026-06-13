@@ -1,4 +1,3 @@
-import { toPng } from "html-to-image";
 import { SquareDashedMousePointer, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { DEFAULT_AGENT_VERSION_COUNT } from "../../shared/agent-version-count.ts";
@@ -13,7 +12,7 @@ import { cssEscape } from "./lib/css-escape.ts";
 import { toErrorMessage } from "./lib/errors.ts";
 import { ignorePromiseRejection } from "./lib/ignore-promise-rejection.ts";
 import { isOverlayElement } from "./lib/overlay-dom.ts";
-import { effectiveBackgroundColor } from "./lib/screenshot.ts";
+import { captureElementToPng } from "./lib/screenshot.ts";
 import { findSourceLoc } from "./lib/source-loc.ts";
 
 export interface ComposerSubmission {
@@ -99,8 +98,8 @@ interface PickerState {
  *      the cursor with a dashed outline; click freezes that element as the
  *      composer target.
  *   2. With a target picked: render a panel near the click point with a
- *      textarea + submit button. Submit calls `onSubmit` (mock for now);
- *      cancel returns to phase 1.
+ *      textarea + submit button. Submit calls `onSubmit`; cancel returns to
+ *      phase 1.
  */
 export function CommentComposer({
   active,
@@ -603,6 +602,7 @@ function PickerPreview({
       <div
         className="pointer-events-auto fixed z-[9310] w-[340px] select-none overflow-hidden rounded-xl border bg-popover/95 text-popover-foreground shadow-[0_18px_40px_-18px_rgba(0,0,0,0.45),0_0_0_1px_rgba(255,255,255,0.04)] backdrop-blur"
         data-comment-overlay="true"
+        data-testid="forkdesign-picker-chip"
         style={{ left: chipLeft, top: chipTop }}
       >
         <div className="flex items-center justify-between gap-3 border-b px-3 py-2">
@@ -775,6 +775,7 @@ function ComposerPanel({
     <div
       className="pointer-events-auto fixed z-[9300] flex flex-col overflow-hidden rounded-lg border bg-background shadow-lg"
       data-comment-overlay="true"
+      data-testid="forkdesign-composer-panel"
       onPointerDown={(e) => e.stopPropagation()}
       style={{ left, top, width: PANEL_WIDTH }}
     >
@@ -1047,12 +1048,6 @@ function pickHitTarget(x: number, y: number): HTMLElement | null {
   return null;
 }
 
-/**
- * Ensures the targeted element carries a `data-comment-anchor` attribute,
- * minting one if needed. In real flow (W4 write path) the Vite plugin will
- * persist this attribute back into source; for now we just stamp the DOM
- * so the dot has something to anchor to during this session.
- */
 function ensureAnchor(el: HTMLElement): string {
   const existing = el.getAttribute("data-comment-anchor");
   if (existing) {
@@ -1063,58 +1058,17 @@ function ensureAnchor(el: HTMLElement): string {
   return uuid;
 }
 
-/**
- * Render `el`'s bounding box subtree to a PNG data URL using html-to-image.
- *
- * Failure modes we tolerate (return undefined):
- *   - cross-origin <img> / <canvas> taints (CORS errors during foreignObject
- *     rasterisation)
- *   - fonts not yet ready (the rendered text falls back to the system font;
- *     not great, but still a screenshot — we don't actively guard against it)
- *   - browser quirks where foreignObject rendering throws
- *
- * The comment must succeed even when the screenshot doesn't, so we swallow
- * errors and log them rather than propagate.
- */
 async function captureElementScreenshot(
   el: HTMLElement
 ): Promise<string | undefined> {
-  try {
-    const pixelRatio =
-      (typeof window !== "undefined" && window.devicePixelRatio) || 2;
-    const dataUrl = await toPng(el, {
-      pixelRatio,
-      // Paint the effective page background behind the target before
-      // rasterising — transparent elements (most of them) would otherwise
-      // capture as see-through and look broken when shown elsewhere.
-      backgroundColor: effectiveBackgroundColor(el),
-      // Drop the overlay's own chrome from the capture in case it overlaps
-      // the target (the highlight + dot live on data-comment-overlay nodes).
-      filter: (node) =>
-        !isOverlayElement(node instanceof Element ? node : null),
-      cacheBust: true,
-    });
-    if (typeof dataUrl !== "string" || !dataUrl.startsWith("data:image/png")) {
-      return;
-    }
-    return dataUrl;
-  } catch (err) {
-    console.warn(
-      "[CommentComposer] screenshot capture failed; submitting without it",
-      err
-    );
-    return;
-  }
+  return (
+    (await captureElementToPng(
+      el,
+      "[CommentComposer] screenshot capture failed; submitting without it"
+    )) ?? undefined
+  );
 }
 
 function randomUuid(): string {
-  if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
-    return crypto.randomUUID();
-  }
-  // Fallback for older runtimes — good enough for dev seeds.
-  return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (c) => {
-    const r = Math.floor(Math.random() * 16);
-    const v = c === "x" ? r : (r % 4) + 8;
-    return v.toString(16);
-  });
+  return crypto.randomUUID();
 }

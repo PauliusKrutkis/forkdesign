@@ -415,7 +415,7 @@ function LeadingVisual({ src, author }: { src?: string; author: string }) {
 }
 
 /**
- * Left margin-rail — the editorial "redline" accent. Quiet by default; it
+ * Left margin-rail — the editorial red-pen accent. Quiet by default; it
  * lights up on hover/focus for interactive rows, glows while the agent works,
  * and reads as a muted fill once the comment is resolved.
  */
@@ -513,7 +513,7 @@ function AgentProgress({ run }: { run: AgentRunSummary }) {
         aria-hidden
         className="relative block h-1 w-full overflow-hidden rounded-full bg-[var(--agent-soft)]"
       >
-        <span className="redline-indeterminate absolute inset-y-0 left-0 w-2/5 rounded-full bg-[var(--agent)]" />
+        <span className="indeterminate absolute inset-y-0 left-0 w-2/5 rounded-full bg-[var(--agent)]" />
       </span>
     </div>
   );

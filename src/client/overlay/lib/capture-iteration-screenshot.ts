@@ -1,8 +1,7 @@
-import { toPng } from "html-to-image";
+import { postJson } from "./api.ts";
 import { cssEscape } from "./css-escape.ts";
 import { ignorePromiseRejection } from "./ignore-promise-rejection.ts";
-import { isOverlayElement } from "./overlay-dom.ts";
-import { effectiveBackgroundColor } from "./screenshot.ts";
+import { captureElementToPng } from "./screenshot.ts";
 
 const FALLBACK_CAPTURE_DELAY_MS = 900;
 const RENDER_UPDATE_TIMEOUT_MS = 5000;
@@ -46,7 +45,12 @@ export function anchorRenderSignature(
   }
   const rect = el.getBoundingClientRect();
   return JSON.stringify({
-    html: el.outerHTML,
+    anchor: el.getAttribute("data-comment-anchor"),
+    childElementCount: el.childElementCount,
+    className: el.getAttribute("class"),
+    tagName: el.tagName,
+    textSample: el.textContent?.slice(0, 80) ?? "",
+    textLength: el.textContent?.length ?? 0,
     width: Math.round(rect.width * 100) / 100,
     height: Math.round(rect.height * 100) / 100,
   });
@@ -119,31 +123,15 @@ async function waitForVersionRender(args: {
   await waitForStableRender(args.anchor, instance);
 }
 
-async function captureElementPng(
+function captureElementPng(
   anchor: string,
   instance = 0
 ): Promise<string | null> {
   const el = anchorElement(anchor, instance);
   if (!el) {
-    return null;
+    return Promise.resolve(null);
   }
-  try {
-    const pixelRatio =
-      (typeof window !== "undefined" && window.devicePixelRatio) || 2;
-    const dataUrl = await toPng(el, {
-      pixelRatio,
-      cacheBust: true,
-      backgroundColor: effectiveBackgroundColor(el),
-      filter: (node) =>
-        !isOverlayElement(node instanceof Element ? node : null),
-    });
-    if (typeof dataUrl === "string" && dataUrl.startsWith("data:image/png")) {
-      return dataUrl;
-    }
-  } catch (err) {
-    console.warn("[CommentBubble] screenshot capture failed", err);
-  }
-  return null;
+  return captureElementToPng(el, "[CommentBubble] screenshot capture failed");
 }
 
 async function uploadVersionPng(
@@ -152,10 +140,10 @@ async function uploadVersionPng(
   screenshotPng: string
 ): Promise<boolean> {
   try {
-    const res = await fetch("/api/iterations/screenshot", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ id, v, screenshotPng }),
+    const res = await postJson("/api/iterations/screenshot", {
+      id,
+      v,
+      screenshotPng,
     });
     if (!res.ok) {
       console.warn(
@@ -231,11 +219,7 @@ async function activateIterationVersion(
   v: number
 ): Promise<boolean> {
   try {
-    const res = await fetch("/api/iterations/activate", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ id, v }),
-    });
+    const res = await postJson("/api/iterations/activate", { id, v });
     return res.ok;
   } catch {
     return false;
@@ -253,6 +237,7 @@ export async function captureAgentVariantScreenshots(args: {
   instance?: number;
   versions: number[];
   activeV: number;
+  shouldRestoreActive?: () => boolean;
 }): Promise<void> {
   const instance = args.instance ?? 0;
   const agentVersions = args.versions.filter((v) => v > 0);
@@ -300,7 +285,11 @@ export async function captureAgentVariantScreenshots(args: {
     });
   }
 
-  if (others.length > 0 || args.activeV !== firstCaptureV) {
+  const shouldRestoreActive = args.shouldRestoreActive?.() ?? true;
+  if (
+    shouldRestoreActive &&
+    (others.length > 0 || args.activeV !== firstCaptureV)
+  ) {
     const previousSignature = anchorRenderSignature(args.anchor, instance);
     if (await activateIterationVersion(args.id, args.activeV)) {
       await waitForVersionRender({

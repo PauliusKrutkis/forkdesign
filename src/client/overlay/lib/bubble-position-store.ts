@@ -9,7 +9,7 @@
  * degrades silently to "no saved position", i.e. the auto-anchored placement.
  */
 
-const KEY_PREFIX = "redline:bubble-pos:";
+const KEY_PREFIX = "bubble-pos:";
 /** Keep at least this much of the panel — enough to grab the header — on-screen. */
 const MIN_VISIBLE = 120;
 /** Never let the header slip above the top edge, or it can't be dragged back. */

@@ -6,7 +6,7 @@ import { patchIterationsManifest } from "./manifest.ts";
 /**
  * Seeds v0 baseline artifacts under `public/designs/iterations/<id>/` after a
  * comment POST. Called only after the writer succeeds so v0.tsx includes the
- * freshly-written marker (see bug #24).
+ * freshly-written marker.
  */
 export async function seedBaselineIteration(
   projectRoot: string,

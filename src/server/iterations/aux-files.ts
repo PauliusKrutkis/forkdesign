@@ -2,7 +2,7 @@ import { existsSync, statSync } from "node:fs";
 import { readFile, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { atomicWriteText } from "../platform/atomic-write.ts";
-import { fromRelPosix } from "./source-files.ts";
+import { resolveSafeProjectRelativePath } from "../platform/path-safety.ts";
 
 /**
  * Per-version snapshots of files OTHER than the comment's primary file (which is
@@ -23,6 +23,32 @@ function auxFilesPath(iterDir: string, v: number): string {
   return path.join(iterDir, `v${v}.files.json`);
 }
 
+function isSafeAuxRel(rel: string): boolean {
+  if (!(rel && rel === path.posix.normalize(rel))) {
+    return false;
+  }
+  if (path.posix.isAbsolute(rel) || rel.split("/").includes("..")) {
+    return false;
+  }
+  if (rel.startsWith("designs/iterations/")) {
+    return false;
+  }
+  if (rel.startsWith("public/designs/iterations/")) {
+    return false;
+  }
+  return true;
+}
+
+function safeAuxFileMap(files: AuxFileMap): AuxFileMap {
+  const out: AuxFileMap = {};
+  for (const [rel, content] of Object.entries(files)) {
+    if (isSafeAuxRel(rel)) {
+      out[rel] = content;
+    }
+  }
+  return out;
+}
+
 function parseAuxJson(raw: string): AuxFileMap {
   let parsed: unknown;
   try {
@@ -37,7 +63,7 @@ function parseAuxJson(raw: string): AuxFileMap {
   for (const [key, value] of Object.entries(
     parsed as Record<string, unknown>
   )) {
-    if (typeof value === "string" || value === null) {
+    if ((typeof value === "string" || value === null) && isSafeAuxRel(key)) {
       out[key] = value;
     }
   }
@@ -67,12 +93,13 @@ export async function writeVersionAuxFiles(
   v: number,
   files: AuxFileMap
 ): Promise<void> {
-  if (Object.keys(files).length === 0) {
+  const safeFiles = safeAuxFileMap(files);
+  if (Object.keys(safeFiles).length === 0) {
     return;
   }
   await writeFile(
     auxFilesPath(iterDir, v),
-    `${JSON.stringify(files, null, 2)}\n`,
+    `${JSON.stringify(safeFiles, null, 2)}\n`,
     "utf8"
   );
 }
@@ -96,7 +123,7 @@ export async function mergeBaselineAuxFiles(
     }
   }
   let changed = false;
-  for (const [rel, content] of Object.entries(baseline)) {
+  for (const [rel, content] of Object.entries(safeAuxFileMap(baseline))) {
     if (!(rel in existing)) {
       existing[rel] = content;
       changed = true;
@@ -124,7 +151,11 @@ export async function restoreAuxFilesForVersion(
   const written: string[] = [];
   for (const rel of Object.keys(baseline)) {
     const content = rel in target ? target[rel] : baseline[rel];
-    const abs = fromRelPosix(projectRoot, rel);
+    const resolved = resolveSafeProjectRelativePath(projectRoot, rel);
+    if (!resolved.ok) {
+      continue;
+    }
+    const abs = resolved.absolutePath;
     if (content === null || content === undefined) {
       try {
         await unlink(abs);

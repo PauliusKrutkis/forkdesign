@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { readApiError } from "../lib/api.ts";
+import { postJson, readApiError } from "../lib/api.ts";
 import { toErrorMessage } from "../lib/errors.ts";
 import { ignorePromiseRejection } from "../lib/ignore-promise-rejection.ts";
 import { useViteHmrReload } from "./use-vite-hmr-reload.ts";
@@ -84,10 +84,9 @@ export function useIterations(commentId: string) {
       setSwitching(true);
       setData((prev) => (prev ? { ...prev, active: v } : prev));
       try {
-        const res = await fetch("/api/iterations/activate", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ id: commentId, v }),
+        const res = await postJson("/api/iterations/activate", {
+          id: commentId,
+          v,
         });
         if (!res.ok) {
           setPreferredActive(previousPreferredActive);
@@ -120,10 +119,9 @@ export function useIterations(commentId: string) {
       setDeleting(true);
       setDeleteError(null);
       try {
-        const res = await fetch("/api/iterations/delete", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ id: commentId, v }),
+        const res = await postJson("/api/iterations/delete", {
+          id: commentId,
+          v,
         });
         if (!res.ok) {
           throw new Error(await readApiError(res));

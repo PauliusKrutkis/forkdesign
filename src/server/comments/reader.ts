@@ -1,20 +1,6 @@
 /**
- * AST reader for `{/* @comment ... *\/}` markers inside a `.tsx` page file.
- *
- * Used by the dev-only Vite plugin (`server/plugins/comments.ts`) to serve
- * `GET /api/comments`. Read path only — no writes, no caching.
- *
- * Scope (W4 read path):
- *   - Parse the file with @babel/parser (jsx + typescript) with `attachComment`.
- *   - Walk JSXExpressionContainer nodes whose expression is a JSXEmptyExpression
- *     carrying a CommentBlock whose text starts with `@comment`.
- *   - Extract a CommentProps object from the directive's attribute list.
- *   - Resolve `view` by walking parents to the nearest JSXElement that has a
- *     static `data-view="..."` attribute.
- *
- * Anything malformed (missing required fields, unparsable attributes) is
- * treated as a warning and skipped — dev tooling stays strict so we never
- * round-trip a half-resolved value.
+ * Read `{/* @comment ... *\/}` markers from TSX source. Malformed markers are
+ * skipped so the writer never round-trips a half-resolved value.
  */
 import { readFile } from "node:fs/promises";
 import { parse } from "@babel/parser";
@@ -27,6 +13,10 @@ import type {
   Node,
 } from "@babel/types";
 import type { CommentProps, CommentReply } from "../../client/types.ts";
+import {
+  isSafeIterationScreenshotPath,
+  isSafePathSegment,
+} from "../platform/path-safety.ts";
 
 const WHITESPACE_CHAR_RE = /\s/;
 const ATTR_KEY_CHAR_RE = /[A-Za-z0-9_-]/;
@@ -179,7 +169,19 @@ function parseDirective(
     return null;
   }
 
-  const screenshot = stringOf(attrs.values.screenshot) ?? undefined;
+  if (!isSafePathSegment(id)) {
+    warnings.push(`${tag} skipped: invalid id (line ${line})`);
+    return null;
+  }
+
+  const rawScreenshot = stringOf(attrs.values.screenshot) ?? undefined;
+  const screenshot =
+    rawScreenshot && isSafeIterationScreenshotPath(rawScreenshot, id)
+      ? rawScreenshot
+      : undefined;
+  if (rawScreenshot && !screenshot) {
+    warnings.push(`${tag}: ignored invalid screenshot path (line ${line})`);
+  }
   const snapshot = stringOf(attrs.values.snapshot) ?? undefined;
   const resolved = boolOf(attrs.values.resolved) ?? false;
   const replies = arrayOf(attrs.values.replies, warnings, tag) ?? [];

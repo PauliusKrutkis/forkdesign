@@ -101,8 +101,7 @@ export function replaceCommentMarkerInSource(
  *
  * This is the recovery path for legacy iteration snapshots: a `v{N}.tsx` that
  * still has the `data-comment-anchor` attribute on the element but is missing
- * the `{/* @comment ... *\/}` block (because it was captured BEFORE the marker
- * was written to disk — see bug #24). We rebuild the marker as a sibling using
+ * the `{/* @comment ... *\/}` block. We rebuild the marker as a sibling using
  * the same insertion logic the writer uses for fresh markers.
  *
  * `directiveInner` is the raw text BETWEEN the `/*` and `*\/` of the original
