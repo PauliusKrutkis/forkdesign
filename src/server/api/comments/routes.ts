@@ -20,14 +20,13 @@ import {
   writeCommentToFile,
 } from "../../comments/writer.ts";
 import { WriteError } from "../../comments/writer-errors.ts";
+import { applyIterationVersionToSource } from "../../iterations/activate-version.ts";
 import { seedBaselineIteration } from "../../iterations/baseline.ts";
 import { resolveCommentIterationContext } from "../../iterations/context.ts";
-import { findVersionSnapshotPath } from "../../iterations/manifest.ts";
 import {
   cancelIterationRun,
   hasActiveIterationRun,
 } from "../../iterations/runs.ts";
-import { atomicWriteText } from "../../platform/atomic-write.ts";
 import {
   errorMessage,
   readJsonBody,
@@ -439,20 +438,18 @@ async function maybeRevertBeforeDelete(
     return { ok: false, status: ctx.status, message: ctx.message };
   }
 
-  const baselinePath = findVersionSnapshotPath(ctx.iterationRoots, 0);
-  if (!baselinePath) {
-    return {
-      ok: false,
-      status: 400,
-      message: "version snapshot not found: v0.tsx",
-    };
-  }
-
-  try {
-    const baselineSource = await readFile(baselinePath, "utf8");
-    await atomicWriteText(ctx.found.absolutePath, baselineSource);
-  } catch (err) {
-    return { ok: false, status: 500, message: errorMessage(err) };
+  // Route through the shared activation logic so auxiliary files captured in
+  // v0.files.json are restored alongside the primary v0.tsx snapshot. Writing
+  // only the primary snapshot left agent edits to reused components on disk.
+  const applied = await applyIterationVersionToSource(
+    ctx.found,
+    ctx.iterationRoots,
+    id,
+    0,
+    projectRoot
+  );
+  if (!applied.ok) {
+    return { ok: false, status: applied.status, message: applied.message };
   }
 
   return { ok: true, reverted: true };
