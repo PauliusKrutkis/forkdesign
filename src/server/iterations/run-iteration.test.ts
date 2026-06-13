@@ -34,8 +34,6 @@ vi.mock("../agent/run-log.ts", () => ({
 
 import { createNdjsonStream, runNewIteration } from "./run-iteration.ts";
 
-const ACTIVE_2_RE = /\bactive=2\b/;
-
 function createTestStream(): {
   events: object[];
   req: IncomingMessage;
