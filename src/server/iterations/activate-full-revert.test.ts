@@ -81,7 +81,9 @@ describe("applyIterationVersionToSource — full design revert", () => {
   });
 
   it("leaves sibling comments untouched while reverting the target's full design", async () => {
-    projectRoot = await mkdtemp(path.join(tmpdir(), "forkdesign-fullrevert-sib-"));
+    projectRoot = await mkdtemp(
+      path.join(tmpdir(), "forkdesign-fullrevert-sib-")
+    );
     const sourcePath = path.join(projectRoot, "src", "Page.tsx");
     const iterDir = path.join(
       projectRoot,

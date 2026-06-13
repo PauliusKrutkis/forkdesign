@@ -23,10 +23,10 @@ import { resolveSafeProjectRelativePath } from "../../platform/path-safety.ts";
 import type { AgentResult, AgentRunInput } from "../types.ts";
 
 /** Env flag that enables the stub (set by playwright.config webServer). */
-export const STUB_AGENT_ENV = "FORKDESIGN_E2E_STUB";
+const STUB_AGENT_ENV = "FORKDESIGN_E2E_STUB";
 
 /** Instruction marker that switches the stub into slow/abortable mode. */
-export const STUB_SLOW_TOKEN = "[[slow]]";
+const STUB_SLOW_TOKEN = "[[slow]]";
 
 /** How long slow mode waits before editing (abortable). */
 const STUB_SLOW_MS = 6000;

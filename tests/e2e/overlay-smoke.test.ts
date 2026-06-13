@@ -29,9 +29,7 @@ test.describe("overlay smoke", () => {
   });
 
   test("forkdesign dock pill mounts in dev", async ({ page }) => {
-    await expect(
-      page.locator('[data-overlay-root="true"]')
-    ).toBeAttached();
+    await expect(page.locator('[data-overlay-root="true"]')).toBeAttached();
     await expect(page.locator('[data-dock="true"]')).toBeVisible();
     await expect(
       page.getByRole("button", { name: "forkdesign comments" })

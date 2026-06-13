@@ -21,7 +21,11 @@ export default function globalSetup(): void {
     cwd: repoRoot,
     stdio: "inherit",
   });
-  if (!existsSync(fileURLToPath(new URL("../../dist/styles.css", import.meta.url)))) {
+  if (
+    !existsSync(
+      fileURLToPath(new URL("../../dist/styles.css", import.meta.url))
+    )
+  ) {
     throw new Error(
       "[e2e] build:css did not produce dist/styles.css — the playground alias would fail to resolve."
     );

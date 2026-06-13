@@ -381,10 +381,7 @@ function HistoryToggle({
       </span>
       <ChevronDown
         aria-hidden
-        className={cn(
-          "chevron h-4 w-4 shrink-0",
-          open && "chevron-open"
-        )}
+        className={cn("chevron h-4 w-4 shrink-0", open && "chevron-open")}
       />
     </button>
   );
