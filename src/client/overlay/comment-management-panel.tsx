@@ -408,7 +408,7 @@ function LeadingVisual({ src, author }: { src?: string; author: string }) {
     );
   }
   return (
-    <span className="mt-0.5 grid h-9 w-9 shrink-0 place-items-center rounded-md bg-[var(--agent-soft)] font-semibold text-[11px] text-[var(--agent)] uppercase">
+    <span className="mt-0.5 grid h-9 w-9 shrink-0 place-items-center rounded-md bg-[var(--fd-agent-soft)] font-semibold text-[11px] text-[var(--fd-agent)] uppercase">
       {initials(author)}
     </span>
   );
@@ -434,10 +434,10 @@ function RowRail({
       className={cn(
         "absolute inset-y-0 left-0 w-[3px] transition-colors",
         resolved && "bg-border",
-        !resolved && working && "bg-[var(--agent)]",
+        !resolved && working && "bg-[var(--fd-agent)]",
         !(resolved || working) &&
           interactive &&
-          "bg-transparent group-hover:bg-[var(--agent)] group-focus-visible:bg-[var(--agent)]"
+          "bg-transparent group-hover:bg-[var(--fd-agent)] group-focus-visible:bg-[var(--fd-agent)]"
       )}
     />
   );
@@ -474,7 +474,7 @@ function RowMeta({
         </span>
       ) : null}
       {activeVersion > 0 ? (
-        <span className="shrink-0 rounded-sm bg-[var(--agent-soft)] px-1 font-medium text-[10px] text-[var(--agent)] tabular-nums">
+        <span className="shrink-0 rounded-sm bg-[var(--fd-agent-soft)] px-1 font-medium text-[10px] text-[var(--fd-agent)] tabular-nums">
           v{activeVersion}
         </span>
       ) : null}
@@ -502,18 +502,18 @@ function AgentProgress({ run }: { run: AgentRunSummary }) {
     run.count === 1 ? "Agent working…" : `Working on ${run.count} variants…`;
   return (
     <div className="mt-2 flex flex-col gap-1.5">
-      <span className="inline-flex max-w-full items-center gap-1.5 font-medium text-[11px] text-[var(--agent)]">
+      <span className="inline-flex max-w-full items-center gap-1.5 font-medium text-[11px] text-[var(--fd-agent)]">
         <span
           aria-hidden
-          className="h-1.5 w-1.5 shrink-0 animate-pulse rounded-full bg-[var(--agent)]"
+          className="h-1.5 w-1.5 shrink-0 animate-pulse rounded-full bg-[var(--fd-agent)]"
         />
         <span className="truncate">{run.status ?? fallback}</span>
       </span>
       <span
         aria-hidden
-        className="relative block h-1 w-full overflow-hidden rounded-full bg-[var(--agent-soft)]"
+        className="relative block h-1 w-full overflow-hidden rounded-full bg-[var(--fd-agent-soft)]"
       >
-        <span className="indeterminate absolute inset-y-0 left-0 w-2/5 rounded-full bg-[var(--agent)]" />
+        <span className="indeterminate absolute inset-y-0 left-0 w-2/5 rounded-full bg-[var(--fd-agent)]" />
       </span>
     </div>
   );

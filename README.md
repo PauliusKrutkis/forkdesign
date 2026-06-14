@@ -1,18 +1,33 @@
 # forkdesign
 
-Dev-only comments for **Vite + React design playgrounds**. Click an element,
-leave feedback, and optionally let an agent generate source-backed iterations.
+**Local-first AI design iteration for React devs.** Comment on any component,
+get source-backed variants, and keep the whole history in your repo — no SaaS,
+every change is a `git diff`.
 
-ForkDesign stores feedback in your repo: comment markers live in `.tsx` files and
-iteration snapshots live under `designs/`.
+![ForkDesign: comment on a running component, and the feedback is written back into your source as a reviewable diff](./docs/assets/forkdesign-demo.gif)
 
+> Comments and variants live in your repo as JSX markers + on-disk snapshots you
+> commit, `git diff`, and `git checkout` — not in a vendor database.
+>
 > 0.x scope: React 19 and Vite 8. APIs may change before 1.0.
 
-## Screenshots
+## 30-second tour
 
-![ForkDesign comment composer over a Vite React design playground](./docs/assets/forkdesign-commenting.png)
+1. **Add the plugin** — one line in `vite.config.ts` (`forkDesign()`), dev-only.
+2. **Click the forkdesign pill,** then click any element in your running app.
+3. **Leave a comment** — it is written straight back into your `.tsx`, beside the
+   element, as a marker you can review like any other change:
 
-![ForkDesign agent iteration thread with version previews](./docs/assets/forkdesign-agent-iterations.png)
+   ```diff
+   -<h1>Review your running UI without leaving the browser.</h1>
+   +<h1 data-comment-anchor="32aae123-…">Review your running UI without leaving the browser.</h1>
+   +{/* @comment id="f3e9…" text="Tighten this headline — two lines max, and bump the contrast." author="dev@local" … */}
+   ```
+
+4. **Or switch to Agent mode** and let your local agent generate source-backed
+   variants; flip between versions and keep the one you like.
+5. **Review it like code** — `git diff` to see exactly what changed, `git
+   checkout` to revert. Nothing leaves your machine except what your own agent sends.
 
 ## Is this for you?
 
@@ -108,6 +123,15 @@ Screenshots and agent iterations are written under `designs/`. Add `designs/`
 and `public/designs/` to the host app's `.gitignore` if those artifacts should
 stay local.
 
+## Try it
+
+**Zero install:** open the playground in your browser and start commenting —
+
+[![Open in StackBlitz](https://developer.stackblitz.com/img/open_in_stackblitz.svg)](https://stackblitz.com/github/PauliusKrutkis/forkdesign/tree/main/examples/stackblitz)
+
+(Commenting works fully in the sandbox; agent iteration needs a local agent, so
+run it locally for variants.)
+
 ## Example
 
 Try the minimal Vite app in [`examples/basic-vite`](./examples/basic-vite):
@@ -124,6 +148,8 @@ written into `examples/basic-vite/src/`; local iteration artifacts land under
 `examples/basic-vite/designs/`.
 
 ## AI Iteration
+
+![ForkDesign agent iteration thread with version previews](./docs/assets/forkdesign-agent-iterations.png)
 
 Agent mode uses your configured local tools:
 

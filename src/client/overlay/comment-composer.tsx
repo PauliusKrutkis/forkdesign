@@ -469,7 +469,7 @@ export function CommentComposer({
 function SelectionReticle() {
   const arm = "h-2.5 w-2.5";
   const stroke =
-    "1.5px solid color-mix(in oklch, var(--foreground) 85%, transparent)";
+    "1.5px solid color-mix(in oklch, var(--fd-foreground) 85%, transparent)";
   const corners = [
     { id: "tl", top: -1, left: -1, borderTop: stroke, borderLeft: stroke },
     { id: "tr", top: -1, right: -1, borderTop: stroke, borderRight: stroke },
@@ -561,7 +561,7 @@ function PickerPreview({
             width: parent.rect.width,
             height: parent.rect.height,
             outline:
-              "1px dashed color-mix(in oklch, var(--ring) 50%, transparent)",
+              "1px dashed color-mix(in oklch, var(--fd-ring) 50%, transparent)",
             opacity: 0.55,
           }}
         />
@@ -577,9 +577,9 @@ function PickerPreview({
             top: rect.top,
             width: rect.width,
             height: rect.height,
-            background: "color-mix(in oklch, var(--ring) 7%, transparent)",
+            background: "color-mix(in oklch, var(--fd-ring) 7%, transparent)",
             outline:
-              "1px solid color-mix(in oklch, var(--ring) 45%, transparent)",
+              "1px solid color-mix(in oklch, var(--fd-ring) 45%, transparent)",
           }}
         />
       ))}
@@ -592,9 +592,10 @@ function PickerPreview({
           top: selected.rect.top,
           width: selected.rect.width,
           height: selected.rect.height,
-          background: "color-mix(in oklch, var(--foreground) 6%, transparent)",
+          background:
+            "color-mix(in oklch, var(--fd-foreground) 6%, transparent)",
           outline:
-            "1px solid color-mix(in oklch, var(--foreground) 35%, transparent)",
+            "1px solid color-mix(in oklch, var(--fd-foreground) 35%, transparent)",
         }}
       >
         <SelectionReticle />

@@ -1,3 +1,6 @@
 packages:
   - "."
   - "examples/*"
+  # Standalone playground that installs forkdesign from npm (for StackBlitz);
+  # kept out of the workspace so it does not depend on the local build.
+  - "!examples/stackblitz"

@@ -3,34 +3,148 @@
  * Bundled into forkdesign/styles.css with the overlay's generated utilities.
  */
 :root {
-  --radius: 0.5rem;
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.141 0.005 285.823);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.141 0.005 285.823);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.141 0.005 285.823);
-  --primary: oklch(0.21 0.006 285.885);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.967 0.001 286.375);
-  --secondary-foreground: oklch(0.21 0.006 285.885);
-  --muted: oklch(0.967 0.001 286.375);
-  --muted-foreground: oklch(0.552 0.016 285.938);
-  --accent: oklch(0.967 0.001 286.375);
-  --accent-foreground: oklch(0.21 0.006 285.885);
-  --destructive: oklch(0.577 0.245 27.325);
-  --destructive-foreground: oklch(0.985 0 0);
-  --border: oklch(0.92 0.004 286.32);
-  --input: oklch(0.92 0.004 286.32);
-  --ring: oklch(0.705 0.015 286.067);
+  --fd-radius: 0.5rem;
+  --fd-background: oklch(1 0 0);
+  --fd-foreground: oklch(0.141 0.005 285.823);
+  --fd-card: oklch(1 0 0);
+  --fd-card-foreground: oklch(0.141 0.005 285.823);
+  --fd-popover: oklch(1 0 0);
+  --fd-popover-foreground: oklch(0.141 0.005 285.823);
+  --fd-primary: oklch(0.21 0.006 285.885);
+  --fd-primary-foreground: oklch(0.985 0 0);
+  --fd-secondary: oklch(0.967 0.001 286.375);
+  --fd-secondary-foreground: oklch(0.21 0.006 285.885);
+  --fd-muted: oklch(0.967 0.001 286.375);
+  --fd-muted-foreground: oklch(0.552 0.016 285.938);
+  --fd-accent: oklch(0.967 0.001 286.375);
+  --fd-accent-foreground: oklch(0.21 0.006 285.885);
+  --fd-destructive: oklch(0.577 0.245 27.325);
+  --fd-destructive-foreground: oklch(0.985 0 0);
+  --fd-border: oklch(0.92 0.004 286.32);
+  --fd-input: oklch(0.92 0.004 286.32);
+  --fd-ring: oklch(0.705 0.015 286.067);
   /* Agent accent — matches design explorations */
-  --agent: oklch(0.52 0.2 280);
-  --agent-soft: oklch(0.95 0.03 285);
+  --fd-agent: oklch(0.52 0.2 280);
+  --fd-agent-soft: oklch(0.95 0.03 285);
+}
+
+/*
+ * Scoped preflight. The overlay's utilities assume a Tailwind base reset
+ * (box-sizing, form-control normalization, etc.), but forkdesign deliberately
+ * ships no global preflight so it can't disturb the host page. Without a reset
+ * the overlay renders un-styled in non-Tailwind hosts (e.g. native form-control
+ * fonts) yet looks fine inside a Tailwind app, because it silently borrows the
+ * host's reset. This restores that base, scoped to the overlay subtree only.
+ *
+ * Every selector is wrapped in :where() so its specificity stays 0 — the
+ * overlay's own utility classes always win over the reset. Applies to all
+ * surfaces tagged [data-comment-overlay], including the portaled tooltip/dialog
+ * that render at <body>.
+ */
+:where([data-comment-overlay]) {
+  font-family:
+    ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+    Roboto, "Helvetica Neue", Arial, sans-serif;
+  font-size: 14px;
+  -webkit-font-smoothing: antialiased;
+  line-height: 1.5;
+  color: var(--fd-foreground);
+  text-align: left;
+}
+
+:where([data-comment-overlay]),
+:where([data-comment-overlay] *) {
+  box-sizing: border-box;
+  border-style: solid;
+  border-width: 0;
+}
+
+[data-comment-overlay] *::before,
+[data-comment-overlay] *::after {
+  box-sizing: border-box;
+  border-style: solid;
+  border-width: 0;
+}
+
+:where(
+  [data-comment-overlay] h1,
+  [data-comment-overlay] h2,
+  [data-comment-overlay] h3,
+  [data-comment-overlay] h4,
+  [data-comment-overlay] p,
+  [data-comment-overlay] figure,
+  [data-comment-overlay] blockquote,
+  [data-comment-overlay] dl,
+  [data-comment-overlay] dd,
+  [data-comment-overlay] ul,
+  [data-comment-overlay] ol
+) {
+  padding: 0;
+  margin: 0;
+}
+
+:where([data-comment-overlay] ul),
+:where([data-comment-overlay] ol) {
+  list-style: none;
+}
+
+:where(
+  [data-comment-overlay] button,
+  [data-comment-overlay] input,
+  [data-comment-overlay] optgroup,
+  [data-comment-overlay] select,
+  [data-comment-overlay] textarea
+) {
+  padding: 0;
+  margin: 0;
+  font-family: inherit;
+  font-size: 100%;
+  font-variation-settings: inherit;
+  font-weight: inherit;
+  font-feature-settings: inherit;
+  line-height: inherit;
+  color: inherit;
+  letter-spacing: inherit;
+  background-color: transparent;
+}
+
+:where([data-comment-overlay] button),
+:where([data-comment-overlay] select) {
+  text-transform: none;
+}
+
+:where(
+  [data-comment-overlay] button,
+  [data-comment-overlay] [type="button"],
+  [data-comment-overlay] [type="reset"],
+  [data-comment-overlay] [type="submit"]
+) {
+  appearance: button;
+  cursor: pointer;
+  background-image: none;
+}
+
+:where([data-comment-overlay] textarea) {
+  resize: vertical;
+}
+
+:where([data-comment-overlay] :disabled) {
+  cursor: default;
+}
+
+:where(
+  [data-comment-overlay] svg,
+  [data-comment-overlay] img,
+  [data-comment-overlay] video,
+  [data-comment-overlay] canvas
+) {
+  display: block;
+  vertical-align: middle;
 }
 
 @keyframes pin-pulse {
   0% {
-    box-shadow: 0 0 0 0 var(--foreground);
+    box-shadow: 0 0 0 0 var(--fd-foreground);
     opacity: 0.4;
   }
   70% {
@@ -63,7 +177,7 @@
 }
 
 .animate-pin-agent-ping {
-  background: var(--agent);
+  background: var(--fd-agent);
   animation: pin-agent-ping 1.35s cubic-bezier(0.22, 1, 0.36, 1) infinite;
 }
 
@@ -128,9 +242,9 @@
 .shimmer {
   background-image: linear-gradient(
     100deg,
-    var(--muted) 30%,
-    color-mix(in oklch, var(--muted) 50%, var(--background)) 50%,
-    var(--muted) 70%
+    var(--fd-muted) 30%,
+    color-mix(in oklch, var(--fd-muted) 50%, var(--fd-background)) 50%,
+    var(--fd-muted) 70%
   );
   background-size: 220% 100%;
   animation: shimmer 1.3s ease-in-out infinite;
@@ -181,7 +295,7 @@
 .leader-line {
   opacity: 0.4;
   fill: none;
-  stroke: var(--foreground);
+  stroke: var(--fd-foreground);
   stroke-width: 1;
   stroke-dasharray: 2 5;
   animation: leader-dash 9s linear infinite;
@@ -189,7 +303,7 @@
 
 .leader-dot {
   opacity: 0.55;
-  fill: var(--foreground);
+  fill: var(--fd-foreground);
 }
 
 /* Collapsed-history expander chevron. */
