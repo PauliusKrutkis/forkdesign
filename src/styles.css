@@ -42,10 +42,11 @@
  * that render at <body>.
  */
 :where([data-comment-overlay]) {
-  font-family:
-    ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
-    Roboto, "Helvetica Neue", Arial, sans-serif;
-  font-size: 14px;
+  /* Inherit the host's typeface (its original behavior) so the overlay blends
+     in with the app it runs in — a host with a nice webfont gets it here too.
+     The form-control reset below re-inherits this, fixing the native monospace
+     fallback that appears in hosts without a Tailwind base reset. */
+  font-family: inherit;
   -webkit-font-smoothing: antialiased;
   line-height: 1.5;
   color: var(--fd-foreground);
@@ -55,6 +56,12 @@
 :where([data-comment-overlay]),
 :where([data-comment-overlay] *) {
   box-sizing: border-box;
+  /* Default bare `border` to the token gray (as Tailwind v3 preflight does).
+     Without this, Tailwind v4's `border` falls back to currentColor — a near
+     black border in non-Tailwind hosts instead of the subtle gray the overlay
+     was designed with. Explicit border-color utilities still override (higher
+     specificity than this :where rule). */
+  border-color: var(--fd-border);
   border-style: solid;
   border-width: 0;
 }
@@ -62,6 +69,7 @@
 [data-comment-overlay] *::before,
 [data-comment-overlay] *::after {
   box-sizing: border-box;
+  border-color: var(--fd-border);
   border-style: solid;
   border-width: 0;
 }
