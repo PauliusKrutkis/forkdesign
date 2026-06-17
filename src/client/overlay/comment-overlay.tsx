@@ -736,6 +736,12 @@ export function CommentOverlay({
         ) : null}
 
         <OverlayDock
+          // Drop the launcher below an open bubble: a floating bubble can land
+          // over the dock's corner, and the always-on-top pill would otherwise
+          // intercept clicks on the bubble's own controls (e.g. "Stop agent").
+          // The launcher stays rendered/clickable wherever the bubble doesn't
+          // cover it.
+          belowBubble={Boolean(openTarget)}
           composerActive={composerActive}
           enabled={settings.enabled}
           onPageCount={
