@@ -149,7 +149,11 @@ written into `examples/basic-vite/src/`; local iteration artifacts land under
 
 ## AI Iteration
 
-![ForkDesign agent iteration thread with version previews](./docs/assets/forkdesign-agent-iterations.png)
+![ForkDesign agent iteration: flip between source-backed design variants of the commented component and make one live](./docs/assets/forkdesign-versions.gif)
+
+> Each variant is a real on-disk redesign of the commented component. Click a
+> card to make it live in the running app; the winner is written back to your
+> source, the rest stay as a `git diff` you can keep or drop.
 
 Agent mode uses your configured local tools:
 
