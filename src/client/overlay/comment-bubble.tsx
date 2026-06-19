@@ -18,11 +18,15 @@ import { useBubbleLeadActions } from "./hooks/use-bubble-lead-actions.ts";
 import { useBubblePosture } from "./hooks/use-bubble-posture.ts";
 import { useIterations } from "./hooks/use-iterations.ts";
 import { useViewport } from "./hooks/use-viewport.ts";
+import {
+  BUBBLE_WIDTH,
+  INITIAL_BUBBLE_HEIGHT,
+  placeBubblePanel,
+} from "./lib/bubble-geometry.ts";
 import { scheduleAgentVariantScreenshots } from "./lib/capture-iteration-screenshot.ts";
 import { handleCommentBubbleKeydown } from "./lib/comment-bubble-keydown.ts";
 import { toErrorMessage } from "./lib/errors.ts";
 import { ignorePromiseRejection } from "./lib/ignore-promise-rejection.ts";
-import { dotRect, placeFloater } from "./lib/placement.ts";
 import type { TranscriptEditSubmit } from "./transcript-entry-composer.tsx";
 
 interface CommentBubbleProps {
@@ -79,13 +83,28 @@ interface CommentBubbleProps {
   reanchorRequest: number;
   rect: DOMRect;
   skipDeleteConfirmation?: boolean;
+  /**
+   * Skip the entrance animation when this bubble is taking over from the
+   * new-comment composer: the composer fades out on top of it, so animating
+   * the bubble in underneath would show the page through the gap. Captured at
+   * mount, so a later change has no effect.
+   */
+  suppressEntrance?: boolean;
 }
 
-const BUBBLE_WIDTH = 384;
 const BUBBLE_HEADER_HEIGHT = 34;
 const VIEWPORT_PADDING = 12;
-/** Conservative estimate for first render; updated by ResizeObserver. */
-const INITIAL_BUBBLE_HEIGHT = 320;
+
+/**
+ * The bubble shares its chrome with the new-comment composer. The entrance
+ * animation is dropped when the composer is fading out on top of it, so the
+ * two read as one panel swapping contents rather than two boxes.
+ */
+const bubbleClassName = (animateEntrance: boolean) =>
+  cn(
+    "pointer-events-auto fixed z-[9200] flex flex-col overflow-hidden rounded-lg border bg-background shadow-lg",
+    animateEntrance && "animate-bubble-in"
+  );
 /** Smooth dock/undock/peek; suppressed mid-gesture via the `dragging` flag. */
 const PANEL_TRANSITION =
   "left 0.3s cubic-bezier(0.65,0,0.1,1), top 0.3s cubic-bezier(0.65,0,0.1,1), width 0.3s cubic-bezier(0.65,0,0.1,1), height 0.3s cubic-bezier(0.65,0,0.1,1), opacity 0.18s ease, border-radius 0.3s";
@@ -195,9 +214,13 @@ export function CommentBubble({
   onSubmitReply,
   onEditReply,
   reanchorRequest,
+  suppressEntrance = false,
 }: CommentBubbleProps) {
   const lead = comments[0];
   const commentId = lead?.id ?? "";
+  // Captured once: the composer-hand-off case mounts with this true, and a
+  // later flip to false must not retrigger the entrance animation.
+  const [animateEntrance] = useState(!suppressEntrance);
   const {
     data: iterations,
     loading: iterationsLoading,
@@ -498,18 +521,7 @@ export function CommentBubble({
 
   const placement = useMemo(
     () =>
-      placeFloater({
-        anchor: dotRect({ right: rect.right, top: rect.top }, viewport),
-        size: {
-          width: BUBBLE_WIDTH,
-          height: Math.min(bubbleHeight, maxBubbleHeight),
-        },
-        preferredSide: "bottom",
-        viewport,
-        padding: VIEWPORT_PADDING,
-        gap: 10,
-        arrowSafePadding: 18,
-      }),
+      placeBubblePanel(rect, viewport, Math.min(bubbleHeight, maxBubbleHeight)),
     [rect, bubbleHeight, maxBubbleHeight, viewport]
   );
 
@@ -579,7 +591,7 @@ export function CommentBubble({
 
       <div
         aria-label="Comment"
-        className="pointer-events-auto fixed z-[9200] flex animate-bubble-in flex-col overflow-hidden rounded-lg border bg-background shadow-lg"
+        className={bubbleClassName(animateEntrance)}
         data-comment-overlay="true"
         onPointerDown={(e) => e.stopPropagation()}
         ref={containerRef}

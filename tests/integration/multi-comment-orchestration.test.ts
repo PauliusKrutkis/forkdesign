@@ -10,7 +10,7 @@
  * edits (`auxFiles`), and failures (`setNextError`). The point is to lock down
  * the ORCHESTRATION (which file gets edited, which snapshot/manifest entry is
  * written, which marker's `active=N` flips, what stays untouched), NOT the
- * quality of the model's output (that's Tier 2, tests/agent-eval/).
+ * quality of the model's output (not tested — that's the model's job, not ours).
  *
  * Conventions to follow (see tests/integration/iteration-snapshot.test.ts):
  *   - `createTempProject()` copies tests/fixtures/playground → temp `src/`.
@@ -55,15 +55,10 @@ describe("integration: multi-comment orchestration (stubbed agent)", () => {
   );
 
   // ── Multi-variant batch (count > 1) ────────────────────────────────────────
-  it.todo(
-    "a count=3 batch writes v1..v3 snapshots and activates the last-created version"
-    // TODO: stubAgent with setVariantForIndex(1|2|3, {source: distinctEdit_i});
-    // run runNewIteration({ count: 3, ... }); assert v1.tsx/v2.tsx/v3.tsx all
-    // exist with the per-index sources, manifest has 3 entries, and the marker's
-    // active points at the last-created version (match iteration-snapshot.test
-    // semantics).
-  );
-
+  // NOTE: the count=3 → v1..vN + activate-last case is covered by
+  // iteration-snapshot.test.ts ("count>1 in a single run produces multiple
+  // variants v1..vN in one batch"); only the prior-approaches threading below
+  // remains uncovered.
   it.todo(
     "priorVariantApproaches is threaded into later variants of the same batch"
     // TODO: assert agent.calls[1].priorVariantApproaches / [2] include the
@@ -77,14 +72,6 @@ describe("integration: multi-comment orchestration (stubbed agent)", () => {
     // plus the comment-file source edit. Assert the aux file is snapshotted in
     // the version dir and that activating a DIFFERENT version restores/reverts
     // the shared file (aux-files.ts baseline-merge + restore path).
-  );
-
-  // ── Activate / revert across versions ──────────────────────────────────────
-  it.todo(
-    "activating an older version rewrites source + flips active, and full-revert restores the baseline"
-    // TODO: create v1 and v2, applyIterationVersionToSource(..., v=1, ...),
-    // assert source matches v1.tsx and active=1; then revert to baseline (v0)
-    // and assert the marker source equals the post-write baseline.
   );
 
   // ── Cancellation / failure rollback (the bug class PRs #18/#20 were about) ─

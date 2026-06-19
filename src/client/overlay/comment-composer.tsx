@@ -8,6 +8,7 @@ import {
   type ComposerMode,
 } from "./comment-composer-bar.tsx";
 import { HotkeyTip } from "./hotkey-tip.tsx";
+import { BUBBLE_WIDTH, placeBubblePanel } from "./lib/bubble-geometry.ts";
 import { cssEscape } from "./lib/css-escape.ts";
 import { toErrorMessage } from "./lib/errors.ts";
 import { ignorePromiseRejection } from "./lib/ignore-promise-rejection.ts";
@@ -51,6 +52,12 @@ interface CommentComposerProps {
   /** when true, the composer mode is active (highlight + capture next click) */
   active: boolean;
   agentModel: OverlayModel;
+  /**
+   * When true, the just-saved comment's bubble has opened beneath the panel;
+   * fade the composer out so it cross-dissolves into the bubble in place
+   * rather than vanishing while the comment animates in elsewhere.
+   */
+  exiting?: boolean;
   onAgentModelChange: (model: OverlayModel) => void;
   /** turn composer mode off */
   onCancel: () => void;
@@ -63,7 +70,6 @@ interface CommentComposerProps {
   onSubmit: (entry: ComposerSubmission) => Promise<ComposerSubmitResult>;
 }
 
-const PANEL_WIDTH = 400;
 const VIEWPORT_PADDING = 12;
 const MAX_PICKER_CRUMBS = 5;
 const PICKER_CLEAR_DELAY_MS = 750;
@@ -103,6 +109,7 @@ interface PickerState {
  */
 export function CommentComposer({
   active,
+  exiting = false,
   agentModel,
   onAgentModelChange,
   onCancel,
@@ -411,18 +418,11 @@ export function CommentComposer({
       {target ? (
         <ComposerPanel
           agentModel={agentModel}
-          clickPoint={target.clickPoint}
+          exiting={exiting}
           onAgentModelChange={onAgentModelChange}
           onCancel={() => {
             setTarget(null);
             setText("");
-          }}
-          onSaved={() => {
-            // Defer the reset slightly so the "saved" pill is visible.
-            window.setTimeout(() => {
-              setTarget(null);
-              setText("");
-            }, 600);
           }}
           onSubmit={async ({ runAgent, versionCount, model }) => {
             const trimmed = text.trim();
@@ -683,7 +683,7 @@ type ComposerPanelStatus =
 
 function ComposerPanel({
   target,
-  clickPoint,
+  exiting,
   text,
   textareaRef,
   agentModel,
@@ -691,10 +691,9 @@ function ComposerPanel({
   onTextChange,
   onCancel,
   onSubmit,
-  onSaved,
 }: {
   target: HTMLElement;
-  clickPoint: { x: number; y: number };
+  exiting: boolean;
   text: string;
   textareaRef: React.RefObject<HTMLTextAreaElement | null>;
   agentModel: OverlayModel;
@@ -706,31 +705,23 @@ function ComposerPanel({
     versionCount: number;
     model: OverlayModel;
   }) => Promise<ComposerSubmitResult>;
-  onSaved: () => void;
 }) {
   const [status, setStatus] = useState<ComposerPanelStatus>({ kind: "idle" });
   const [mode, setMode] = useState<ComposerMode>("agent");
   const [versionCount, setVersionCount] = useState(DEFAULT_AGENT_VERSION_COUNT);
 
-  // Anchor the composer panel to the user's click point, not to the target
-  // element's bounding box — for page-wide elements whose `bottom` is below
-  // the viewport, anchoring to the element would push the panel off-screen.
-  // Estimated panel height covers header + composer.
+  // Place the panel exactly where this element's comment bubble will dock —
+  // same width, same anchor, same placement math — so on save the bubble takes
+  // over in place instead of appearing somewhere else. placeBubblePanel also
+  // clamps to the viewport, which handles page-wide elements that would
+  // otherwise push the panel off-screen.
   const viewportW = typeof window === "undefined" ? 1024 : window.innerWidth;
   const viewportH = typeof window === "undefined" ? 768 : window.innerHeight;
-  const ESTIMATED_PANEL_HEIGHT = 220;
-  const desiredLeft = clickPoint.x - PANEL_WIDTH / 2;
-  const left = Math.max(
-    VIEWPORT_PADDING,
-    Math.min(desiredLeft, viewportW - PANEL_WIDTH - VIEWPORT_PADDING)
-  );
-  // Prefer placing below the click point; if the click is near the viewport
-  // bottom and the panel would clip, flip above.
-  const desiredTop = clickPoint.y + 12;
-  const top =
-    desiredTop + ESTIMATED_PANEL_HEIGHT + VIEWPORT_PADDING > viewportH
-      ? Math.max(VIEWPORT_PADDING, clickPoint.y - ESTIMATED_PANEL_HEIGHT - 12)
-      : desiredTop;
+  const targetRect = target.getBoundingClientRect();
+  const { left, top } = placeBubblePanel(targetRect, {
+    width: viewportW,
+    height: viewportH,
+  });
 
   const submitting = status.kind === "saving";
 
@@ -765,8 +756,10 @@ function ComposerPanel({
       return;
     }
     if (result.ok) {
+      // Stay in the "saved" state until the parent closes the composer — which
+      // it does the moment the new comment's bubble opens, keeping the form and
+      // the comment in sync. Closing tears this panel down via the active flip.
       setStatus({ kind: "saved" });
-      onSaved();
     } else {
       setStatus({ kind: "error", message: result.error });
     }
@@ -778,7 +771,16 @@ function ComposerPanel({
       data-comment-overlay="true"
       data-testid="forkdesign-composer-panel"
       onPointerDown={(e) => e.stopPropagation()}
-      style={{ left, top, width: PANEL_WIDTH }}
+      style={{
+        left,
+        top,
+        width: BUBBLE_WIDTH,
+        // On hand-off, fade out on top of the now-open bubble so it reads as
+        // one panel swapping contents. 0.17s mirrors the bubble's entrance.
+        opacity: exiting ? 0 : 1,
+        pointerEvents: exiting ? "none" : undefined,
+        transition: "opacity 0.17s ease",
+      }}
     >
       {/* Header — orients the user: what they're doing (left), which element
           the note is anchored to (middle), and a way out (right). */}

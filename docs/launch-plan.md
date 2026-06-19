@@ -50,13 +50,13 @@ Supporting messages, in priority order:
 
 ## The hard truth
 
-**The bottleneck is distribution, not features.** The product is already launch-worthy for a 0.x. Another month of features with zero users teaches nothing. Resist building (yes — including the agent-eval harness) until the launch is out and users tell you what's missing.
+**The bottleneck is distribution, not features.** The product is already launch-worthy for a 0.x. Another month of features with zero users teaches nothing. Resist building until the launch is out and users tell you what's missing.
 
 ---
 
 ## Phase 0 — Repo hygiene (PREREQUISITE — you can't invite people to a mess)
 
-> Status note: stale cursor PRs (#17–#20) already closed; EOF parser fix committed on `release-candidate`; multi-comment + agent-eval scaffolding added.
+> Status note: stale cursor PRs (#17–#20) already closed; EOF parser fix committed on `release-candidate`; multi-comment scaffolding added. (Real-agent eval scaffold dropped — we don't own the agent, so generated-design quality and agent regressions aren't ours to test; the deterministic parts we do own — prompt construction, orchestration — are covered by stubbed tests.)
 
 - [ ] Auto-publish + first release (trusted publishing via npm OIDC)
   - [x] `.github/workflows/publish.yml`: on push to `main`, publishes only when `package.json` version is new; gates on lint/typecheck/test/build **and a non-empty `dist/` check** so an empty build can't ship; tags `v<version>` after publish. (2026-06-13)
@@ -101,7 +101,7 @@ Channels that actually move React tooling (lead with the *opinion/story*, not th
 - [ ] Personally talk to the **first 10 real users**. This is your only reliable B→C signal.
 - [ ] Keep a visible changelog / "building in public" cadence.
 - [ ] **Watch for the wedge:** a repeated, specific, paid-shaped ask → that's when C becomes worth a conversation.
-- [ ] *Only now* resume feature work, prioritized by what real users ask for (the agent-eval harness lands here — quality signal becomes worth it once people rely on output).
+- [ ] *Only now* resume feature work, prioritized by what real users ask for. (If you ever start tuning your own prompt/context — secret sauce — build an offline experiment script to measure it then; that's not a CI test suite.)
 
 ---
 

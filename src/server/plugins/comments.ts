@@ -1,4 +1,6 @@
+import { existsSync, readFileSync } from "node:fs";
 import type { IncomingMessage, ServerResponse } from "node:http";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Plugin, ViteDevServer } from "vite";
 import { configureAgentRuntime } from "../agent/config.ts";
@@ -46,6 +48,73 @@ const CLIENT_BARE_IMPORTS = new Set([
  */
 const SELF_MODULE_PATH = fileURLToPath(import.meta.url);
 
+/**
+ * Walk up from a file inside this package to its root (the directory whose
+ * `package.json` is named `forkdesign`). Returns null if not found within a
+ * few levels — e.g. an unusual install layout — so callers can fall back.
+ */
+function findPackageRoot(fromFile: string): string | null {
+  let dir = dirname(fromFile);
+  for (let depth = 0; depth < 10; depth++) {
+    const pkgPath = join(dir, "package.json");
+    if (existsSync(pkgPath)) {
+      try {
+        const pkg = JSON.parse(readFileSync(pkgPath, "utf8")) as {
+          name?: string;
+          exports?: Record<string, { source?: string } | string>;
+        };
+        if (pkg.name === PACKAGE_NAME) {
+          return dir;
+        }
+      } catch {
+        // Unreadable/invalid package.json — keep walking up.
+      }
+    }
+    const parent = dirname(dir);
+    if (parent === dir) {
+      break;
+    }
+    dir = parent;
+  }
+  return null;
+}
+
+/** This package's root directory, or null if it can't be located. */
+const PACKAGE_ROOT = findPackageRoot(SELF_MODULE_PATH);
+
+/**
+ * Absolute path to the overlay's TypeScript entry (`exports["."].source`) when
+ * this package is consumed from a linked checkout that ships `src/` — i.e. the
+ * common "develop the overlay against a real app" setup (`link:../redline`).
+ *
+ * Resolving the overlay to source here lets the consumer's Vite serve it with
+ * live HMR, so overlay edits show up without a `pnpm build`. A published
+ * install ships only `dist/`, so `src/index.ts` is absent and this returns
+ * null — callers then fall back to the built entry. Computed once: the package
+ * layout can't change within a dev session.
+ */
+const clientSourceEntry: string | null = (() => {
+  if (!PACKAGE_ROOT) {
+    return null;
+  }
+  let sourceRel = "./src/index.ts";
+  try {
+    const pkg = JSON.parse(
+      readFileSync(join(PACKAGE_ROOT, "package.json"), "utf8")
+    ) as {
+      exports?: Record<string, { source?: string } | string>;
+    };
+    const entry = pkg.exports?.["."];
+    if (entry && typeof entry === "object" && entry.source) {
+      sourceRel = entry.source;
+    }
+  } catch {
+    // Fall back to the conventional path below.
+  }
+  const abs = resolve(PACKAGE_ROOT, sourceRel);
+  return existsSync(abs) ? abs : null;
+})();
+
 interface SourceChangeController {
   onInternalSourceWorkFinish: (event: IterationSourceAppliedEvent) => void;
   onInternalSourceWorkStart: (event: IterationSourceAppliedEvent) => void;
@@ -85,11 +154,11 @@ function rejectRemoteApiRequest(
   return true;
 }
 
-function forkDesignClientModule(): string {
+function forkDesignClientModule(overlayImport: string): string {
   return `
 import { createElement } from "react";
 import { createRoot } from "react-dom/client";
-import { CommentOverlay } from "forkdesign";
+import { CommentOverlay } from "${overlayImport}";
 import "forkdesign/styles.css";
 
 const ROOT_ID = "overlay-root";
@@ -283,9 +352,38 @@ export function comments(options: CommentsPluginOptions = {}): Plugin {
   const mountOverlay = options.mountOverlay ?? false;
   let projectRoot = process.cwd();
 
+  // When the overlay is served from this package's TypeScript source (a linked
+  // checkout — see `clientSourceEntry`), the consumer's Vite must (a) dedupe
+  // React so the overlay shares the app's single copy rather than resolving its
+  // own through the symlink — two copies break hooks — and (b) be allowed to
+  // read files from this package's root, which lives outside the consumer's
+  // project. Both are no-ops for a built/published install.
+  const serveFromSource = mountOverlay && clientSourceEntry !== null;
+
+  // The auto-mounted client imports the overlay from this specifier. From a
+  // linked checkout we point straight at the TypeScript source via Vite's
+  // `/@fs/` path so edits HMR live; otherwise the bare package name resolves to
+  // the built `dist` entry. (Resolving the bare name to source via `resolveId`
+  // isn't reliable — Vite's core resolver claims that import before our hook
+  // sees it — so we pick the specifier here, where we fully control it.)
+  const overlayImport =
+    serveFromSource && clientSourceEntry
+      ? `/@fs${clientSourceEntry}`
+      : PACKAGE_NAME;
+
   return {
     name: "vite-plugin-comments",
     apply: "serve",
+
+    config() {
+      if (!(serveFromSource && PACKAGE_ROOT)) {
+        return;
+      }
+      return {
+        resolve: { dedupe: ["react", "react-dom"] },
+        server: { fs: { allow: [PACKAGE_ROOT] } },
+      };
+    },
 
     configResolved(config) {
       projectRoot = config.root;
@@ -372,7 +470,7 @@ export function comments(options: CommentsPluginOptions = {}): Plugin {
 
     load(id) {
       if (mountOverlay && id === RESOLVED_VIRTUAL_CLIENT_ID) {
-        return forkDesignClientModule();
+        return forkDesignClientModule(overlayImport);
       }
       return null;
     },

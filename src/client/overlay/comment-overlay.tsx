@@ -101,6 +101,10 @@ export function CommentOverlay({
     null
   );
   const [composerActive, setComposerActive] = useState(false);
+  // True for the brief cross-fade after a new comment saves: its bubble has
+  // opened beneath the composer, which now fades out in place. See the
+  // pendingOpenId effect.
+  const [composerExiting, setComposerExiting] = useState(false);
   const [shell, setShell] = useState<ShellTab | null>(null);
   /**
    * User-visible overlay settings: enabled flag, toggle corner, author
@@ -248,8 +252,18 @@ export function CommentOverlay({
     }
     const c = comments.find((x) => x.id === pendingOpenId);
     if (c) {
+      // Open the bubble (it mounts beneath the composer, entrance suppressed)
+      // and cross-fade: the composer fades out on top of it over one frame-set,
+      // then unmounts. One panel appears to swap its contents in place, instead
+      // of the form vanishing while the comment animates in somewhere else.
       setOpenTarget({ anchor: c.anchor, instance: 0 });
+      setComposerExiting(true);
+      const t = window.setTimeout(() => {
+        setComposerActive(false);
+        setComposerExiting(false);
+      }, 170);
       setPendingOpenId(null);
+      return () => window.clearTimeout(t);
     }
   }, [comments, pendingOpenId]);
 
@@ -426,10 +440,13 @@ export function CommentOverlay({
             model: entry.model ?? settings.model,
           });
         }
-      }
-      window.setTimeout(() => {
+        // The composer closes the instant this comment's bubble opens — see the
+        // pendingOpenId effect above. Keeping both on one event removes the gap
+        // between the comment appearing and the form going away.
+      } else {
+        // No id to follow to an open bubble; close the composer directly.
         setComposerActive(false);
-      }, 650);
+      }
       return { ok: true };
     },
     [settings.model]
@@ -720,6 +737,7 @@ export function CommentOverlay({
             onSubmitReply={handleSubmitReply}
             reanchorRequest={reanchorRequest}
             skipDeleteConfirmation={settings.skipDeleteConfirmation}
+            suppressEntrance={composerExiting}
             target={openTarget}
           />
         ) : null}
@@ -729,6 +747,7 @@ export function CommentOverlay({
           <CommentComposer
             active={composerActive}
             agentModel={settings.model}
+            exiting={composerExiting}
             onAgentModelChange={(model) => updateSettings({ model })}
             onCancel={() => setComposerActive(false)}
             onSubmit={handleSubmit}
@@ -903,6 +922,7 @@ function OpenBubble({
   onSubmitReply,
   onEditReply,
   reanchorRequest,
+  suppressEntrance,
 }: {
   activeVersionByComment: Map<string, number>;
   agentRun: OverlayAgentRun | null;
@@ -939,6 +959,7 @@ function OpenBubble({
   onSubmitReply: (id: string, text: string, v?: number) => Promise<void>;
   onEditReply: (id: string, replyIndex: number, text: string) => Promise<void>;
   reanchorRequest: number;
+  suppressEntrance: boolean;
 }) {
   const instances = useAnchorRects(target.anchor);
   const rect = findAnchorInstanceRect(instances, target.instance);
@@ -975,6 +996,7 @@ function OpenBubble({
       reanchorRequest={reanchorRequest}
       rect={rect}
       skipDeleteConfirmation={skipDeleteConfirmation}
+      suppressEntrance={suppressEntrance}
     />
   );
 }
