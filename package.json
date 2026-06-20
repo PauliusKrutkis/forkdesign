@@ -26,7 +26,7 @@
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^5.0.0",
-    "happy-dom": "^20.10.3",
+    "happy-dom": "^20.10.6",
     "knip": "^6.14.2",
     "postcss": "^8.5.15",
     "react": "^19.2.7",
