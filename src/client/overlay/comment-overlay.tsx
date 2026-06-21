@@ -253,19 +253,30 @@ export function CommentOverlay({
     const c = comments.find((x) => x.id === pendingOpenId);
     if (c) {
       // Open the bubble (it mounts beneath the composer, entrance suppressed)
-      // and cross-fade: the composer fades out on top of it over one frame-set,
-      // then unmounts. One panel appears to swap its contents in place, instead
-      // of the form vanishing while the comment animates in somewhere else.
+      // and start the cross-fade: the composer fades out on top of it, then a
+      // dedicated effect (keyed on composerExiting) tears it down. One panel
+      // appears to swap its contents in place, instead of the form vanishing
+      // while the comment animates in somewhere else.
       setOpenTarget({ anchor: c.anchor, instance: 0 });
       setComposerExiting(true);
-      const t = window.setTimeout(() => {
-        setComposerActive(false);
-        setComposerExiting(false);
-      }, 170);
       setPendingOpenId(null);
-      return () => window.clearTimeout(t);
     }
   }, [comments, pendingOpenId]);
+
+  // Tear the composer down once the cross-fade completes. Keyed only on
+  // `composerExiting` so the constant `comments` churn during an agent run
+  // can't cancel the timeout mid-fade and leave the composer mounted on top of
+  // the bubble (two stacked panels, duplicate controls).
+  useEffect(() => {
+    if (!composerExiting) {
+      return;
+    }
+    const t = window.setTimeout(() => {
+      setComposerActive(false);
+      setComposerExiting(false);
+    }, 170);
+    return () => window.clearTimeout(t);
+  }, [composerExiting]);
 
   useEffect(() => {
     if (!pendingOpen) {
