@@ -2,7 +2,7 @@ import { existsSync, readFileSync } from "node:fs";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import type { Plugin, ViteDevServer } from "vite";
+import { type Plugin, searchForWorkspaceRoot, type ViteDevServer } from "vite";
 import { configureAgentRuntime } from "../agent/config.ts";
 import type { AgentModel } from "../agent/models.ts";
 import type { AgentSkill } from "../agent/skills.ts";
@@ -375,13 +375,23 @@ export function comments(options: CommentsPluginOptions = {}): Plugin {
     name: "vite-plugin-comments",
     apply: "serve",
 
-    config() {
+    config(userConfig) {
       if (!(serveFromSource && PACKAGE_ROOT)) {
         return;
       }
+      // Specifying `fs.allow` at all suppresses Vite's default entry (the
+      // consumer's workspace root), which would block the consumer from
+      // serving its own files (e.g. index.html). So restore that default
+      // explicitly alongside PACKAGE_ROOT, which lives outside the consumer's
+      // project and must also be readable when serving the overlay from source.
+      const consumerRoot = userConfig.root
+        ? resolve(userConfig.root)
+        : process.cwd();
       return {
         resolve: { dedupe: ["react", "react-dom"] },
-        server: { fs: { allow: [PACKAGE_ROOT] } },
+        server: {
+          fs: { allow: [searchForWorkspaceRoot(consumerRoot), PACKAGE_ROOT] },
+        },
       };
     },
 

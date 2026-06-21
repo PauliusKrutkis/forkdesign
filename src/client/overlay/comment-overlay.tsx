@@ -79,6 +79,52 @@ interface OverlayAgentRun {
   status?: string;
 }
 
+/** After-navigation intent: open this anchor's bubble once it lands in the DOM. */
+type PendingOpen = { anchor: string; view?: string | null };
+
+/**
+ * When "go to page" has no in-app `navigate` and falls back to a full page
+ * load, React state is wiped on reload. Stash the pending-open intent in
+ * sessionStorage so the freshly-mounted overlay can pick it up and open the
+ * bubble on the destination page.
+ */
+const PENDING_OPEN_STORAGE_KEY = "redline:pending-open-comment";
+
+/** Read + clear the persisted pending-open intent (one-shot, survives one reload). */
+function readPersistedPendingOpen(): PendingOpen | null {
+  if (typeof window === "undefined") {
+    return null;
+  }
+  try {
+    const raw = window.sessionStorage.getItem(PENDING_OPEN_STORAGE_KEY);
+    if (!raw) {
+      return null;
+    }
+    window.sessionStorage.removeItem(PENDING_OPEN_STORAGE_KEY);
+    const parsed = JSON.parse(raw) as PendingOpen;
+    if (parsed && typeof parsed.anchor === "string") {
+      return parsed;
+    }
+  } catch {
+    // Malformed/unavailable storage: nothing to restore.
+  }
+  return null;
+}
+
+function persistPendingOpen(pending: PendingOpen): void {
+  if (typeof window === "undefined") {
+    return;
+  }
+  try {
+    window.sessionStorage.setItem(
+      PENDING_OPEN_STORAGE_KEY,
+      JSON.stringify(pending)
+    );
+  } catch {
+    // Storage unavailable (private mode/quota): degrade to no auto-open.
+  }
+}
+
 interface ActiveIterationRunResponse {
   runs?: Array<{
     anchor: string;
@@ -149,11 +195,14 @@ export function CommentOverlay({
   >(() => new Map());
   /** True while the open thread is docked — its pin is hidden (ring stands in). */
   const [dockedOpen, setDockedOpen] = useState(false);
-  /** After navigation, open the bubble once the anchor appears in the DOM. */
-  const [pendingOpen, setPendingOpen] = useState<{
-    anchor: string;
-    view?: string | null;
-  } | null>(null);
+  /**
+   * After navigation, open the bubble once the anchor appears in the DOM.
+   * Initialized from sessionStorage so a full-page-reload navigation (no
+   * in-app `navigate`) still opens the comment on the destination page.
+   */
+  const [pendingOpen, setPendingOpen] = useState<PendingOpen | null>(() =>
+    readPersistedPendingOpen()
+  );
 
   // Bulk-fetch comments across ALL allowed .tsx files in src/, then re-fetch
   // on every Vite HMR update so a freshly-written marker shows up without a
@@ -618,9 +667,14 @@ export function CommentOverlay({
         return;
       }
 
+      // Without an in-app navigate, navigateTo does a full page reload that
+      // wipes `pendingOpen`. Stash it so the remounted overlay can restore it.
+      if (!navigateProp) {
+        persistPendingOpen({ anchor: comment.anchor, view: comment.view });
+      }
       navigateTo(route);
     },
-    [resolveCommentRoute, inDomAnchors, handleJump, navigateTo]
+    [resolveCommentRoute, inDomAnchors, handleJump, navigateTo, navigateProp]
   );
 
   const handleDelete = useCallback(
