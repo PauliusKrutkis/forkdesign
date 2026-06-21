@@ -10,6 +10,8 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import {
+  acquireIterationSourceLock,
+  activeIterationRunVisibleActive,
   finishIterationRun,
   startIterationRun,
   updateIterationRunVisibleActive,
@@ -18,7 +20,15 @@ import {
   createJsonRequest,
   createMockResponse,
 } from "../../platform/http-test-helpers.ts";
-import { handleIterationsDelete, handleIterationsList } from "./routes.ts";
+import {
+  handleIterationsActivate,
+  handleIterationsDelete,
+  handleIterationsList,
+} from "./routes.ts";
+
+function flush(): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, 10));
+}
 
 const COMMENT_ID = "comment-route-test";
 const ANCHOR_ID = "anchor-route-test";
@@ -147,5 +157,82 @@ describe("handleIterationsDelete", () => {
     expect(source).toContain("Version 1");
     expect(source).not.toContain("Version 2");
     expect(source).toMatch(ACTIVE_V1_RE);
+  });
+});
+
+describe("handleIterationsActivate", () => {
+  let projectRoot: string | undefined;
+
+  afterEach(() => {
+    if (projectRoot) {
+      rmSync(projectRoot, { recursive: true, force: true });
+      projectRoot = undefined;
+    }
+  });
+
+  it("switches to a finished version while a run is active (no 409) and tracks visible active", async () => {
+    const seeded = seedProject(0);
+    projectRoot = seeded.projectRoot;
+    const controller = startIterationRun({
+      anchor: ANCHOR_ID,
+      commentId: COMMENT_ID,
+      count: 4,
+      model: "composer-2.5-fast",
+      startedAt: 123,
+    });
+
+    try {
+      const mock = createMockResponse();
+      const req = createJsonRequest({ id: COMMENT_ID, v: 1 });
+
+      await handleIterationsActivate(req, mock.res, projectRoot, []);
+
+      expect(mock.getStatus()).toBe(200);
+      expect(mock.getJson()).toMatchObject({
+        active: 1,
+        file: "src/Page.tsx",
+        id: COMMENT_ID,
+        ok: true,
+      });
+      // The in-flight run now reports the user's choice, not the marker value.
+      expect(activeIterationRunVisibleActive(COMMENT_ID)).toBe(1);
+
+      const source = readFileSync(seeded.sourcePath, "utf8");
+      expect(source).toContain("Version 1");
+      expect(source).toMatch(ACTIVE_V1_RE);
+    } finally {
+      finishIterationRun(COMMENT_ID, controller);
+    }
+  });
+
+  it("waits for the source lock before rewriting the live file", async () => {
+    const seeded = seedProject(0);
+    projectRoot = seeded.projectRoot;
+    // Simulate the agent holding the source while it edits the current variant.
+    const release = await acquireIterationSourceLock(COMMENT_ID);
+
+    const mock = createMockResponse();
+    const req = createJsonRequest({ id: COMMENT_ID, v: 1 });
+    let settled = false;
+    const activatePromise = handleIterationsActivate(
+      req,
+      mock.res,
+      projectRoot,
+      []
+    ).then(() => {
+      settled = true;
+    });
+
+    await flush();
+    // Blocked on the lock: the live source must still be the baseline.
+    expect(settled).toBe(false);
+    expect(readFileSync(seeded.sourcePath, "utf8")).toContain("Version 0");
+
+    release();
+    await activatePromise;
+
+    expect(settled).toBe(true);
+    expect(mock.getStatus()).toBe(200);
+    expect(readFileSync(seeded.sourcePath, "utf8")).toContain("Version 1");
   });
 });

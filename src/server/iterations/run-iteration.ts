@@ -36,6 +36,7 @@ import {
   pngMtimeMs,
   resolveIterationDirRoots,
 } from "./manifest.ts";
+import { acquireIterationSourceLock } from "./runs.ts";
 import {
   diffSourceSnapshots,
   snapshotSourceFiles,
@@ -792,141 +793,156 @@ async function runVariantBatch(args: {
   const touchedAux = new Set<string>();
 
   for (let variantIndex = 1; variantIndex <= args.count; variantIndex += 1) {
-    if (
-      await restoreSourceTreeIfCancelled({
-        baselineFiles,
-        projectRoot: args.projectRoot,
-        stream: args.stream,
-      })
-    ) {
-      break;
-    }
-
-    const variantStartedAt = Date.now();
-    const internalSourceEvent = {
-      absolutePath: args.found.absolutePath,
-      active: 0,
-      file: args.found.relativePath,
-      id: args.id,
-    };
-    await notifyInternalSourceWork(
-      args.hooks?.onInternalSourceWorkStart,
-      internalSourceEvent
-    );
-    let variantOutput: Awaited<ReturnType<typeof runSingleAgentVariant>>;
+    // Hold the source lock for the whole variant — baseline reset, agent edits,
+    // persist, and screenshot wait all mutate or depend on the live source
+    // file. Releasing between variants is what lets a queued user switch (or a
+    // post-variant capture) slip in at a safe boundary. See acquireIterationSourceLock.
+    const releaseSourceLock = await acquireIterationSourceLock(args.id);
     try {
-      variantOutput = await runSingleAgentVariant({
-        baselineFiles,
-        beforeSource: args.beforeSource,
-        commentId: args.id,
-        commentRel,
-        count: args.count,
-        found: args.found,
-        model: args.model,
-        priorVariantApproaches,
-        projectRoot: args.projectRoot,
-        skills: args.skills,
-        stream: args.stream,
-        touchedAux,
-        variantIndex,
-      });
-    } finally {
+      if (
+        await restoreSourceTreeIfCancelled({
+          baselineFiles,
+          projectRoot: args.projectRoot,
+          stream: args.stream,
+        })
+      ) {
+        break;
+      }
+
+      const variantStartedAt = Date.now();
+      const internalSourceEvent = {
+        absolutePath: args.found.absolutePath,
+        active: 0,
+        file: args.found.relativePath,
+        id: args.id,
+      };
       await notifyInternalSourceWork(
-        args.hooks?.onInternalSourceWorkFinish,
+        args.hooks?.onInternalSourceWorkStart,
         internalSourceEvent
       );
-    }
-    const { result, lastAgentSummary } = variantOutput;
+      let variantOutput: Awaited<ReturnType<typeof runSingleAgentVariant>>;
+      try {
+        variantOutput = await runSingleAgentVariant({
+          baselineFiles,
+          beforeSource: args.beforeSource,
+          commentId: args.id,
+          commentRel,
+          count: args.count,
+          found: args.found,
+          model: args.model,
+          priorVariantApproaches,
+          projectRoot: args.projectRoot,
+          skills: args.skills,
+          stream: args.stream,
+          touchedAux,
+          variantIndex,
+        });
+      } finally {
+        await notifyInternalSourceWork(
+          args.hooks?.onInternalSourceWorkFinish,
+          internalSourceEvent
+        );
+      }
+      const { result, lastAgentSummary } = variantOutput;
 
-    if (
-      await restoreSourceTreeIfCancelled({
-        baselineFiles,
-        projectRoot: args.projectRoot,
+      if (
+        await restoreSourceTreeIfCancelled({
+          baselineFiles,
+          projectRoot: args.projectRoot,
+          stream: args.stream,
+        })
+      ) {
+        break;
+      }
+
+      if (!result.ok) {
+        await restoreSourceTreeToSnapshot(args.projectRoot, baselineFiles);
+        state.hadAgentFailure = true;
+        state.lastAgentError = result.error;
+        args.recordRun({
+          ok: false,
+          stage: result.stage,
+          error: result.error,
+          attempts: result.attempts,
+          variantIndex,
+          durationMs: Date.now() - variantStartedAt,
+        });
+        if (args.count === 1) {
+          args.stream.endStream({
+            type: "done",
+            ok: false,
+            error: result.error,
+          });
+          state.terminalReached = true;
+          return state;
+        }
+        continue;
+      }
+
+      if (!result.changed) {
+        args.recordRun({
+          ok: true,
+          stage: "done",
+          changed: false,
+          modelUsed: result.modelUsed,
+          turnsUsed: result.turnsUsed,
+          toolCalls: result.toolCalls,
+          attempts: result.attempts,
+          variantIndex,
+          durationMs: Date.now() - variantStartedAt,
+        });
+        continue;
+      }
+
+      const step = await persistChangedVariant({
+        count: args.count,
+        found: args.found,
+        hooks: args.hooks,
+        id: args.id,
+        iterDir: args.iterDir,
+        iterationRoots: args.iterationRoots,
+        lastAgentSummary,
+        recordRun: args.recordRun,
+        runCreatedAt: args.runCreatedAt,
+        runId: args.runId,
+        result,
         stream: args.stream,
-      })
-    ) {
-      break;
-    }
-
-    if (!result.ok) {
-      await restoreSourceTreeToSnapshot(args.projectRoot, baselineFiles);
-      state.hadAgentFailure = true;
-      state.lastAgentError = result.error;
-      args.recordRun({
-        ok: false,
-        stage: result.stage,
-        error: result.error,
-        attempts: result.attempts,
         variantIndex,
-        durationMs: Date.now() - variantStartedAt,
+        variantStartedAt,
       });
-      if (args.count === 1) {
-        args.stream.endStream({ type: "done", ok: false, error: result.error });
+
+      if (step.action === "abort") {
+        await restoreSourceTreeToSnapshot(args.projectRoot, baselineFiles);
+        args.stream.endStream({ type: "done", ok: false, error: step.error });
         state.terminalReached = true;
         return state;
       }
-      continue;
+      if (step.action === "continue") {
+        await restoreSourceTreeIfCancelled({
+          baselineFiles,
+          projectRoot: args.projectRoot,
+          stream: args.stream,
+        });
+        continue;
+      }
+
+      state.createdVersions.push(step.nextV);
+      state.lastSuccessfulSource = step.afterSource;
+      state.lastModelUsed = result.modelUsed;
+      state.lastTurnsUsed = result.turnsUsed;
+      state.lastToolCalls = result.toolCalls;
+      state.lastPng = step.png;
+      addAuxPaths(touchedAux, result.auxFiles);
+
+      const approachSummary =
+        lastAgentSummary?.trim() ||
+        summarizeAgentSourceDiff(args.beforeSource, step.afterSource);
+      priorVariantApproaches.push(
+        `Variant ${variantIndex}: ${approachSummary}`
+      );
+    } finally {
+      releaseSourceLock();
     }
-
-    if (!result.changed) {
-      args.recordRun({
-        ok: true,
-        stage: "done",
-        changed: false,
-        modelUsed: result.modelUsed,
-        turnsUsed: result.turnsUsed,
-        toolCalls: result.toolCalls,
-        attempts: result.attempts,
-        variantIndex,
-        durationMs: Date.now() - variantStartedAt,
-      });
-      continue;
-    }
-
-    const step = await persistChangedVariant({
-      count: args.count,
-      found: args.found,
-      hooks: args.hooks,
-      id: args.id,
-      iterDir: args.iterDir,
-      iterationRoots: args.iterationRoots,
-      lastAgentSummary,
-      recordRun: args.recordRun,
-      runCreatedAt: args.runCreatedAt,
-      runId: args.runId,
-      result,
-      stream: args.stream,
-      variantIndex,
-      variantStartedAt,
-    });
-
-    if (step.action === "abort") {
-      await restoreSourceTreeToSnapshot(args.projectRoot, baselineFiles);
-      args.stream.endStream({ type: "done", ok: false, error: step.error });
-      state.terminalReached = true;
-      return state;
-    }
-    if (step.action === "continue") {
-      await restoreSourceTreeIfCancelled({
-        baselineFiles,
-        projectRoot: args.projectRoot,
-        stream: args.stream,
-      });
-      continue;
-    }
-
-    state.createdVersions.push(step.nextV);
-    state.lastSuccessfulSource = step.afterSource;
-    state.lastModelUsed = result.modelUsed;
-    state.lastTurnsUsed = result.turnsUsed;
-    state.lastToolCalls = result.toolCalls;
-    state.lastPng = step.png;
-    addAuxPaths(touchedAux, result.auxFiles);
-
-    const approachSummary =
-      lastAgentSummary?.trim() ||
-      summarizeAgentSourceDiff(args.beforeSource, step.afterSource);
-    priorVariantApproaches.push(`Variant ${variantIndex}: ${approachSummary}`);
   }
 
   return state;

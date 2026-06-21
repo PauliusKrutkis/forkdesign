@@ -35,6 +35,7 @@ import {
   startIterationRun,
   updateIterationRunStatus,
   updateIterationRunVisibleActive,
+  withIterationSourceLock,
 } from "../../iterations/runs.ts";
 import { atomicWriteBytes } from "../../platform/atomic-write.ts";
 import {
@@ -283,25 +284,28 @@ export async function handleIterationsActivate(
     return;
   }
 
-  if (hasActiveIterationRun(id)) {
-    sendError(
-      res,
-      409,
-      "cannot activate an iteration while an iteration is running"
-    );
-    return;
-  }
-
-  const applied = await applyIterationVersionToSource(
-    ctx.found,
-    ctx.iterationRoots,
-    id,
-    v,
-    projectRoot
+  // While a run is active the agent owns the live source tree. Rather than
+  // reject the switch (the old 409), serialize it behind the per-comment source
+  // lock so it applies at the next gap between variants without colliding with
+  // the variant the agent is editing.
+  const applied = await withIterationSourceLock(id, () =>
+    applyIterationVersionToSource(
+      ctx.found,
+      ctx.iterationRoots,
+      id,
+      v,
+      projectRoot
+    )
   );
   if (!applied.ok) {
     sendError(res, applied.status, applied.message);
     return;
+  }
+
+  // Keep the in-flight run's visible-active in sync so a concurrent GET reflects
+  // the user's choice instead of the version last captured by the agent.
+  if (hasActiveIterationRun(id)) {
+    updateIterationRunVisibleActive(id, v);
   }
 
   // Trigger HMR for every file the activation touched — the comment's file AND
