@@ -80,7 +80,10 @@ interface OverlayAgentRun {
 }
 
 /** After-navigation intent: open this anchor's bubble once it lands in the DOM. */
-type PendingOpen = { anchor: string; view?: string | null };
+interface PendingOpen {
+  anchor: string;
+  view?: string | null;
+}
 
 /**
  * When "go to page" has no in-app `navigate` and falls back to a full page
