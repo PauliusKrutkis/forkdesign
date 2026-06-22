@@ -56,6 +56,7 @@
     "test": "vitest run --project unit",
     "test:integration": "vitest run --project integration",
     "test:e2e": "playwright test",
+    "test:e2e:scripted": "playwright test --config playwright.scripted.config.ts",
     "test:watch": "vitest --project unit",
     "typecheck": "tsc --noEmit",
     "fix": "ultracite fix"

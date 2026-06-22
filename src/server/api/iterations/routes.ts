@@ -1,3 +1,4 @@
+import { mkdir } from "node:fs/promises";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import path from "node:path";
 import { getAgentRuntimeConfig } from "../../agent/config.ts";
@@ -6,6 +7,7 @@ import {
   DEFAULT_AGENT_MODEL_PRIORITY,
 } from "../../agent/models.ts";
 import { DEFAULT_AGENT_SKILLS } from "../../agent/skills.ts";
+import { findCommentById } from "../../comments/find-comment.ts";
 import { applyIterationVersionToSource } from "../../iterations/activate-version.ts";
 import { deleteVersionAuxFiles } from "../../iterations/aux-files.ts";
 import { resolveCommentIterationContext } from "../../iterations/context.ts";
@@ -16,6 +18,7 @@ import {
   listCompleteIterationVersionsAllRoots,
   pngMtimeMs,
   readIterationsManifest,
+  resolveIterationDirRoots,
   tsxMtimeMs,
   updateVersionScreenshotCaptured,
   versionEntryFromManifest,
@@ -551,13 +554,13 @@ export async function handleIterationsScreenshot(
   }
   const { id, v, screenshotPng } = parsed.value;
 
-  const ctx = await resolveCommentIterationContext(
-    projectRoot,
-    id,
-    excludeSrcPrefixes
-  );
-  if (!ctx.ok) {
-    sendError(res, ctx.status, ctx.message);
+  // Only the comment needs to exist — the iterations dir may not yet (the v0
+  // baseline capture fires before the agent run that would create it). Resolve
+  // the comment for validation, then ensure the canonical dir below so early
+  // captures persist instead of 404-ing on a missing directory.
+  const found = await findCommentById(projectRoot, id, excludeSrcPrefixes);
+  if (!found) {
+    sendError(res, 404, `comment id not found: ${id}`);
     return;
   }
 
@@ -567,15 +570,16 @@ export async function handleIterationsScreenshot(
     return;
   }
 
-  const pngPath = path.join(ctx.iterDir, `v${v}.png`);
+  const iterDir = path.join(projectRoot, "designs", "iterations", id);
   try {
-    await atomicWriteBytes(pngPath, bytes);
+    await mkdir(iterDir, { recursive: true });
+    await atomicWriteBytes(path.join(iterDir, `v${v}.png`), bytes);
   } catch (err) {
     sendError(res, 500, errorMessage(err));
     return;
   }
   try {
-    await updateVersionScreenshotCaptured(ctx.iterDir, v, true);
+    await updateVersionScreenshotCaptured(iterDir, v, true);
   } catch (err) {
     console.warn(
       `[vite-plugin-comments] failed to mark v${v}.png captured: ${errorMessage(err)}`
@@ -583,7 +587,7 @@ export async function handleIterationsScreenshot(
   }
   notifyVariantScreenshotUploaded(id, v);
 
-  const mtimeMs = pngMtimeMs(ctx.iterationRoots, v);
+  const mtimeMs = pngMtimeMs(resolveIterationDirRoots(projectRoot, id), v);
 
   sendJson(res, {
     ok: true,

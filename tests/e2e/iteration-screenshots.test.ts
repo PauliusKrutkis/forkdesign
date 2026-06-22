@@ -1,117 +1,220 @@
 /**
- * SCAFFOLDING — screenshot visibility/accuracy + mid-run switching e2e (PR #30).
+ * Screenshot visibility/accuracy + mid-run switching e2e (PR #30).
  *
- * These are the tests the lock-based fix actually needs but that unit/route
- * tests can't provide: they assert what RENDERS and what's VISIBLE over time,
- * against a real page, while the agent is mid-run.
+ * Runs against the GATED scripted agent (dev server booted with
+ * `FORKDESIGN_E2E_SCRIPTED=1` — see playwright.scripted.config.ts). Unlike the
+ * plain stub, the scripted agent makes a VISIBLE per-variant edit and blocks
+ * each variant at a barrier the test releases, so these specs can assert what
+ * renders and what's visible *while the agent is mid-run* — the timing/DOM/
+ * visual behaviour that unit/route tests can't see.
  *
- * Prerequisites (not done yet — see the referenced scaffolding):
- *   - Dev server booted with `FORKDESIGN_E2E_SCRIPTED=1` so the gated, visibly-
- *     distinct scripted agent runs (src/server/agent/strategies/scripted.ts).
- *     playwright.config.ts currently sets only FORKDESIGN_E2E_STUB=1 — add a
- *     second project (or env) for the scripted suite.
- *   - Gate control plane implemented (src/server/api/iterations/e2e-control.ts).
- *   - Helpers implemented (tests/e2e/helpers.ts: runGatedAgentOnTarget,
- *     awaitVariantInProgress, advanceAgentVariant).
- *   - RepeatedCard fixture wired into App (done).
+ * Capture accuracy is asserted on the PNG BYTES on disk: on persist the server
+ * copies v0.png as each variant's placeholder, so a version whose vN.png still
+ * equals v0.png was NEVER really captured. A real per-variant capture makes the
+ * bytes differ — that's the precise regression guard (the old stub rendered
+ * every variant identically, so captures were indistinguishable).
  *
- * All cases are `test.fixme` until the harness above lands. Remove `.fixme`
- * one at a time as each piece is implemented.
+ * Targets the MIDDLE instance of the repeated RepeatedCard (index 1, "Beta").
+ *
+ * Display vs stored versions: the UI labels stored `v` as `v${v+1}`, so stored
+ * v1 → "Use v2", v2 → "Use v3"; v0 → "Use Original".
  */
-import { readFile, writeFile } from "node:fs/promises";
+import { readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { expect, test } from "@playwright/test";
+import { expect, type Locator, type Page, test } from "@playwright/test";
 import {
-  COMMENT_PIN_RE,
-  // advanceAgentVariant,
-  // awaitVariantInProgress,
-  // runGatedAgentOnTarget,
+  advanceAgentVariant,
+  awaitVariantInProgress,
+  resetScriptedGates,
+  runGatedAgentOnTarget,
 } from "./helpers.ts";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
-const APP_TSX = path.resolve(HERE, "../fixtures/playground/src/App.tsx");
-const REPEATED_CARD_TSX = path.resolve(
-  HERE,
-  "../fixtures/playground/src/components/RepeatedCard.tsx"
+const PLAYGROUND = path.resolve(HERE, "../fixtures/playground");
+const APP_TSX = path.join(PLAYGROUND, "src/App.tsx");
+const REPEATED_CARD_TSX = path.join(
+  PLAYGROUND,
+  "src/components/RepeatedCard.tsx"
 );
+const ITER_ROOT = path.join(PLAYGROUND, "designs/iterations");
 
 let originalApp = "";
 let originalCard = "";
 
-test.beforeAll(async () => {
-  originalApp = await readFile(APP_TSX, "utf8");
-  originalCard = await readFile(REPEATED_CARD_TSX, "utf8");
-});
+/** The middle ("Beta") instance of the repeated card — the comment target. */
+function middleCard(page: Page): Locator {
+  return page.getByTestId("repeated-card").nth(1);
+}
 
-test.afterEach(async () => {
-  // Revert source mutations (markers + scripted edits) so specs stay idempotent.
-  await writeFile(APP_TSX, originalApp, "utf8");
-  await writeFile(REPEATED_CARD_TSX, originalCard, "utf8");
-  // TODO: also POST /api/iterations/__e2e__/reset to clear gates, and clean up
-  // the comment's designs/iterations/<id>/ directory between specs.
-});
+function variantPng(id: string, storedV: number): Promise<Buffer> {
+  return readFile(path.join(ITER_ROOT, id, `v${storedV}.png`));
+}
+
+/**
+ * Poll until stored version `v`'s PNG differs from v0's — i.e. a real capture
+ * has replaced the v0-copy placeholder. Returns the captured bytes.
+ */
+async function waitForRealCapture(
+  id: string,
+  storedV: number
+): Promise<Buffer> {
+  await expect
+    .poll(
+      async () => {
+        try {
+          const [base, variant] = await Promise.all([
+            variantPng(id, 0),
+            variantPng(id, storedV),
+          ]);
+          return base.equals(variant) ? "placeholder" : "captured";
+        } catch {
+          return "missing";
+        }
+      },
+      {
+        timeout: 30_000,
+        message: `v${storedV}.png never captured (still placeholder)`,
+      }
+    )
+    .toBe("captured");
+  return variantPng(id, storedV);
+}
 
 test.describe("iteration screenshots + mid-run switching", () => {
-  // biome-ignore lint/suspicious/noSkippedTests: scaffolding — un-fixme once the scripted-agent harness lands
-  test.fixme("captures each variant's screenshot as it completes (not only at run end)", async ({
-    page,
-  }) => {
-    await page.goto("/");
-    // TODO:
-    // 1. runGatedAgentOnTarget(page, "repeated-card-design", "restyle", { variantCount: 3 }).
-    // 2. Resolve the comment id (fetchComments / pin aria-label).
-    // 3. Loop n = 1..3:
-    //    a. awaitVariantInProgress(page, id, n)         → variant n generating
-    //    b. assert that variant's thumbnail shows the "Capturing…" spinner
-    //       (comment-variant-group.tsx PendingVariantThumbnail).
-    //    c. advanceAgentVariant(page, id)               → variant n completes
-    //    d. assert BEFORE the whole run finishes that vN's thumbnail leaves
-    //       the spinner and loads a real PNG: the <img> for vN has
-    //       naturalWidth > 0 and src contains `v${n}.png`. THIS is the bug:
-    //       today captures only land after the entire run.
-    // 4. After the last advance, assert the run completed (Stop agent gone,
-    //    "Use Original" + per-version buttons visible).
-    expect(COMMENT_PIN_RE).toBeTruthy(); // placeholder so import is used
+  test.beforeAll(async () => {
+    originalApp = await readFile(APP_TSX, "utf8");
+    originalCard = await readFile(REPEATED_CARD_TSX, "utf8");
   });
 
-  // biome-ignore lint/suspicious/noSkippedTests: scaffolding — un-fixme once the scripted-agent harness lands
-  test.fixme("switching to a finished version mid-run renders that version (instance-accurate)", async ({
-    page,
-  }) => {
+  test.beforeEach(async ({ page }) => {
+    await page.addInitScript(() => {
+      try {
+        window.localStorage.clear();
+      } catch {
+        /* storage unavailable */
+      }
+    });
     await page.goto("/");
-    // TODO:
-    // 1. Comment on the MIDDLE RepeatedCard instance (index 1 — "Beta") and
-    //    runGatedAgentOnTarget(..., { variantCount: 4 }).
-    // 2. Advance variants 1 and 2 so they finish (screenshots captured).
-    // 3. awaitVariantInProgress(page, id, 3) — hold variant 3 in progress.
-    // 4. While variant 3 is gated, click "Use v1" in the switcher.
-    //    - With the lock fix: the switch is accepted (no 409) and applies at
-    //      the next safe boundary, NOT instantly mid-variant.
-    // 5. advanceAgentVariant for v3 (and v4) to reach the boundary.
-    // 6. Assert the live page's anchored element shows variant 1's distinct
-    //    content (data-fd-variant="v1" / "Design variant 1") AND that it is
-    //    the Beta instance that changed — query the index-1 repeated-card and
-    //    check it, not index 0.
-    // 7. Assert the run still completed cleanly and v3/v4 were not corrupted
-    //    (their snapshots contain the expected variant markers).
-    expect(page).toBeTruthy();
   });
 
-  // biome-ignore lint/suspicious/noSkippedTests: scaffolding — un-fixme once the scripted-agent harness lands
-  test.fixme("thumbnail PNG matches the version's rendered design (accuracy)", async ({
+  test.afterEach(async ({ page }) => {
+    // Unblock any variant still parked at a gate so the run can unwind...
+    await resetScriptedGates(page).catch(() => {
+      /* server may be gone */
+    });
+    // ...then unmount the overlay before touching source, so its trailing
+    // capture/activate calls don't race the revert (which would 404 once the
+    // @comment marker is gone).
+    await page.goto("about:blank").catch(() => {
+      /* page may be closing */
+    });
+    await writeFile(APP_TSX, originalApp, "utf8");
+    await writeFile(REPEATED_CARD_TSX, originalCard, "utf8");
+    await rm(ITER_ROOT, { recursive: true, force: true });
+  });
+
+  test("captures each variant's real screenshot as it completes, not only at run end", async ({
     page,
   }) => {
-    await page.goto("/");
-    // TODO:
-    // 1. Run a 2-variant gated run; advance both to completion.
-    // 2. For each version vN: activate it, assert the live anchored element
-    //    shows variant N's sentinel, then assert the thumbnail <img> for vN
-    //    is non-blank (naturalWidth/Height > 0) and distinct from v0's.
-    // 3. Optionally compare the captured instance's label ("Beta") is present
-    //    in the active render to prove the right copy was captured.
-    // Pixel-diffing is intentionally avoided (flaky); assert structure +
-    // distinctness instead.
-    expect(page).toBeTruthy();
+    test.setTimeout(120_000);
+
+    const id = await runGatedAgentOnTarget(page, middleCard(page), "restyle", {
+      variantCount: 3,
+    });
+
+    // Variant 1: let it generate, then wait until variant 2 starts — which only
+    // happens after v1 is fully persisted AND its screenshot upload resolved.
+    await awaitVariantInProgress(page, id, 1);
+    await advanceAgentVariant(page, id);
+    await awaitVariantInProgress(page, id, 2);
+
+    // The run is still going (parked at variant 2's gate)...
+    await expect(
+      page.getByRole("button", { name: "Stop agent" })
+    ).toBeVisible();
+    // ...yet v1 already has a REAL capture (its PNG differs from the v0-copy
+    // placeholder). Pre-fix, captures only landed after the whole run ended.
+    await waitForRealCapture(id, 1);
+
+    // Drain the rest of the batch.
+    await advanceAgentVariant(page, id);
+    await awaitVariantInProgress(page, id, 3);
+    await advanceAgentVariant(page, id);
+
+    await expect(
+      page.getByRole("button", { name: "Use Original" })
+    ).toBeVisible({ timeout: 60_000 });
+  });
+
+  test("switching to a finished version mid-run lands at the boundary (no 409)", async ({
+    page,
+  }) => {
+    test.setTimeout(120_000);
+
+    const id = await runGatedAgentOnTarget(page, middleCard(page), "restyle", {
+      variantCount: 3,
+    });
+
+    // Finish variants 1 and 2.
+    await awaitVariantInProgress(page, id, 1);
+    await advanceAgentVariant(page, id);
+    await awaitVariantInProgress(page, id, 2);
+    await advanceAgentVariant(page, id);
+
+    // Hold the last variant in progress — the agent owns the source lock now.
+    await awaitVariantInProgress(page, id, 3);
+
+    // Switch to the first variant (stored v1 → "Use v2") WHILE v3 generates.
+    // Pre-fix this returned 409 and the click silently reverted; now it's
+    // accepted and applies at the next safe boundary.
+    await page.getByRole("button", { name: "Use v2" }).click();
+
+    // Release v3 so the run reaches the boundary and the queued switch applies.
+    await advanceAgentVariant(page, id);
+
+    await expect(
+      page.getByRole("button", { name: "Use Original" })
+    ).toBeVisible({ timeout: 60_000 });
+
+    // The live page settled on the chosen version (v1), not the last-generated
+    // one — every RepeatedCard instance shares the source, so any renders it.
+    await expect(page.getByTestId("repeated-card-design").first()).toHaveText(
+      "Design variant 1",
+      { timeout: 30_000 }
+    );
+
+    // v3 still generated cleanly (it exists as a switch card → "Use v4").
+    await expect(page.getByRole("button", { name: "Use v4" })).toBeVisible();
+  });
+
+  test("each version's thumbnail captures a visually distinct render", async ({
+    page,
+  }) => {
+    test.setTimeout(120_000);
+
+    const id = await runGatedAgentOnTarget(page, middleCard(page), "restyle", {
+      variantCount: 2,
+    });
+
+    await awaitVariantInProgress(page, id, 1);
+    await advanceAgentVariant(page, id);
+    await awaitVariantInProgress(page, id, 2);
+    await advanceAgentVariant(page, id);
+
+    await expect(
+      page.getByRole("button", { name: "Use Original" })
+    ).toBeVisible({ timeout: 60_000 });
+
+    // Each variant's real capture differs from the v0 placeholder...
+    const v0 = await variantPng(id, 0);
+    const v1 = await waitForRealCapture(id, 1);
+    const v2 = await waitForRealCapture(id, 2);
+
+    // ...and the two variants differ from each other (distinct renders, not the
+    // old "every variant looks identical" stub behaviour).
+    expect(v0.equals(v1)).toBe(false);
+    expect(v0.equals(v2)).toBe(false);
+    expect(v1.equals(v2)).toBe(false);
   });
 });

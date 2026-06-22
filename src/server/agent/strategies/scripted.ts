@@ -1,96 +1,197 @@
 /**
- * SCAFFOLDING — deterministic *scripted* agent for screenshot/switching e2e.
+ * Deterministic *scripted* agent for the screenshot/switching e2e (PR #30).
  *
- * Why this exists (see PR #30 discussion): the existing stub agent
- * (`strategies/stub.ts`) edits the target file by appending a JS *comment*, so
- * every variant renders identically to baseline. That makes screenshot
- * ACCURACY and per-variant capture impossible to assert — exactly the area
- * that "feels off". This module is the planned replacement for e2e:
+ * The plain stub (`strategies/stub.ts`) edits the target by appending a JS
+ * line-comment, so every variant renders identically to baseline — screenshot
+ * ACCURACY and per-variant capture can't be asserted. This strategy fixes that:
  *
- *   1. VISIBLE edits — each variant produces a visually distinct render so a
- *      thumbnail/active-page assertion can tell versions apart.
- *   2. GATED pacing — each variant blocks until the test explicitly advances
- *      it, so a spec can hold "variant N in progress" and, in that exact
- *      window, attempt a mid-run switch with zero reliance on sleeps/timing.
+ *   1. VISIBLE edits — each variant rewrites the anchored element's sentinels
+ *      so it renders distinctly (text + data attribute + background colour).
+ *   2. GATED pacing — each variant blocks at a per-(comment,variant) barrier
+ *      until the test releases it via the control endpoint
+ *      (api/iterations/e2e-control.ts). A spec can therefore hold "variant N in
+ *      progress" and assert mid-run behaviour with no sleeps/timing flake.
  *
- * Enabled by `FORKDESIGN_E2E_SCRIPTED=1` (distinct from the plain stub flag so
- * existing specs are untouched). Strictly test-only; never reachable in prod.
- *
- * NOTE: the body is intentionally a placeholder that delegates to the stub so
- * the pipeline still produces a real version and the build stays green. Replace
- * the TODO sections to finish the harness.
+ * Enabled by `FORKDESIGN_E2E_SCRIPTED=1`. Strictly test-only; the gate barriers
+ * would deadlock a real run, so this never runs outside the scripted e2e.
  */
+import { readFile } from "node:fs/promises";
+import { atomicWriteText } from "../../platform/atomic-write.ts";
+import { resolveSafeProjectRelativePath } from "../../platform/path-safety.ts";
 import type { AgentResult, AgentRunInput } from "../types.ts";
-import { runStubAgent } from "./stub.ts";
 
-/** Env flag that selects the scripted agent (set by a future e2e webServer). */
+/** Env flag that selects the scripted agent (set by playwright.scripted.config). */
 const SCRIPTED_AGENT_ENV = "FORKDESIGN_E2E_SCRIPTED";
+
+/** Distinct background per variant so thumbnails are visually separable. */
+const VARIANT_COLORS = ["#fde68a", "#bfdbfe", "#bbf7d0", "#fbcfe8", "#ddd6fe"];
 
 export function isScriptedAgentEnabled(): boolean {
   return process.env[SCRIPTED_AGENT_ENV] === "1";
 }
 
-/*
- * TODO(gate-registry): in-memory barrier set, keyed by `${commentId}:${variantIndex}`.
- *
- * Shape to implement:
- *   interface Gate { release: () => void; released: Promise<void>; arrived: () => void; arrivedPromise: Promise<void>; }
- *   const gates = new Map<string, Gate>();
- *
- * - `gateKey(commentId, variantIndex)` builds the key.
- * - `ensureGate(key)` lazily creates a Gate with two deferred promises:
- *     • `arrivedPromise` resolves when the agent REACHES the gate (so the test
- *       can wait for "variant N is now in progress" instead of polling).
- *     • `released` resolves when the test calls advance for that key.
- * - Must live in module scope (single dev-server process) so the HTTP control
- *   endpoint and the agent run share the same map.
- */
+// --- Gate registry -------------------------------------------------------
+//
+// One barrier per `${commentId}:${variantIndex}`. The agent resolves `arrived`
+// when it reaches the gate and awaits `released`; the control endpoint awaits
+// `arrived` (so the test gets a clean "in progress" signal) and resolves
+// `released` to let the variant proceed. Module scope = shared across the gate
+// endpoint and the agent run within the single dev-server process.
 
-/**
- * TODO(visible-edit): rewrite the anchored element so variant N renders
- * distinctly. The fixture (see tests/fixtures/playground/src/components/
- * RepeatedCard.tsx) carries sentinels for this:
- *
- *   - text node `Design baseline`  → `Design variant ${n}`
- *   - attribute `data-fd-variant="base"` → `data-fd-variant="v${n}"`
- *   - inline style background keyed to `n` (e.g. VARIANT_COLORS[n])
- *
- * Each variant is reset to the pre-agent baseline before this runs (see
- * run-iteration.ts), so a single string/regex swap from the baseline token is
- * deterministic and idempotent across variants. Read input.file via
- * resolveSafeProjectRelativePath + readFile, transform, atomicWriteText.
- *
- * Keep the `@comment`/`data-comment-anchor` markers intact, and keep the edit
- * on stable lines so the capture's render-signature actually changes (the
- * client waits for a render-signature delta before capturing — see
- * capture-iteration-screenshot.ts:waitForVersionRender).
- */
+interface Deferred {
+  promise: Promise<void>;
+  resolve: () => void;
+}
 
-export function runScriptedAgent(input: AgentRunInput): Promise<AgentResult> {
-  // TODO(gate-arrival): signal that this (commentId, variantIndex) has reached
-  // the gate, then `await gate.released` (also resolve early on input.signal
-  // abort and return a cancelled AgentResult, mirroring runStubAgent).
+function deferred(): Deferred {
+  let resolve!: () => void;
+  const promise = new Promise<void>((res) => {
+    resolve = res;
+  });
+  return { promise, resolve };
+}
 
-  // TODO(visible-edit): replace the delegation below with the real visible
-  // transform described above.
-  return runStubAgent(input);
+interface Gate {
+  arrived: Deferred;
+  isReleased: boolean;
+  released: Deferred;
+}
+
+const gates = new Map<string, Gate>();
+
+function gateKey(commentId: string, variantIndex: number): string {
+  return `${commentId}:${variantIndex}`;
+}
+
+function ensureGate(commentId: string, variantIndex: number): Gate {
+  const key = gateKey(commentId, variantIndex);
+  let gate = gates.get(key);
+  if (!gate) {
+    gate = { arrived: deferred(), released: deferred(), isReleased: false };
+    gates.set(key, gate);
+  }
+  return gate;
 }
 
 /**
- * TODO(control-plane): release the next gated variant for a comment.
- *
- * Called by the test-only HTTP endpoint (see
- * src/server/api/iterations/e2e-control.ts). Return whether a gate was actually
- * released so the endpoint can 404/409 on a no-op. Consider an `advanceAll`
- * variant and a `waitForArrival(commentId, variantIndex)` the endpoint can
- * await before responding, so the test gets a clean "in progress" signal.
+ * Block until the test releases this variant (or the run is cancelled).
+ * Returns true when the wait ended because of an abort.
  */
-export function advanceScriptedAgentVariant(_commentId: string): boolean {
-  // TODO: look up the next unreleased gate for `_commentId` and release it.
+function awaitGate(
+  commentId: string,
+  variantIndex: number,
+  signal?: AbortSignal
+): Promise<boolean> {
+  const gate = ensureGate(commentId, variantIndex);
+  gate.arrived.resolve();
+
+  if (gate.isReleased) {
+    return Promise.resolve(false);
+  }
+  return new Promise<boolean>((resolve) => {
+    if (signal?.aborted) {
+      resolve(true);
+      return;
+    }
+    gate.released.promise.then(() => resolve(false));
+    signal?.addEventListener("abort", () => resolve(true), { once: true });
+  });
+}
+
+/** Resolve once the agent has REACHED variant `variantIndex` for `commentId`. */
+export function awaitScriptedAgentArrival(
+  commentId: string,
+  variantIndex: number
+): Promise<void> {
+  return ensureGate(commentId, variantIndex).arrived.promise;
+}
+
+/**
+ * Release the currently-waiting variant for `commentId`. Variants run
+ * sequentially, so at most one gate is arrived-and-unreleased at a time.
+ * Returns whether a gate was actually released.
+ */
+export function advanceScriptedAgentVariant(commentId: string): boolean {
+  const prefix = `${commentId}:`;
+  for (const [key, gate] of gates) {
+    if (key.startsWith(prefix) && !gate.isReleased) {
+      gate.isReleased = true;
+      gate.released.resolve();
+      return true;
+    }
+  }
   return false;
 }
 
-/** TODO(reset): clear all gates between specs (call from an e2e afterEach hook). */
+/** Clear all gates between specs (called by the control endpoint's reset). */
 export function resetScriptedAgentGates(): void {
-  // TODO: gates.clear()
+  for (const gate of gates.values()) {
+    // Unblock anything still parked so a cancelled run can unwind.
+    gate.isReleased = true;
+    gate.released.resolve();
+  }
+  gates.clear();
+}
+
+// --- Visible edit --------------------------------------------------------
+
+/**
+ * Rewrite the comment's source so variant `n` renders distinctly. Relies on the
+ * sentinels in the RepeatedCard fixture; each variant starts from the pre-agent
+ * baseline (run-iteration.ts resets it), so a swap from the baseline tokens is
+ * deterministic and idempotent. Returns false when no sentinel matched (the
+ * pipeline then treats the variant as "no change").
+ */
+function applyVisibleVariantEdit(source: string, n: number): string | null {
+  const color = VARIANT_COLORS[(n - 1) % VARIANT_COLORS.length];
+  const next = source
+    .replaceAll('data-fd-variant="base"', `data-fd-variant="v${n}"`)
+    .replaceAll("Design baseline", `Design variant ${n}`)
+    // Add a per-variant background so the captured PNG visibly differs.
+    .replace("padding: 16 }", `padding: 16, background: "${color}" }`);
+  return next === source ? null : next;
+}
+
+export async function runScriptedAgent(
+  input: AgentRunInput
+): Promise<AgentResult> {
+  const commentId = input.commentId ?? "";
+  const variantIndex = input.variantIndex ?? 1;
+
+  const aborted = await awaitGate(commentId, variantIndex, input.signal);
+  if (aborted || input.signal?.aborted) {
+    return { ok: false, error: "scripted agent: cancelled", attempts: [] };
+  }
+
+  const resolved = resolveSafeProjectRelativePath(
+    input.projectRoot,
+    input.file
+  );
+  if (!resolved.ok) {
+    return {
+      ok: false,
+      error: `scripted agent: ${resolved.reason}`,
+      attempts: [],
+    };
+  }
+
+  const current = await readFile(resolved.absolutePath, "utf8");
+  const next = applyVisibleVariantEdit(current, variantIndex);
+  if (next === null) {
+    return {
+      ok: false,
+      error:
+        "scripted agent: no sentinel found in target (expected RepeatedCard fixture)",
+      attempts: [],
+    };
+  }
+  await atomicWriteText(resolved.absolutePath, next);
+
+  return {
+    ok: true,
+    modelUsed: input.model,
+    turnsUsed: 1,
+    toolCalls: 1,
+    attempts: [],
+  };
 }
