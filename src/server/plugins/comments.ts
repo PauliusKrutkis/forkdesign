@@ -6,12 +6,14 @@ import { type Plugin, searchForWorkspaceRoot, type ViteDevServer } from "vite";
 import { configureAgentRuntime } from "../agent/config.ts";
 import type { AgentModel } from "../agent/models.ts";
 import type { AgentSkill } from "../agent/skills.ts";
+import { isScriptedAgentEnabled } from "../agent/strategies/scripted.ts";
 import {
   handleDelete,
   handleGet,
   handlePatch,
   handlePost,
 } from "../api/comments/routes.ts";
+import { handleE2eControl } from "../api/iterations/e2e-control.ts";
 import {
   handleIterationsActivate,
   handleIterationsCancel,
@@ -199,6 +201,17 @@ function handleIterationsMiddleware(
 ): void {
   const sub = iterationsSubpath(req.url ?? "");
   const sourceChanges = sourceChangeController(server);
+
+  // Test-only control plane for the scripted agent — gated so it never exists
+  // in a real dev server. See api/iterations/e2e-control.ts.
+  if (
+    req.method === "POST" &&
+    isScriptedAgentEnabled() &&
+    sub.startsWith("/__e2e__/")
+  ) {
+    wrapApiHandler((r, s) => handleE2eControl(r, s, sub))(req, res);
+    return;
+  }
 
   if (req.method === "GET" && (sub === "" || sub === "/")) {
     wrapApiHandler((r, s) =>

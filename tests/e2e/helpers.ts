@@ -106,6 +106,51 @@ export async function runAgentOnTarget(
   await panel.getByRole("button", { name: "Run agent" }).click();
 }
 
+/**
+ * SCAFFOLDING — drive the GATED scripted agent for screenshot/switching specs
+ * (requires the dev server booted with `FORKDESIGN_E2E_SCRIPTED=1`; see
+ * src/server/agent/strategies/scripted.ts). Unlike `runAgentOnTarget`, each
+ * variant blocks until `advanceAgentVariant` releases it, so a spec can hold
+ * "variant N in progress" and assert mid-run behavior deterministically.
+ *
+ * TODO: same composer drive as runAgentOnTarget (open → type → step count →
+ * Run agent), but no [[slow]] token — pacing comes from the gate instead.
+ */
+export function runGatedAgentOnTarget(
+  _page: Page,
+  _testId: string,
+  _instruction: string,
+  _options: { variantCount?: number } = {}
+): Promise<void> {
+  // TODO: reuse openComposerOnTarget + the count-stepping loop, click "Run agent".
+  throw new Error("runGatedAgentOnTarget: not implemented (scaffolding)");
+}
+
+/**
+ * TODO: wait until the agent has reached variant `variantIndex`'s gate (i.e.
+ * it is now actively generating it). POST /api/iterations/__e2e__/await-arrival
+ * { id, variantIndex } via page.evaluate(fetch). Resolves the flaky "is it in
+ * progress yet?" question without sleeps.
+ */
+export function awaitVariantInProgress(
+  _page: Page,
+  _commentId: string,
+  _variantIndex: number
+): Promise<void> {
+  throw new Error("awaitVariantInProgress: not implemented (scaffolding)");
+}
+
+/**
+ * TODO: release the currently-gated variant for `commentId`.
+ * POST /api/iterations/__e2e__/advance { id } via page.evaluate(fetch).
+ */
+export function advanceAgentVariant(
+  _page: Page,
+  _commentId: string
+): Promise<void> {
+  throw new Error("advanceAgentVariant: not implemented (scaffolding)");
+}
+
 /** Fetch the comments the server currently knows about. */
 export async function fetchComments(
   page: Page

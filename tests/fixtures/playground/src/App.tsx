@@ -13,6 +13,7 @@
  */
 
 import Pricing from "./components/Pricing.tsx";
+import RepeatedCard from "./components/RepeatedCard.tsx";
 import SiteNav from "./components/SiteNav.tsx";
 
 export default function App() {
@@ -32,6 +33,17 @@ export default function App() {
         </button>
       </div>
       <Pricing />
+      {/*
+        Repeated single-source component for the screenshot/switching e2e.
+        All three share one data-comment-anchor once a comment is placed; specs
+        comment on the middle instance (index 1) to test instance-accurate
+        capture + switching. See components/RepeatedCard.tsx.
+      */}
+      <section aria-label="repeated cards" data-testid="repeated-cards">
+        {["Alpha", "Beta", "Gamma"].map((name) => (
+          <RepeatedCard key={name} name={name} />
+        ))}
+      </section>
     </main>
   );
 }

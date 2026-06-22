@@ -12,6 +12,10 @@ import {
 } from "./models.ts";
 import { claudeStrategy } from "./strategies/claude.ts";
 import { cursorCliStrategy } from "./strategies/cursor-cli.ts";
+import {
+  isScriptedAgentEnabled,
+  runScriptedAgent,
+} from "./strategies/scripted.ts";
 import { isStubAgentEnabled, runStubAgent } from "./strategies/stub.ts";
 import type {
   AgentAttemptResult,
@@ -37,6 +41,12 @@ export function resolveAgentStrategy(model: AgentModel): AgentStrategy {
 }
 
 export async function runAgent(input: AgentRunInput): Promise<AgentResult> {
+  // E2E seam: a deterministic, GATED stand-in with VISIBLE per-variant edits,
+  // used by the screenshot/switching playground. Checked before the plain stub
+  // so a spec can opt into scripted pacing. See strategies/scripted.ts.
+  if (isScriptedAgentEnabled()) {
+    return runScriptedAgent(input);
+  }
   // E2E seam: a deterministic stub stands in for the real strategies (and skips
   // the Cursor CLI probe below, which would fail without the binary installed).
   if (isStubAgentEnabled()) {
