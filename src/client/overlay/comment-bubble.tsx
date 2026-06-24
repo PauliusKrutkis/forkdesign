@@ -230,6 +230,7 @@ export function CommentBubble({
     preferredActive,
     activate: activateVersion,
     clearPreferredActive,
+    queuePreferredActive,
     removeVersion: removeIterationVersion,
     reload: reloadIterations,
   } = useIterations(commentId);
@@ -297,6 +298,21 @@ export function CommentBubble({
   const cancelIterate = iterationState.cancelable
     ? (agentRun?.cancel ?? handleCancelIterate)
     : undefined;
+
+  // While the agent is running it owns the live source file, so a switch can't
+  // take effect without the next variant clobbering it. Queue the pick instead
+  // (shown as "Queued") and let it apply when the run finishes; switch live only
+  // when idle.
+  const handleActivateVersion = useCallback(
+    (v: number): Promise<void> => {
+      if (iterationState.iterating) {
+        queuePreferredActive(v);
+        return Promise.resolve();
+      }
+      return activateVersion(v);
+    },
+    [iterationState.iterating, queuePreferredActive, activateVersion]
+  );
 
   // The original stream reader may belong to a bubble that was closed. While
   // this remounted bubble shows an in-flight run, poll the persisted manifest
@@ -666,7 +682,7 @@ export function CommentBubble({
           iterations={iterations}
           iterationsLoading={iterationsLoading}
           lead={lead}
-          onActivateVersion={activateVersion}
+          onActivateVersion={handleActivateVersion}
           onAgentModelChange={onAgentModelChange}
           onEditComment={
             onEdit
@@ -691,6 +707,7 @@ export function CommentBubble({
             cancelDeleteConfirm();
           }}
           onThumbClick={setLightboxSrc}
+          preferredActive={preferredActive}
           versionDeleteError={versionDeleteError}
           versionDeleting={versionDeleting}
           versionSwitching={versionSwitching}

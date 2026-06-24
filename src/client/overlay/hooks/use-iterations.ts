@@ -73,6 +73,15 @@ export function useIterations(commentId: string) {
     setPreferredActive(null);
   }, []);
 
+  // Record the user's preferred version WITHOUT rewriting the live source. Used
+  // while the agent is running: the agent owns the source file, so a switch
+  // can't take effect mid-run without being clobbered by the next variant. We
+  // remember the choice and apply it when the run finishes (see
+  // restorePreferredActiveVersion), surfacing it as "Queued" in the meantime.
+  const queuePreferredActive = useCallback((v: number) => {
+    setPreferredActive(v);
+  }, []);
+
   const activate = useCallback(
     async (v: number) => {
       if (switching || deleting || data?.active === v) {
@@ -154,6 +163,7 @@ export function useIterations(commentId: string) {
     preferredActive,
     activate,
     clearPreferredActive,
+    queuePreferredActive,
     removeVersion,
     reload,
   };

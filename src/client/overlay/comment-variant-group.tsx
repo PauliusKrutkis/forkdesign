@@ -13,8 +13,46 @@ interface VariantGridProps {
   onActivate: (v: number) => void;
   onRemoveVersion: (v: number) => void | Promise<void>;
   onThumbClick: (src: string) => void;
+  preferredActive: number | null;
+  /** A run is in flight: the agent owns the live source, so no version is
+   * stably "Live". Selections are queued (applied when the run finishes). */
+  runActive: boolean;
   switching: boolean;
   versions: IterationVersion[];
+}
+
+function VariantFooterStatus({
+  showLive,
+  isQueued,
+  showSwitching,
+}: {
+  showLive: boolean;
+  isQueued: boolean;
+  showSwitching: boolean;
+}): ReactNode {
+  if (showLive) {
+    return (
+      <span className="flex items-center gap-1 font-medium text-[10px] text-primary leading-none">
+        <Check aria-hidden className="h-3 w-3 shrink-0" />
+        Live
+      </span>
+    );
+  }
+  if (isQueued) {
+    return (
+      <span className="font-medium text-[10px] text-muted-foreground leading-none">
+        Queued
+      </span>
+    );
+  }
+  if (showSwitching) {
+    return (
+      <span className="font-mono text-[10px] text-muted-foreground leading-none">
+        …
+      </span>
+    );
+  }
+  return <span aria-hidden className="h-6 w-6" />;
 }
 
 function PendingVariantThumbnail() {
@@ -64,6 +102,8 @@ export function VariantGrid({
   active,
   switching,
   deleting,
+  runActive,
+  preferredActive,
   onActivate,
   onRemoveVersion,
   onThumbClick,
@@ -78,6 +118,8 @@ export function VariantGrid({
           onActivate={onActivate}
           onRemoveVersion={onRemoveVersion}
           onThumbClick={onThumbClick}
+          preferredActive={preferredActive}
+          runActive={runActive}
           switching={switching}
           version={version}
         />
@@ -91,6 +133,8 @@ function VariantCard({
   active,
   switching,
   deleting,
+  runActive,
+  preferredActive,
   onActivate,
   onRemoveVersion,
   onThumbClick,
@@ -99,11 +143,17 @@ function VariantCard({
   active: number;
   switching: boolean;
   deleting: boolean;
+  runActive: boolean;
+  preferredActive: number | null;
   onActivate: (v: number) => void;
   onRemoveVersion: (v: number) => void | Promise<void>;
   onThumbClick: (src: string) => void;
 }) {
   const isActive = version.v === active;
+  // During a run the agent owns the live source, so nothing is stably "Live".
+  // Show the user's pending pick as "Queued" instead of faking a live badge.
+  const showLive = isActive && !runActive;
+  const isQueued = runActive && preferredActive === version.v;
   const screenshotPending = Boolean(version.screenshotPending);
   const canDelete = version.v > 0;
   const label = version.v === 0 ? "Original" : formatVersionDisplay(version.v);
@@ -120,7 +170,11 @@ function VariantCard({
     },
   });
 
-  const canActivate = !(isActive || switching || deleting || confirming);
+  // While running, cards stay clickable to queue a pick (except the already-
+  // queued one); deletion is still blocked mid-run elsewhere.
+  const canActivate = runActive
+    ? !(isQueued || deleting || confirming)
+    : !(isActive || switching || deleting || confirming);
 
   const activate = () => {
     if (!canActivate) {
@@ -129,21 +183,13 @@ function VariantCard({
     onActivate(version.v);
   };
 
-  let footerTrailing: ReactNode = <span aria-hidden className="h-6 w-6" />;
-  if (isActive) {
-    footerTrailing = (
-      <span className="flex items-center gap-1 font-medium text-[10px] text-primary leading-none">
-        <Check aria-hidden className="h-3 w-3 shrink-0" />
-        Live
-      </span>
-    );
-  } else if (switching) {
-    footerTrailing = (
-      <span className="font-mono text-[10px] text-muted-foreground leading-none">
-        …
-      </span>
-    );
-  }
+  const footerTrailing = (
+    <VariantFooterStatus
+      isQueued={isQueued}
+      showLive={showLive}
+      showSwitching={switching && !runActive}
+    />
+  );
 
   const cardBody = (
     <>
@@ -169,7 +215,10 @@ function VariantCard({
     <div
       className={cn(
         "group/card relative overflow-hidden rounded-lg border bg-background transition-shadow",
-        isActive ? "border-primary ring-1 ring-primary" : "hover:border-ring/60"
+        showLive && "border-primary ring-1 ring-primary",
+        isQueued &&
+          "border-muted-foreground/40 ring-1 ring-muted-foreground/30",
+        !(showLive || isQueued) && "hover:border-ring/60"
       )}
     >
       {canActivate ? (

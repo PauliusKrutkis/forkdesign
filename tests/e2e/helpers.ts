@@ -174,6 +174,11 @@ export async function runGatedAgentOnTarget(
   }
 
   await panel.getByRole("button", { name: "Run agent" }).click();
+  // Wait for the in-flight signal (comment created + run started) before
+  // resolving the id — more reliable than racing the source-scan immediately.
+  await expect(page.getByRole("button", { name: "Stop agent" })).toBeVisible({
+    timeout: 30_000,
+  });
   return await waitForLatestCommentId(page);
 }
 
