@@ -27,7 +27,6 @@ export function useIterations(commentId: string) {
   const [switching, setSwitching] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
-  const [preferredActive, setPreferredActive] = useState<number | null>(null);
 
   const reload = useCallback(async () => {
     try {
@@ -39,25 +38,14 @@ export function useIterations(commentId: string) {
         return;
       }
       const body = (await res.json()) as IterationsData;
-      setData({
-        ...body,
-        active:
-          preferredActive !== null &&
-          body.versions.some((version) => version.v === preferredActive)
-            ? preferredActive
-            : body.active,
-      });
+      setData(body);
     } catch {
       setData(null);
     } finally {
       setLoading(false);
     }
-  }, [commentId, preferredActive]);
+  }, [commentId]);
 
-  // Show the full "Loading versions…" state only for the first fetch of a
-  // bubble. Background refreshes — e.g. after switching to an already-generated
-  // version (which bumps `preferredActive` and so recreates `reload`) — must
-  // stay silent, otherwise the switch looks like the variants are regenerating.
   // biome-ignore lint/correctness/useExhaustiveDependencies: commentId is the trigger, not a referenced value
   useEffect(() => {
     setLoading(true);
@@ -69,27 +57,12 @@ export function useIterations(commentId: string) {
 
   useViteHmrReload(reload);
 
-  const clearPreferredActive = useCallback(() => {
-    setPreferredActive(null);
-  }, []);
-
-  // Record the user's preferred version WITHOUT rewriting the live source. Used
-  // while the agent is running: the agent owns the source file, so a switch
-  // can't take effect mid-run without being clobbered by the next variant. We
-  // remember the choice and apply it when the run finishes (see
-  // restorePreferredActiveVersion), surfacing it as "Queued" in the meantime.
-  const queuePreferredActive = useCallback((v: number) => {
-    setPreferredActive(v);
-  }, []);
-
   const activate = useCallback(
     async (v: number) => {
       if (switching || deleting || data?.active === v) {
         return;
       }
       const previousActive = data?.active;
-      const previousPreferredActive = preferredActive;
-      setPreferredActive(v);
       setSwitching(true);
       setData((prev) => (prev ? { ...prev, active: v } : prev));
       try {
@@ -98,7 +71,6 @@ export function useIterations(commentId: string) {
           v,
         });
         if (!res.ok) {
-          setPreferredActive(previousPreferredActive);
           if (typeof previousActive === "number") {
             setData((prev) =>
               prev ? { ...prev, active: previousActive } : prev
@@ -107,7 +79,6 @@ export function useIterations(commentId: string) {
           return;
         }
       } catch {
-        setPreferredActive(previousPreferredActive);
         if (typeof previousActive === "number") {
           setData((prev) =>
             prev ? { ...prev, active: previousActive } : prev
@@ -117,7 +88,7 @@ export function useIterations(commentId: string) {
         setSwitching(false);
       }
     },
-    [commentId, switching, deleting, data?.active, preferredActive]
+    [commentId, switching, deleting, data?.active]
   );
 
   const removeVersion = useCallback(
@@ -136,9 +107,6 @@ export function useIterations(commentId: string) {
           throw new Error(await readApiError(res));
         }
         const body = (await res.json()) as { active?: number };
-        if (preferredActive === v) {
-          setPreferredActive(null);
-        }
         await reload();
         const nextActive = body.active;
         if (typeof nextActive === "number") {
@@ -151,7 +119,7 @@ export function useIterations(commentId: string) {
         setDeleting(false);
       }
     },
-    [commentId, switching, deleting, reload, preferredActive]
+    [commentId, switching, deleting, reload]
   );
 
   return {
@@ -160,10 +128,7 @@ export function useIterations(commentId: string) {
     switching,
     deleting,
     deleteError,
-    preferredActive,
     activate,
-    clearPreferredActive,
-    queuePreferredActive,
     removeVersion,
     reload,
   };

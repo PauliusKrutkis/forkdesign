@@ -127,6 +127,8 @@ Channels that actually move React tooling (lead with the *opinion/story*, not th
 
 ## This week (concrete next actions)
 
+> **Stage 2 (worktree decouple + live mid-run switching)** is complete: agent edits run in `.forkdesign/workspaces/<runId>/`, live source changes only via activate/finish/cancel, and mid-run version picks show an honest **Live** badge.
+
 1. [ ] Merge `release-candidate` → `main`, tag `v0.1.0`, clean branches.
 2. [ ] Rewrite README around the positioning sentence (draft can be generated, then you edit).
 3. [ ] Record the 10-second demo GIF.

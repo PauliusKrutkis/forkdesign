@@ -9,10 +9,9 @@
  * visual behaviour that unit/route tests can't see.
  *
  * Capture accuracy is asserted on the PNG BYTES on disk: on persist the server
- * copies v0.png as each variant's placeholder, so a version whose vN.png still
- * equals v0.png was NEVER really captured. A real per-variant capture makes the
- * bytes differ — that's the precise regression guard (the old stub rendered
- * every variant identically, so captures were indistinguishable).
+ * copies v0.png as each variant's placeholder. A real per-variant capture is
+ * deferred until the user switches to that version (or the run applies it as
+ * the live winner), at which point the bytes differ from v0.png.
  *
  * Targets the MIDDLE instance of the repeated RepeatedCard (index 1, "Beta").
  *
@@ -124,46 +123,38 @@ test.describe("iteration screenshots + mid-run switching", () => {
     await rm(ITER_ROOT, { recursive: true, force: true });
   });
 
-  test("captures each variant's real screenshot as it completes, not only at run end", async ({
+  test("captures a variant screenshot when the user switches to it mid-run", async ({
     page,
   }) => {
     test.setTimeout(120_000);
 
     const id = await runGatedAgentOnTarget(page, middleCard(page), "restyle", {
-      variantCount: 3,
+      variantCount: 2,
     });
 
-    // Variant 1: let it generate, then wait until variant 2 starts — which only
-    // happens after v1 is fully persisted AND its screenshot upload resolved.
     await awaitVariantInProgress(page, id, 1);
     await advanceAgentVariant(page, id);
     await awaitVariantInProgress(page, id, 2);
 
-    // The run is still going (parked at variant 2's gate)...
-    await expect(
-      page.getByRole("button", { name: "Stop agent" })
-    ).toBeVisible();
-    // ...yet v1 already has a REAL capture (its PNG differs from the v0-copy
-    // placeholder). Pre-fix, captures only landed after the whole run ended.
+    // v1 stays on the v0-copy placeholder until the user previews it.
+    const v0MidRun = await variantPng(id, 0);
+    const v1MidRun = await variantPng(id, 1);
+    expect(v0MidRun.equals(v1MidRun)).toBe(true);
+
+    await page.getByRole("button", { name: "Use v2" }).click();
+    await expect(page.getByTestId("repeated-card-design").first()).toHaveText(
+      "Design variant 1",
+      { timeout: 30_000 }
+    );
     await waitForRealCapture(id, 1);
 
-    // Drain the rest of the batch.
     await advanceAgentVariant(page, id);
-    await awaitVariantInProgress(page, id, 3);
-    await advanceAgentVariant(page, id);
-
     await expect(
       page.getByRole("button", { name: "Use Original" })
     ).toBeVisible({ timeout: 60_000 });
-
-    // Default with no manual pick: the run lands on the newest variant.
-    await expect(page.getByTestId("repeated-card-design").first()).toHaveText(
-      "Design variant 3",
-      { timeout: 30_000 }
-    );
   });
 
-  test("no version reads as Live while the agent is running", async ({
+  test("a mid-run switch applies live immediately and stays through the rest of the run", async ({
     page,
   }) => {
     test.setTimeout(120_000);
@@ -172,55 +163,40 @@ test.describe("iteration screenshots + mid-run switching", () => {
       variantCount: 2,
     });
 
-    // v1 done; hold v2 in progress.
-    await awaitVariantInProgress(page, id, 1);
-    await advanceAgentVariant(page, id);
-    await awaitVariantInProgress(page, id, 2);
-
-    // The run is still going and the live source is back at baseline for v2's
-    // generation — so the picker must NOT claim any version is "Live" (the old
-    // bug showed a stale "vN Live" while the original was on screen).
-    await expect(
-      page.getByRole("button", { name: "Stop agent" })
-    ).toBeVisible();
-    await expect(page.getByText("Live", { exact: true })).toHaveCount(0);
-
-    // Finish; now a version is genuinely live again.
-    await advanceAgentVariant(page, id);
-    await expect(page.getByText("Live", { exact: true })).toBeVisible({
-      timeout: 60_000,
-    });
-  });
-
-  test("a mid-run switch is queued (not applied live) and applied when the run finishes", async ({
-    page,
-  }) => {
-    test.setTimeout(120_000);
-
-    const id = await runGatedAgentOnTarget(page, middleCard(page), "restyle", {
-      variantCount: 2,
-    });
-
-    // Finish v1, then hold v2 in progress (source reset to baseline for v2).
     await awaitVariantInProgress(page, id, 1);
     await advanceAgentVariant(page, id);
     await awaitVariantInProgress(page, id, 2);
 
     const liveCard = page.getByTestId("repeated-card-design").first();
-    // During v2 generation the live page is the baseline, not v1.
-    await expect(liveCard).toHaveText("Design baseline", { timeout: 30_000 });
-
-    // Pick the finished v1 (stored v1 → "Use v2") mid-run. Pre-fix this either
-    // 409'd or briefly applied then reverted. Now it's QUEUED: shown as such,
-    // and the live page is NOT changed while the agent still owns the source.
     await page.getByRole("button", { name: "Use v2" }).click();
-    await expect(page.getByText("Queued", { exact: true })).toBeVisible();
-    await expect(liveCard).toHaveText("Design baseline");
+    await expect(liveCard).toHaveText("Design variant 1", { timeout: 30_000 });
+    await expect(page.getByText("Live", { exact: true })).toBeVisible();
 
-    // Once the run finishes the queued pick is applied — lands on v1, not the
-    // newest (v2).
     await advanceAgentVariant(page, id);
     await expect(liveCard).toHaveText("Design variant 1", { timeout: 30_000 });
+  });
+
+  test("run finish honors a mid-run live pick over the newest variant", async ({
+    page,
+  }) => {
+    test.setTimeout(120_000);
+
+    const id = await runGatedAgentOnTarget(page, middleCard(page), "restyle", {
+      variantCount: 2,
+    });
+
+    await awaitVariantInProgress(page, id, 1);
+    await advanceAgentVariant(page, id);
+    await awaitVariantInProgress(page, id, 2);
+    await page.getByRole("button", { name: "Use v2" }).click();
+    await expect(
+      page.getByTestId("repeated-card-design").first()
+    ).toHaveText("Design variant 1", { timeout: 30_000 });
+
+    await advanceAgentVariant(page, id);
+    await expect(
+      page.getByTestId("repeated-card-design").first()
+    ).toHaveText("Design variant 1", { timeout: 60_000 });
   });
 
   test("each version's thumbnail captures a visually distinct render", async ({
@@ -241,13 +217,18 @@ test.describe("iteration screenshots + mid-run switching", () => {
       page.getByRole("button", { name: "Use Original" })
     ).toBeVisible({ timeout: 60_000 });
 
-    // Each variant's real capture differs from the v0 placeholder...
+    // The run finish applies the newest variant — capture lands without switching.
     const v0 = await variantPng(id, 0);
-    const v1 = await waitForRealCapture(id, 1);
     const v2 = await waitForRealCapture(id, 2);
 
-    // ...and the two variants differ from each other (distinct renders, not the
-    // old "every variant looks identical" stub behaviour).
+    // Preview v1 to capture its thumbnail too.
+    await page.getByRole("button", { name: "Use v2" }).click();
+    await expect(page.getByTestId("repeated-card-design").first()).toHaveText(
+      "Design variant 1",
+      { timeout: 30_000 }
+    );
+    const v1 = await waitForRealCapture(id, 1);
+
     expect(v0.equals(v1)).toBe(false);
     expect(v0.equals(v2)).toBe(false);
     expect(v1.equals(v2)).toBe(false);

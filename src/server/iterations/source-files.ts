@@ -18,6 +18,7 @@ import path from "node:path";
 
 /** Directory names never worth scanning (deps, build output, VCS, our store). */
 const SKIP_DIRS = new Set([
+  ".forkdesign",
   ".git",
   ".hg",
   ".svn",

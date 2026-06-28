@@ -79,7 +79,6 @@ interface CommentTranscriptProps {
   onRemoveVersion: (v: number) => void | Promise<void>;
   onResetInlineFlows?: () => void;
   onThumbClick: (src: string) => void;
-  preferredActive: number | null;
   versionDeleteError: string | null;
   versionDeleting: boolean;
   versionSwitching: boolean;
@@ -112,7 +111,6 @@ export function CommentTranscript({
   agentModel,
   agentVersionCount,
   onAgentModelChange,
-  preferredActive,
   iterationsLoading = false,
 }: CommentTranscriptProps) {
   const scrollRef = useRef<HTMLDivElement | null>(null);
@@ -182,7 +180,6 @@ export function CommentTranscript({
       onRemoveVersion={onRemoveVersion}
       onResetInlineFlows={onResetInlineFlows}
       onThumbClick={onThumbClick}
-      preferredActive={preferredActive}
       turn={turn}
       versionDeleting={versionDeleting}
       versionSwitching={versionSwitching}
@@ -261,7 +258,6 @@ interface TurnViewProps {
   onRemoveVersion: (v: number) => void | Promise<void>;
   onResetInlineFlows?: () => void;
   onThumbClick: (src: string) => void;
-  preferredActive: number | null;
   turn: TranscriptTurn;
   versionDeleting: boolean;
   versionSwitching: boolean;
@@ -286,7 +282,6 @@ function TurnView({
   onActivateVersion,
   onRemoveVersion,
   onThumbClick,
-  preferredActive,
   versionSwitching,
   versionDeleting,
 }: TurnViewProps) {
@@ -347,7 +342,6 @@ function TurnView({
           onActivate={activate}
           onRemoveVersion={onRemoveVersion}
           onThumbClick={onThumbClick}
-          preferredActive={preferredActive}
           runActive={iterating}
           switching={versionSwitching}
           versions={

@@ -90,7 +90,6 @@ function screenshotWaiterKey(id: string, v: number): string {
 function waitForVariantScreenshotUpload(
   event: RunNewIterationVariantCaptureEvent
 ): Promise<void> {
-  updateIterationRunVisibleActive(event.id, event.version);
   return new Promise((resolve) => {
     const key = screenshotWaiterKey(event.id, event.version);
     let timeout: ReturnType<typeof setTimeout> | undefined;
@@ -275,7 +274,7 @@ export async function handleIterationsActivate(
     sendError(res, 400, parsed.reason);
     return;
   }
-  const { id, v } = parsed.value;
+  const { forCapture, id, v } = parsed.value;
 
   const ctx = await resolveCommentIterationContext(
     projectRoot,
@@ -307,7 +306,7 @@ export async function handleIterationsActivate(
 
   // Keep the in-flight run's visible-active in sync so a concurrent GET reflects
   // the user's choice instead of the version last captured by the agent.
-  if (hasActiveIterationRun(id)) {
+  if (hasActiveIterationRun(id) && !forCapture) {
     updateIterationRunVisibleActive(id, v);
   }
 

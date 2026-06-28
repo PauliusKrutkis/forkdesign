@@ -34,6 +34,20 @@ describe("parseActivateBody", () => {
       reason: "field `id` contains unsafe path characters",
     });
   });
+
+  it("accepts optional forCapture for screenshot-only activates", () => {
+    expect(parseActivateBody({ id: "comment-1", v: 2, forCapture: true })).toEqual({
+      ok: true,
+      value: { id: "comment-1", v: 2, forCapture: true },
+    });
+  });
+
+  it("rejects non-boolean forCapture", () => {
+    expect(parseActivateBody({ id: "comment-1", v: 1, forCapture: "yes" })).toEqual({
+      ok: false,
+      reason: "field `forCapture` must be a boolean",
+    });
+  });
 });
 
 describe("parseDeleteVersionBody", () => {

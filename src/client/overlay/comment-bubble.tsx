@@ -23,7 +23,10 @@ import {
   INITIAL_BUBBLE_HEIGHT,
   placeBubblePanel,
 } from "./lib/bubble-geometry.ts";
-import { scheduleAgentVariantScreenshots } from "./lib/capture-iteration-screenshot.ts";
+import {
+  anchorRenderSignature,
+  capturePendingVersionScreenshot,
+} from "./lib/capture-iteration-screenshot.ts";
 import { handleCommentBubbleKeydown } from "./lib/comment-bubble-keydown.ts";
 import { toErrorMessage } from "./lib/errors.ts";
 import { ignorePromiseRejection } from "./lib/ignore-promise-rejection.ts";
@@ -227,10 +230,7 @@ export function CommentBubble({
     switching: versionSwitching,
     deleting: versionDeleting,
     deleteError: versionDeleteError,
-    preferredActive,
     activate: activateVersion,
-    clearPreferredActive,
-    queuePreferredActive,
     removeVersion: removeIterationVersion,
     reload: reloadIterations,
   } = useIterations(commentId);
@@ -249,14 +249,43 @@ export function CommentBubble({
   const pendingScreenshotCaptureKeyRef = useRef<string | null>(null);
   const viewport = useViewport();
 
+  const capturePendingScreenshot = useCallback(
+    async (v: number, previousSignature?: string | null) => {
+      if (!lead || v <= 0) {
+        return;
+      }
+      const version = iterations?.versions.find((entry) => entry.v === v);
+      if (!version?.screenshotPending) {
+        return;
+      }
+      const captureKey = `${lead.id}:${v}`;
+      if (pendingScreenshotCaptureKeyRef.current === captureKey) {
+        return;
+      }
+      pendingScreenshotCaptureKeyRef.current = captureKey;
+      try {
+        const uploaded = await capturePendingVersionScreenshot({
+          id: lead.id,
+          anchor: lead.anchor,
+          instance,
+          previousSignature,
+          v,
+        });
+        if (uploaded) {
+          await reloadIterations();
+        }
+      } finally {
+        if (pendingScreenshotCaptureKeyRef.current === captureKey) {
+          pendingScreenshotCaptureKeyRef.current = null;
+        }
+      }
+    },
+    [instance, iterations?.versions, lead, reloadIterations]
+  );
+
   const activeVersion =
     iterations?.active ?? initialActiveVersion ?? lead?.active ?? 0;
   const hasAgentHistory = (iterations?.versions ?? []).some((v) => v.v > 0);
-  const preferredActiveRef = useRef<number | null>(preferredActive);
-
-  useEffect(() => {
-    preferredActiveRef.current = preferredActive;
-  }, [preferredActive]);
 
   useEffect(() => {
     if (!lead) {
@@ -280,8 +309,6 @@ export function CommentBubble({
     instance,
     reloadIterations,
     onAgentWorkingChange,
-    clearPreferredActive,
-    getPreferredActive: () => preferredActiveRef.current,
   });
   const iterationState = visibleIterationState({
     agentRun,
@@ -299,19 +326,26 @@ export function CommentBubble({
     ? (agentRun?.cancel ?? handleCancelIterate)
     : undefined;
 
-  // While the agent is running it owns the live source file, so a switch can't
-  // take effect without the next variant clobbering it. Queue the pick instead
-  // (shown as "Queued") and let it apply when the run finishes; switch live only
-  // when idle.
   const handleActivateVersion = useCallback(
-    (v: number): Promise<void> => {
-      if (iterationState.iterating) {
-        queuePreferredActive(v);
-        return Promise.resolve();
+    async (v: number): Promise<void> => {
+      const pending = iterations?.versions.find((entry) => entry.v === v)
+        ?.screenshotPending;
+      const previousSignature =
+        pending && lead
+          ? anchorRenderSignature(lead.anchor, instance)
+          : undefined;
+      await activateVersion(v);
+      if (pending) {
+        await capturePendingScreenshot(v, previousSignature);
       }
-      return activateVersion(v);
     },
-    [iterationState.iterating, queuePreferredActive, activateVersion]
+    [
+      activateVersion,
+      capturePendingScreenshot,
+      instance,
+      iterations?.versions,
+      lead,
+    ]
   );
 
   // The original stream reader may belong to a bubble that was closed. While
@@ -327,46 +361,30 @@ export function CommentBubble({
     return () => window.clearInterval(interval);
   }, [iterationState.iterating, reloadIterations]);
 
+  // After a run applies the winning variant (or the user switches to one),
+  // capture its thumbnail once — only while that version is already live.
   useEffect(() => {
-    if (!lead || versionSwitching || versionDeleting) {
+    if (
+      iterationState.iterating ||
+      versionSwitching ||
+      versionDeleting ||
+      !lead
+    ) {
       return;
     }
-    const pendingVersions = (iterations?.versions ?? [])
-      .filter((version) => version.v > 0 && version.screenshotPending)
-      .map((version) => version.v);
-    if (pendingVersions.length === 0) {
-      pendingScreenshotCaptureKeyRef.current = null;
+    const active = iterations?.versions.find(
+      (version) => version.v === activeVersion
+    );
+    if (!active?.screenshotPending || activeVersion <= 0) {
       return;
     }
-
-    const captureKey = `${lead.id}:${activeVersion}:${pendingVersions.join(",")}`;
-    if (pendingScreenshotCaptureKeyRef.current === captureKey) {
-      return;
-    }
-    pendingScreenshotCaptureKeyRef.current = captureKey;
-
-    scheduleAgentVariantScreenshots({
-      id: lead.id,
-      anchor: lead.anchor,
-      instance,
-      versions: pendingVersions,
-      activeV: activeVersion,
-      shouldRestoreActive: () => {
-        const preferredActiveNow = preferredActiveRef.current;
-        return (
-          preferredActiveNow === null || preferredActiveNow === activeVersion
-        );
-      },
-      onDone: () => {
-        Promise.resolve(reloadIterations()).catch(ignorePromiseRejection);
-      },
-    });
+    capturePendingScreenshot(activeVersion).catch(ignorePromiseRejection);
   }, [
     activeVersion,
-    instance,
+    capturePendingScreenshot,
+    iterationState.iterating,
     iterations?.versions,
     lead,
-    reloadIterations,
     versionDeleting,
     versionSwitching,
   ]);
@@ -707,7 +725,6 @@ export function CommentBubble({
             cancelDeleteConfirm();
           }}
           onThumbClick={setLightboxSrc}
-          preferredActive={preferredActive}
           versionDeleteError={versionDeleteError}
           versionDeleting={versionDeleting}
           versionSwitching={versionSwitching}

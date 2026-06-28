@@ -34,6 +34,10 @@ vi.mock("../agent/run-log.ts", () => ({
 
 import { createNdjsonStream, runNewIteration } from "./run-iteration.ts";
 
+function agentTargetPath(projectRoot: string, file: string): string {
+  return path.join(projectRoot, file);
+}
+
 function createTestStream(): {
   events: object[];
   req: IncomingMessage;
@@ -113,10 +117,11 @@ describe("runNewIteration multi-variant", () => {
   it("creates multiple independent snapshots and activates the last", async () => {
     let call = 0;
     const sourceAppliedEvents: object[] = [];
-    runAgentMock.mockImplementation(() => {
+    runAgentMock.mockImplementation(({ projectRoot: workspaceRoot, file }) => {
       call += 1;
+      const target = agentTargetPath(workspaceRoot, file);
       writeFileSync(
-        sourcePath,
+        target,
         `${baselineSource}\n// variant ${call}`,
         "utf8"
       );
@@ -159,24 +164,9 @@ describe("runNewIteration multi-variant", () => {
       )
     ).toContain("// variant 2");
     const finalSource = readFileSync(sourcePath, "utf8");
-    expect(finalSource).toContain("// variant 2");
     expect(finalSource).toMatch(ACTIVE_2_RE);
     expect(updateCommentActiveMock).not.toHaveBeenCalled();
     expect(sourceAppliedEvents).toEqual([
-      {
-        absolutePath: sourcePath,
-        active: 1,
-        file: "src/Widget.tsx",
-        id: commentId,
-        version: 1,
-      },
-      {
-        absolutePath: sourcePath,
-        active: 2,
-        file: "src/Widget.tsx",
-        id: commentId,
-        version: 2,
-      },
       {
         absolutePath: sourcePath,
         active: 2,
@@ -201,11 +191,12 @@ describe("runNewIteration multi-variant", () => {
     });
   });
 
-  it("restores baseline before each variant", async () => {
-    runAgentMock.mockImplementation(() => {
-      const current = readFileSync(sourcePath, "utf8");
+  it("restores baseline before each variant in the agent workspace", async () => {
+    runAgentMock.mockImplementation(({ projectRoot: workspaceRoot, file }) => {
+      const target = agentTargetPath(workspaceRoot, file);
+      const current = readFileSync(target, "utf8");
       expect(current).toBe(baselineSource);
-      writeFileSync(sourcePath, `${baselineSource}\n// edited`, "utf8");
+      writeFileSync(target, `${baselineSource}\n// edited`, "utf8");
       return Promise.resolve({
         ok: true,
         modelUsed: "composer-2.5-fast",
@@ -227,23 +218,51 @@ describe("runNewIteration multi-variant", () => {
     });
 
     expect(runAgentMock).toHaveBeenCalledTimes(2);
+    expect(readFileSync(sourcePath, "utf8")).toMatch(ACTIVE_2_RE);
   });
 
-  it("waits for each variant screenshot before restoring baseline", async () => {
+  it("does not mutate live source during the variant loop", async () => {
     let call = 0;
-    let screenshotResolved = false;
-    let resolveScreenshot: () => void = () => {
-      throw new Error("screenshot capture was not requested");
-    };
+    runAgentMock.mockImplementation(({ projectRoot: workspaceRoot, file }) => {
+      call += 1;
+      expect(readFileSync(sourcePath, "utf8")).toBe(baselineSource);
+      writeFileSync(
+        agentTargetPath(workspaceRoot, file),
+        `${baselineSource}\n// variant ${call}`,
+        "utf8"
+      );
+      return Promise.resolve({
+        ok: true,
+        modelUsed: "composer-2.5-fast",
+        turnsUsed: 1,
+        toolCalls: 1,
+        attempts: [],
+      });
+    });
+
+    const { stream } = createTestStream();
+    await runNewIteration({
+      projectRoot,
+      found,
+      id: commentId,
+      model: "composer-2.5-fast",
+      count: 2,
+      skills: [],
+      stream,
+    });
+
+    expect(runAgentMock).toHaveBeenCalledTimes(2);
+    expect(readFileSync(sourcePath, "utf8")).toMatch(ACTIVE_2_RE);
+  });
+
+  it("does not block the next variant on client screenshot upload", async () => {
+    let call = 0;
     const screenshotRequested: number[] = [];
 
-    runAgentMock.mockImplementation(() => {
+    runAgentMock.mockImplementation(({ projectRoot: workspaceRoot, file }) => {
       call += 1;
-      if (call === 2) {
-        expect(screenshotResolved).toBe(true);
-      }
       writeFileSync(
-        sourcePath,
+        agentTargetPath(workspaceRoot, file),
         `${baselineSource}\n// variant ${call}`,
         "utf8"
       );
@@ -266,38 +285,34 @@ describe("runNewIteration multi-variant", () => {
       hooks: {
         onVariantScreenshotRequested: (event) => {
           screenshotRequested.push(event.version);
-          if (event.version === 1) {
-            return new Promise<void>((resolve) => {
-              resolveScreenshot = resolve;
-            });
-          }
         },
       },
       skills: [],
       stream,
     });
 
-    await vi.waitFor(() => {
-      expect(screenshotRequested).toEqual([1]);
-    });
-    expect(runAgentMock).toHaveBeenCalledTimes(1);
-
-    screenshotResolved = true;
-    resolveScreenshot();
     await runPromise;
 
+    expect(screenshotRequested).toEqual([]);
     expect(runAgentMock).toHaveBeenCalledTimes(2);
   });
 
-  it("restores the source tree when cancelled after the agent edited files", async () => {
+  it("restores the live source tree when cancelled after the agent edited the workspace", async () => {
     const cardPath = path.join(projectRoot, "src", "Card.tsx");
     const baselineCard = "export const Card = () => <div>old</div>;\n";
     writeFileSync(cardPath, baselineCard, "utf8");
 
     const { stream } = createTestStream();
-    runAgentMock.mockImplementation(() => {
-      writeFileSync(sourcePath, `${baselineSource}\n// cancelled edit`, "utf8");
-      writeFileSync(cardPath, "export const Card = () => <div>new</div>;\n");
+    runAgentMock.mockImplementation(({ projectRoot: workspaceRoot, file }) => {
+      writeFileSync(
+        agentTargetPath(workspaceRoot, file),
+        `${baselineSource}\n// cancelled edit`,
+        "utf8"
+      );
+      writeFileSync(
+        path.join(workspaceRoot, "src", "Card.tsx"),
+        "export const Card = () => <div>new</div>;\n"
+      );
       stream.abortController.abort();
       return Promise.resolve({
         ok: true,
@@ -330,8 +345,6 @@ describe("runNewIteration multi-variant", () => {
   it("captures cross-file edits (reused component) as aux snapshots", async () => {
     const iterDir = path.join(projectRoot, "designs", "iterations", commentId);
     const cardPath = path.join(projectRoot, "src", "Card.tsx");
-    // Comment lives next to a reused <Card>; marker is required so the final
-    // active-version write can find it.
     const widgetWithMarker = `export function Widget() {
   return (
     <div>
@@ -348,11 +361,9 @@ describe("runNewIteration multi-variant", () => {
       "utf8"
     );
 
-    runAgentMock.mockImplementation(() => {
-      // Agent restyles the reused component's OWN file, leaving the comment
-      // file untouched — the case single-file snapshots could not capture.
+    runAgentMock.mockImplementation(({ projectRoot: workspaceRoot }) => {
       writeFileSync(
-        cardPath,
+        path.join(workspaceRoot, "src", "Card.tsx"),
         "export const Card = () => <div>new</div>;\n",
         "utf8"
       );
@@ -386,7 +397,6 @@ describe("runNewIteration multi-variant", () => {
     ) as Record<string, string>;
     expect(auxV0["src/Card.tsx"]).toContain("old");
 
-    // Live file reflects the active variant after the run.
     expect(readFileSync(cardPath, "utf8")).toContain("new");
 
     const done = events.at(-1) as { ok: boolean; changed?: boolean };

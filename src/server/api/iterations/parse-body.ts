@@ -19,6 +19,8 @@ export interface ScreenshotBody {
 }
 
 export interface ActivateBody {
+  /** When true, apply live for screenshot capture without recording a user pick. */
+  forCapture?: boolean;
   id: string;
   v: number;
 }
@@ -106,11 +108,29 @@ export function parseScreenshotBody(
 }
 
 export function parseActivateBody(value: unknown): ParseResult<ActivateBody> {
-  return parseIdVersionBody(
+  const base = parseIdVersionBody(
     value,
     0,
     "field `v` must be a non-negative integer"
   );
+  if (!base.ok) {
+    return base;
+  }
+  const objResult = requireObject(value);
+  if (!objResult.ok) {
+    return objResult;
+  }
+  const rawForCapture = objResult.value.forCapture;
+  if (rawForCapture === undefined) {
+    return base;
+  }
+  if (typeof rawForCapture !== "boolean") {
+    return { ok: false, reason: "field `forCapture` must be a boolean" };
+  }
+  return {
+    ok: true,
+    value: { ...base.value, forCapture: rawForCapture },
+  };
 }
 
 export function parseDeleteVersionBody(
