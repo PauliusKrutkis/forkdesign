@@ -30,8 +30,6 @@ export function isScriptedAgentEnabled(): boolean {
   return process.env[SCRIPTED_AGENT_ENV] === "1";
 }
 
-// --- Gate registry -------------------------------------------------------
-//
 // One barrier per `${commentId}:${variantIndex}`. The agent resolves `arrived`
 // when it reaches the gate and awaits `released`; the control endpoint awaits
 // `arrived` (so the test gets a clean "in progress" signal) and resolves
@@ -132,8 +130,6 @@ export function resetScriptedAgentGates(): void {
   }
   gates.clear();
 }
-
-// --- Visible edit --------------------------------------------------------
 
 /**
  * Rewrite the comment's source so variant `n` renders distinctly. Relies on the

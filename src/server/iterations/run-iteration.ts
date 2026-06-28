@@ -21,11 +21,11 @@ import { WriteError } from "../comments/writer-errors.ts";
 import { atomicWriteText } from "../platform/atomic-write.ts";
 import { errorMessage } from "../platform/http.ts";
 import { resolveSafeProjectRelativePath } from "../platform/path-safety.ts";
+import { applyIterationVersionToSource } from "./activate-version.ts";
 import {
   createAgentWorkspace,
   mapFoundCommentToWorkspace,
 } from "./agent-workspace.ts";
-import { applyIterationVersionToSource } from "./activate-version.ts";
 import {
   type AuxFileMap,
   mergeBaselineAuxFiles,
@@ -310,7 +310,6 @@ function notifyRunSourceApplied(
 interface VariantRunOutcome {
   afterSource?: string;
   attempts?: AgentAttemptTiming[];
-  /** Files OTHER than the comment file the agent changed in this variant. */
   auxBaseline?: AuxFileMap;
   auxFiles?: AuxFileMap;
   changed: boolean;
@@ -724,7 +723,6 @@ async function persistChangedVariant(args: {
   };
 }
 
-/** Accumulate the relative paths a variant touched into the batch's set. */
 function addAuxPaths(touchedAux: Set<string>, auxFiles?: AuxFileMap): void {
   for (const rel of Object.keys(auxFiles ?? {})) {
     touchedAux.add(rel);
@@ -884,9 +882,7 @@ async function runVariantBatch(args: {
     const approachSummary =
       lastAgentSummary?.trim() ||
       summarizeAgentSourceDiff(args.beforeSource, step.afterSource);
-    priorVariantApproaches.push(
-      `Variant ${variantIndex}: ${approachSummary}`
-    );
+    priorVariantApproaches.push(`Variant ${variantIndex}: ${approachSummary}`);
   }
 
   return state;

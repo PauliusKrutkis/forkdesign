@@ -25,6 +25,7 @@ import {
   type IterationSourceAppliedEvent,
   iterationsSubpath,
 } from "../api/iterations/routes.ts";
+import { FORKDESIGN_DIR } from "../iterations/agent-workspace.ts";
 import { errorMessage, sendError, wrapApiHandler } from "../platform/http.ts";
 import { sourceLoc as createSourceLocPlugin } from "./source-loc.ts";
 
@@ -34,9 +35,7 @@ const VIRTUAL_CLIENT_ID = "virtual:comment-overlay/client";
 const RESOLVED_VIRTUAL_CLIENT_ID = `\0${VIRTUAL_CLIENT_ID}`;
 const LOOPBACK_IPV6 = new Set(["::1", "0:0:0:0:0:0:0:1"]);
 
-/** Public package name; matches `package.json#name`. */
 const PACKAGE_NAME = "forkdesign";
-/** Bare specifiers the auto-mounted virtual client module imports. */
 const CLIENT_BARE_IMPORTS = new Set([
   PACKAGE_NAME,
   `${PACKAGE_NAME}/styles.css`,
@@ -81,7 +80,6 @@ function findPackageRoot(fromFile: string): string | null {
   return null;
 }
 
-/** This package's root directory, or null if it can't be located. */
 const PACKAGE_ROOT = findPackageRoot(SELF_MODULE_PATH);
 
 /**
@@ -122,6 +120,14 @@ interface SourceChangeController {
   onInternalSourceWorkStart: (event: IterationSourceAppliedEvent) => void;
   onSourceApplied: (event: IterationSourceAppliedEvent) => void;
 }
+
+/**
+ * Glob that keeps Vite's watcher off forkdesign's per-run scratch workspaces.
+ * `createAgentWorkspace` materializes a full project copy under `.forkdesign/`
+ * (inside the Vite root); the index.html/tsconfig.json files in it would each
+ * force a full page reload while an agent runs, wiping the overlay.
+ */
+const WORKSPACE_IGNORE_GLOB = `**/${FORKDESIGN_DIR}/**`;
 
 const sourceChangeControllers = new WeakMap<
   ViteDevServer,
@@ -329,7 +335,6 @@ function sendIterationsStreamError(res: ServerResponse, err: unknown): void {
  * dev server pipeline itself.
  */
 export interface CommentsPluginOptions {
-  /** Override the default Agent model priority order. */
   agentModelPriority?: AgentModel[];
   /**
    * Skill guidance injected into generated agent prompts.
@@ -341,7 +346,6 @@ export interface CommentsPluginOptions {
    * dev server is on a trusted network.
    */
   allowRemoteAccess?: boolean;
-  /** Path to the Cursor CLI `agent` binary. Default: `"agent"` (must be on PATH). */
   cursorAgentPath?: string;
   /**
    * Project-relative `src/` prefixes to skip when reading/writing comments
@@ -389,8 +393,16 @@ export function comments(options: CommentsPluginOptions = {}): Plugin {
     apply: "serve",
 
     config(userConfig) {
+      // Keep Vite from watching the agent's scratch workspaces. Each run copies
+      // the whole project under `.forkdesign/` (see createAgentWorkspace); the
+      // index.html/tsconfig.json files in that copy would otherwise trigger a
+      // full page reload on every run and wipe the overlay. Vite appends this
+      // to its built-in ignore defaults.
+      const watchIgnore = {
+        server: { watch: { ignored: [WORKSPACE_IGNORE_GLOB] } },
+      };
       if (!(serveFromSource && PACKAGE_ROOT)) {
-        return;
+        return watchIgnore;
       }
       // Specifying `fs.allow` at all suppresses Vite's default entry (the
       // consumer's workspace root), which would block the consumer from
@@ -403,6 +415,7 @@ export function comments(options: CommentsPluginOptions = {}): Plugin {
       return {
         resolve: { dedupe: ["react", "react-dom"] },
         server: {
+          watch: { ignored: [WORKSPACE_IGNORE_GLOB] },
           fs: { allow: [searchForWorkspaceRoot(consumerRoot), PACKAGE_ROOT] },
         },
       };
@@ -538,7 +551,6 @@ export type ForkDesignPluginOption =
   | { name: string }
   | ForkDesignPluginOption[];
 
-/** Streamlined dev setup: source locations + API middleware + overlay mount. */
 export function forkDesign(
   options: ForkDesignPluginOptions = {}
 ): ForkDesignPluginOption {
@@ -561,7 +573,6 @@ export function forkDesign(
   ];
 }
 
-/** Re-exported for `forkdesign/plugin` consumers configuring the dev source-loc stamper. */
 export function sourceLoc(
   options: Parameters<typeof createSourceLocPlugin>[0] = {}
 ): ReturnType<typeof createSourceLocPlugin> {

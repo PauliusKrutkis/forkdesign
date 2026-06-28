@@ -84,7 +84,6 @@ describe("iteration source lock", () => {
       order.push("first:end");
     });
 
-    // Second acquirer must not start its body until the first releases.
     const second = withIterationSourceLock(commentId, () => {
       order.push("second:start");
     });
@@ -122,7 +121,6 @@ describe("iteration source lock", () => {
       })
     ).rejects.toThrow("boom");
 
-    // A failed holder must not poison the queue: the next acquirer proceeds.
     let ran = false;
     await withIterationSourceLock(commentId, () => {
       ran = true;

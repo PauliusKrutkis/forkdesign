@@ -3,7 +3,6 @@ import { toErrorMessage } from "../lib/errors.ts";
 import { ignorePromiseRejection } from "../lib/ignore-promise-rejection.ts";
 
 export interface UseDeleteConfirmOptions {
-  /** Called before showing confirmation (e.g. close other inline editors). */
   onBeforeConfirm?: () => void;
   onDelete: () => Promise<void>;
   skipConfirmation?: boolean;

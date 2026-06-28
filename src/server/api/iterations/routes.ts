@@ -203,7 +203,6 @@ export async function handleIterationsList(
   });
 }
 
-/** Normalized path after `/api/iterations` (handles mount-stripped and full URLs). */
 export function iterationsSubpath(reqUrl: string): string {
   const url = new URL(reqUrl, "http://localhost");
   let sub = url.pathname;
@@ -329,13 +328,6 @@ export async function handleIterationsActivate(
   });
 }
 
-/**
- * POST /api/iterations/delete { id, v }
- *
- * Removes v{N}.tsx, v{N}.png, and the manifest entry. Baseline (v0) cannot be
- * deleted. If the deleted version was active, switches the page to the newest
- * remaining version.
- */
 export async function handleIterationsDelete(
   req: IncomingMessage,
   res: ServerResponse,
@@ -432,21 +424,6 @@ export async function handleIterationsDelete(
   });
 }
 
-/**
- * POST /api/iterations/new { id }
- *
- * Streams progress to the client as newline-delimited JSON (NDJSON):
- *   - `{type:"progress", stage:"agent", tool?, detail?}` — projected SDK events
- *   - `{type:"progress", stage:"snapshot", detail}` — server post-processing
- *   - `{type:"done", ok:true, ...}` or `{type:"done", ok:false, error}` — final
- *
- * Exactly one `done` event is emitted, then the response is closed. The
- * browser bubble consumes the stream and shows live status.
- *
- * Validation errors (before headers are flushed) still return a JSON error
- * with the appropriate non-200 status; the client only starts NDJSON-parsing
- * after a 200.
- */
 export async function handleIterationsNew(
   req: IncomingMessage,
   res: ServerResponse,

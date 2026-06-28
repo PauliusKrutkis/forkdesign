@@ -16,8 +16,11 @@ const isCI = !!process.env.CI;
 export default defineConfig({
   testDir: "tests/e2e",
   // The scripted-agent suite needs its own webServer env (FORKDESIGN_E2E_SCRIPTED)
-  // and gating — it runs via playwright.scripted.config.ts instead.
-  testIgnore: "**/iteration-screenshots.test.ts",
+  // and gating — those specs run via playwright.scripted.config.ts instead.
+  testIgnore: [
+    "**/iteration-screenshots.test.ts",
+    "**/refresh-behavior.test.ts",
+  ],
   // The specs share ONE on-disk fixture (tests/fixtures/playground/src/App.tsx)
   // that comment-creating tests mutate then restore, and one dev server. Running
   // them in parallel would let one test's afterEach-restore clobber another's

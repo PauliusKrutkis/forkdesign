@@ -7,10 +7,16 @@ import { atomicWriteText } from "../platform/atomic-write.ts";
 
 const execFileAsync = promisify(execFile);
 
-const FORKDESIGN_DIR = ".forkdesign";
+/**
+ * Root for forkdesign's per-run scratch state. It lives UNDER the project (so
+ * the agent worktree can resolve the app's imports) but must be kept out of
+ * Vite's file watcher — see the watcher-ignore in plugins/comments.ts — or the
+ * index.html/tsconfig.json copies inside each workspace force a full page
+ * reload on every run.
+ */
+export const FORKDESIGN_DIR = ".forkdesign";
 const WORKSPACES_DIR = "workspaces";
 
-/** Config files copied into temp-copy workspaces so agent CLIs resolve the project. */
 const PROJECT_SKELETON_FILES = [
   "package.json",
   "vite.config.ts",
@@ -60,7 +66,7 @@ async function pathExists(filePath: string): Promise<boolean> {
 }
 
 async function isGitRepo(projectRoot: string): Promise<boolean> {
-  return pathExists(path.join(projectRoot, ".git"));
+  return await pathExists(path.join(projectRoot, ".git"));
 }
 
 async function overlayBaselineFiles(

@@ -194,7 +194,6 @@ describe("handleIterationsActivate", () => {
         id: COMMENT_ID,
         ok: true,
       });
-      // The in-flight run now reports the user's choice, not the marker value.
       expect(activeIterationRunVisibleActive(COMMENT_ID)).toBe(1);
 
       const source = readFileSync(seeded.sourcePath, "utf8");
@@ -208,7 +207,6 @@ describe("handleIterationsActivate", () => {
   it("waits for the source lock before rewriting the live file", async () => {
     const seeded = seedProject(0);
     projectRoot = seeded.projectRoot;
-    // Simulate the agent holding the source while it edits the current variant.
     const release = await acquireIterationSourceLock(COMMENT_ID);
 
     const mock = createMockResponse();
@@ -224,7 +222,6 @@ describe("handleIterationsActivate", () => {
     });
 
     await flush();
-    // Blocked on the lock: the live source must still be the baseline.
     expect(settled).toBe(false);
     expect(readFileSync(seeded.sourcePath, "utf8")).toContain("Version 0");
 

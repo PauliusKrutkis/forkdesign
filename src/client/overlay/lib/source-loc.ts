@@ -13,13 +13,9 @@
  */
 
 export interface SourceLoc {
-  /** 1-indexed source column */
   column: number;
-  /** the element actually carrying the attribute (may differ from the click target) */
   element: HTMLElement;
-  /** project-relative path with forward slashes (e.g. src/pages/Foo.tsx) */
   file: string;
-  /** 1-indexed source line */
   line: number;
 }
 

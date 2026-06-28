@@ -11,7 +11,6 @@ export interface PostBody {
   existingAnchor?: string;
   file: string;
   line: number;
-  /** App route (pathname + search + hash) where the comment was created. */
   route?: string;
   /**
    * Optional `data:image/png;base64,...` URL captured client-side by the

@@ -111,7 +111,6 @@ describe("buildTranscript", () => {
         version({ v: 2, createdAt: "2026-01-01T10:10:05.000Z" }),
       ],
     });
-    // comment turn owns the first run; the reply turn owns the run it triggered
     expect(turns).toHaveLength(2);
     expect(turns[0]?.instruction.kind).toBe("comment");
     expect(turns[0]?.runs[0]?.versions.map((v) => v.v)).toEqual([1]);

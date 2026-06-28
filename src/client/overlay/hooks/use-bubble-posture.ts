@@ -8,7 +8,6 @@ import {
 } from "../lib/bubble-position-store.ts";
 import { dotRect } from "../lib/placement.ts";
 
-/** Docked (edge-snapped) posture sizing. */
 const DOCK_DEFAULT_WIDTH = 440;
 const DOCK_MIN_WIDTH = 360;
 const DOCK_MAX_WIDTH = 720;

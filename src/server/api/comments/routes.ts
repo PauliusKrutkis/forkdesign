@@ -461,8 +461,6 @@ export async function handleDelete(
   projectRoot: string,
   excludeSrcPrefixes: string[]
 ): Promise<void> {
-  // The middleware is mounted at `/api/comments`, so `req.url` is the suffix
-  // (e.g. "/<id>"). Slice off the leading slash and trim any query string.
   const url = new URL(req.url ?? "", "http://localhost");
   const id = url.pathname.replace(LEADING_SLASHES_RE, "");
   if (id.length === 0) {

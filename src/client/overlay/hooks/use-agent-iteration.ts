@@ -11,10 +11,8 @@ export function useAgentIteration(args: {
   lead: CommentData | undefined;
   agentModel: OverlayModel;
   agentVersionCount: number;
-  /** Anchored instance index; threaded to screenshot capture. Defaults to 0. */
   instance?: number;
   reloadIterations: () => void | Promise<void>;
-  /** Pin loading — survives bubble close until the run finishes. */
   onAgentWorkingChange?: (
     anchor: string | null,
     run?: {

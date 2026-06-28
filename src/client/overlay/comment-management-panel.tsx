@@ -443,7 +443,6 @@ function RowRail({
   );
 }
 
-/** Author · time on the left; reply / version / resolved signals on the right. */
 function RowMeta({
   author,
   date,

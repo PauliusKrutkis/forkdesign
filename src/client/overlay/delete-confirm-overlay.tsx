@@ -10,13 +10,11 @@ export interface DeleteConfirmOverlayProps {
   cancelTip?: ReactNode;
   confirmTip?: ReactNode;
   label?: ReactNode;
-  /** Full-width card (bubble thread delete, reply row). */
   layout?: "overlay" | "inline" | "panel" | "compact";
   onCancel: (e?: MouseEvent) => void;
   onConfirm: () => Promise<void>;
   onRevertBaselineChange?: (value: boolean) => void;
   revertBaseline?: boolean;
-  /** Show Enter / Esc hints (thread delete in the bubble). */
   showKeyboardHints?: boolean;
   showRevertOption?: boolean;
 }

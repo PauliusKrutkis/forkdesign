@@ -42,7 +42,6 @@ interface CommentBubbleProps {
     startedAt: number;
     status?: string;
   } | null;
-  /** True when this thread already has an agent run in flight outside this mount. */
   agentWorking?: boolean;
   /**
    * When set, the bubble runs the agent once on mount with this many variants.
@@ -60,7 +59,6 @@ interface CommentBubbleProps {
   instance?: number;
   onActiveVersionChange?: (id: string, active: number) => void;
   onAgentModelChange: (model: OverlayModel) => void;
-  /** Drives pin loading while the agent iterates (cleared when the run ends). */
   onAgentWorkingChange?: (
     anchor: string | null,
     run?: {
@@ -77,7 +75,6 @@ interface CommentBubbleProps {
     id: string,
     options?: { revertBaseline?: boolean }
   ) => Promise<void>;
-  /** Reports docked posture so the overlay can hide this thread's pin. */
   onDockedChange?: (docked: boolean) => void;
   onEdit?: (id: string, text: string) => Promise<void>;
   onEditReply?: (id: string, replyIndex: number, text: string) => Promise<void>;
@@ -328,8 +325,9 @@ export function CommentBubble({
 
   const handleActivateVersion = useCallback(
     async (v: number): Promise<void> => {
-      const pending = iterations?.versions.find((entry) => entry.v === v)
-        ?.screenshotPending;
+      const pending = iterations?.versions.find(
+        (entry) => entry.v === v
+      )?.screenshotPending;
       const previousSignature =
         pending && lead
           ? anchorRenderSignature(lead.anchor, instance)

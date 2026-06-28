@@ -23,7 +23,6 @@ const traverse = ((
  * persisting a new comment.
  */
 interface SourceLocOptions {
-  /** Skip stamping JSX in files under these project-relative prefixes. */
   excludeSrcPrefixes?: string[];
   projectRoot?: string;
 }

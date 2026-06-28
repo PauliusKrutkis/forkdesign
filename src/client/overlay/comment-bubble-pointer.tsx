@@ -1,6 +1,5 @@
 import type { FloaterSide } from "./lib/placement.ts";
 
-/** Triangle pointer from bubble back to the anchor dot. */
 export function CommentBubblePointer({
   side,
   offset,

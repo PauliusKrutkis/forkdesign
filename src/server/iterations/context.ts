@@ -9,7 +9,6 @@ export type CommentIterationContext =
       ok: true;
       found: FoundComment;
       iterationRoots: string[];
-      /** Canonical iteration store (first root). */
       iterDir: string;
     }
   | { ok: false; status: number; message: string };

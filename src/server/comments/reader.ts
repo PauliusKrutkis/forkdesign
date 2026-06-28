@@ -1,7 +1,3 @@
-/**
- * Read `{/* @comment ... *\/}` markers from TSX source. Malformed markers are
- * skipped so the writer never round-trips a half-resolved value.
- */
 import { readFile } from "node:fs/promises";
 import { parse } from "@babel/parser";
 import _traverse, { type NodePath } from "@babel/traverse";
@@ -23,16 +19,10 @@ const ATTR_KEY_CHAR_RE = /[A-Za-z0-9_-]/;
 const INTEGER_TOKEN_RE = /^-?[0-9]+$/;
 const HEX4_RE = /^[0-9a-fA-F]{4}$/;
 
-// @babel/traverse is published as CJS; under ESM `import x from` may resolve to
-// `{ default: fn }` depending on bundler interop. Normalize both shapes.
 type TraverseFn = typeof _traverse;
 const traverse: TraverseFn =
   (_traverse as unknown as { default?: TraverseFn }).default ?? _traverse;
 
-/**
- * The shape of one entry returned by GET /api/comments. Extends CommentProps
- * with the inferred `view` slug (or null if no `data-view` ancestor was found).
- */
 type ReadComment = CommentProps & {
   view: string | null;
 };
@@ -42,10 +32,6 @@ export interface ReadResult {
   warnings: string[];
 }
 
-/**
- * Read a .tsx file from disk and return the list of comment-block markers it
- * contains plus any warnings encountered.
- */
 export async function readCommentsFromFile(
   absolutePath: string
 ): Promise<ReadResult> {
@@ -58,14 +44,11 @@ export function readCommentsFromSource(source: string): ReadResult {
     sourceType: "module",
     plugins: ["jsx", "typescript"],
     errorRecovery: false,
-    // Comments are attached by default, but be explicit.
     attachComment: true,
   });
 
   const comments: ReadComment[] = [];
   const warnings: string[] = [];
-  // Avoid double-counting if the same CommentBlock somehow appears under more
-  // than one container in the AST.
   const seenComments = new Set<BabelComment>();
 
   traverse(ast, {
@@ -75,9 +58,6 @@ export function readCommentsFromSource(source: string): ReadResult {
         return;
       }
 
-      // Block comments attached to `{/* … */}` may land on either the
-      // JSXEmptyExpression (innerComments) or its container's leading slot
-      // depending on the parser version. Check both.
       const blocks: BabelComment[] = [];
       collectCommentBlocks(expr.innerComments, blocks, seenComments);
       collectCommentBlocks(expr.leadingComments, blocks, seenComments);
@@ -126,21 +106,11 @@ function collectCommentBlocks(
   }
 }
 
-// ---------------------------------------------------------------------------
-// Directive parsing
-// ---------------------------------------------------------------------------
-
-/**
- * Parse a single `@comment id="..." anchor="..." text="..." ...` directive
- * out of the raw CommentBlock value. Returns null and pushes a warning when
- * required fields are missing or attribute syntax is malformed.
- */
 function parseDirective(
   trimmed: string,
   warnings: string[],
   block: BabelComment
 ): CommentProps | null {
-  // Strip the leading marker.
   const body = trimmed.slice("@comment".length).trim();
   const attrs = parseAttributes(body, warnings, block);
   if (!attrs) {
@@ -394,20 +364,6 @@ function parseOneAttribute(
   return pos;
 }
 
-/**
- * Tiny attribute parser. Recognized forms:
- *
- *   key="..."            — double-quoted string with `\"` and `\\` escapes
- *                          and standard JSON escape sequences (\n, \t, ...)
- *   key=true|false       — boolean literal
- *   key                  — bare flag, equivalent to `key=true`
- *   key=[ ... ]          — array literal; the bracketed payload is handed off
- *                          to JSON.parse for replies-style arrays. Square
- *                          brackets must balance.
- *
- * Whitespace between attributes is required. Unknown keys are kept; the caller
- * decides which keys are meaningful.
- */
 function parseAttributes(
   source: string,
   warnings: string[],
@@ -432,10 +388,6 @@ function parseAttributes(
   return { values };
 }
 
-/**
- * Read a JSON-style double-quoted string starting at `source[i]` (the opening
- * quote). Supports `\"`, `\\`, `\n`, `\r`, `\t`, `\b`, `\f`, `\/`, and `\uXXXX`.
- */
 function readDoubleQuotedString(
   source: string,
   i: number
@@ -491,7 +443,6 @@ function readDoubleQuotedString(
           break;
         }
         default:
-          // Unknown escape: keep the next char verbatim.
           out += n;
       }
       j += 2;
@@ -503,10 +454,6 @@ function readDoubleQuotedString(
   return null;
 }
 
-/**
- * Scan from `source[i]` (the `open` char) until the matching `close`,
- * respecting strings (so brackets inside quoted strings don't unbalance).
- */
 function readBalanced(
   source: string,
   i: number,
@@ -628,14 +575,6 @@ function describeMissing(values: Record<string, string | null>): string {
     .join(", ");
 }
 
-// ---------------------------------------------------------------------------
-// View resolution
-// ---------------------------------------------------------------------------
-
-/**
- * Walk JSXElement ancestors from the JSXExpressionContainer outward, returning
- * the first static `data-view="<slug>"` attribute encountered.
- */
 function resolveViewFromAncestors(
   path: NodePath<JSXExpressionContainer>
 ): string | null {

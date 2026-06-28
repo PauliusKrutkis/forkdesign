@@ -19,7 +19,6 @@ export interface ScreenshotBody {
 }
 
 export interface ActivateBody {
-  /** When true, apply live for screenshot capture without recording a user pick. */
   forCapture?: boolean;
   id: string;
   v: number;

@@ -2,7 +2,6 @@ import type { ReactNode } from "react";
 import { Kbd } from "../ui/kbd.tsx";
 import { Tooltip, TooltipContent, TooltipTrigger } from "../ui/tooltip.tsx";
 
-/** Tooltip with optional hotkey chip; requires a TooltipProvider ancestor. */
 export function HotkeyTip({
   label,
   keys,

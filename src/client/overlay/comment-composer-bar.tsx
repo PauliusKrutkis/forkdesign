@@ -38,10 +38,8 @@ const TEXTAREA_MAX_HEIGHT = 168;
 interface CommentComposerBarProps {
   agentModel: OverlayModel;
   agentVersionCount: number;
-  /** A plain reply / comment is saving. */
   busy: boolean;
   error?: string | null;
-  /** An agent run is streaming. */
   iterating: boolean;
   mode: ComposerMode;
   onAgentModelChange: (model: OverlayModel) => void;
@@ -50,9 +48,7 @@ interface CommentComposerBarProps {
   onChange: (value: string) => void;
   onModeChange: (mode: ComposerMode) => void;
   onSubmit: () => void | Promise<void>;
-  /** Placeholder override; defaults adapt to the mode. */
   placeholder?: string;
-  /** Live iteration the next send will attach to; shown as a quiet corner hint. */
   replyVersion?: number;
   textareaRef: React.RefObject<HTMLTextAreaElement | null>;
   value: string;

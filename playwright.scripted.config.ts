@@ -14,7 +14,10 @@ const isCI = !!process.env.CI;
 
 export default defineConfig({
   testDir: "tests/e2e",
-  testMatch: "**/iteration-screenshots.test.ts",
+  testMatch: [
+    "**/iteration-screenshots.test.ts",
+    "**/refresh-behavior.test.ts",
+  ],
   fullyParallel: false,
   workers: 1,
   forbidOnly: isCI,

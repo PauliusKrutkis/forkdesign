@@ -2,7 +2,7 @@ import { existsSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 import {
   defaultSummaryForVersion,
   deleteVersionArtifactsAllRoots,
@@ -228,10 +228,6 @@ describe("patchIterationsManifest", () => {
 
   beforeEach(async () => {
     dir = await mkdtemp(path.join(tmpdir(), "forkdesign-manifest-"));
-  });
-
-  afterEach(async () => {
-    // temp cleanup is best-effort; OS reclaims tmp dirs
   });
 
   it("writes and reads manifest on disk", async () => {

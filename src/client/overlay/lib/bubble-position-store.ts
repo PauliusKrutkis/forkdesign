@@ -10,9 +10,7 @@
  */
 
 const KEY_PREFIX = "bubble-pos:";
-/** Keep at least this much of the panel — enough to grab the header — on-screen. */
 const MIN_VISIBLE = 120;
-/** Never let the header slip above the top edge, or it can't be dragged back. */
 const TOP_PADDING = 8;
 
 export interface SavedPosition {

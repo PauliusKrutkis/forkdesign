@@ -1,4 +1,4 @@
-import { Check, Expand, Loader2, Trash2 } from "lucide-react";
+import { Check, Expand, Sparkles, Trash2 } from "lucide-react";
 import { type ReactNode, useState } from "react";
 import { Button } from "../ui/button.tsx";
 import { cn } from "../ui/cn.ts";
@@ -44,10 +44,15 @@ function VariantFooterStatus({
 }
 
 function PendingVariantThumbnail() {
+  // Screenshots are lazy: the variant exists but its thumbnail is captured only
+  // when the user previews it (or the run applies it as the winner). So this is
+  // a ready state, not a busy one — no spinner, and copy that says as much.
   return (
     <div className="absolute inset-0 flex flex-col items-center justify-center gap-1.5 bg-muted text-muted-foreground">
-      <Loader2 aria-hidden className="h-4 w-4 animate-spin" />
-      <span className="font-mono text-[10px] leading-none">Capturing…</span>
+      <Sparkles aria-hidden className="h-4 w-4" />
+      <span className="font-mono text-[10px] leading-none">
+        New version ready
+      </span>
     </div>
   );
 }

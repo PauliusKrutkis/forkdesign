@@ -1,8 +1,5 @@
 import { cn } from "./cn.ts";
 
-/**
- * Keyboard shortcut chip — shared styling for inline hints, tooltips, and settings.
- */
 export function Kbd({
   children,
   tone = "default",

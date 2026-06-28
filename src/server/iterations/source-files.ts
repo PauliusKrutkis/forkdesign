@@ -16,7 +16,6 @@ import path from "node:path";
  * is strategy-agnostic and catches every edit the agent makes.
  */
 
-/** Directory names never worth scanning (deps, build output, VCS, our store). */
 const SKIP_DIRS = new Set([
   ".forkdesign",
   ".git",
@@ -37,7 +36,6 @@ const SKIP_DIRS = new Set([
   ".vscode",
 ]);
 
-/** Source extensions an agent might edit to address visual feedback. */
 const SOURCE_EXTENSIONS = new Set([
   ".tsx",
   ".ts",
@@ -55,10 +53,8 @@ const SOURCE_EXTENSIONS = new Set([
   ".astro",
 ]);
 
-/** Skip files larger than this — generated bundles, lockfiles, etc. */
 const MAX_SOURCE_FILE_BYTES = 512 * 1024;
 
-/** A path is part of the iteration store and must never be snapshotted. */
 function isIterationStorePath(relPosix: string): boolean {
   return (
     relPosix.startsWith("designs/iterations/") ||
@@ -70,7 +66,6 @@ function isSourceFile(name: string): boolean {
   return SOURCE_EXTENSIONS.has(path.extname(name).toLowerCase());
 }
 
-/** Normalize an absolute path under root to a posix project-relative key. */
 export function toRelPosix(projectRoot: string, absPath: string): string {
   return path.relative(projectRoot, absPath).split(path.sep).join("/");
 }

@@ -1,4 +1,3 @@
-/** True when the user is typing in a form control — hotkeys should not fire. */
 export function isInTextInput(el: Element | null): boolean {
   if (!el) {
     return false;

@@ -12,7 +12,6 @@ export interface DotInstanceTarget {
 }
 
 interface CommentDotProps {
-  /** True while an agent iteration run is in flight for this anchor. */
   agentWorking?: boolean;
   anchor: string;
   comments: CommentData[];

@@ -70,7 +70,6 @@ describe("writeCommentToFile", () => {
     expect(out).toContain(`@comment id="${result.id}"`);
     expect(out).toContain(`text="too heavy"`);
 
-    // Reader should round-trip the written marker.
     const { comments, warnings } = readCommentsFromSource(out);
     expect(warnings).toEqual([]);
     expect(comments).toHaveLength(1);
@@ -99,7 +98,6 @@ describe("writeCommentToFile", () => {
 
     expect(result.anchor).toBe("preset-uuid");
     const out = readFileSync(file, "utf8");
-    // Should not have stamped a second data-comment-anchor attribute.
     expect(out.match(/data-comment-anchor="preset-uuid"/g)?.length).toBe(1);
     expect(out).toContain(`anchor="preset-uuid"`);
   });
@@ -144,16 +142,12 @@ export function Card() {
     });
 
     const out = readFileSync(file, "utf8");
-    // Anchor was stamped on the root <label>.
     expect(out).toContain(`data-comment-anchor="${result.anchor}"`);
-    // Marker exists in source.
     expect(out).toContain(`@comment id="${result.id}"`);
     expect(out).toContain(`text="label feels heavy"`);
-    // The fragment wrap appears.
     expect(out).toMatch(FRAGMENT_LABEL_RE);
     expect(out).toMatch(FRAGMENT_COMMENT_RE);
 
-    // Reader round-trip.
     const { comments, warnings } = readCommentsFromSource(out);
     expect(warnings).toEqual([]);
     expect(comments).toHaveLength(1);
@@ -277,7 +271,6 @@ describe("updateCommentActive", () => {
       active: 2,
     });
     const mid = readFileSync(file, "utf8");
-    // Sanity check that the writer stored 2 first.
     expect(mid).toContain("active=2");
     expect(mid).not.toContain("active=5");
 
@@ -289,7 +282,6 @@ describe("updateCommentActive", () => {
     const out = readFileSync(file, "utf8");
     expect(out).toContain("active=5");
     expect(out).not.toContain("active=2");
-    // Only one active= occurrence — make sure we replaced, not appended.
     expect(out.match(/active=/g)?.length).toBe(1);
     const { comments } = readCommentsFromSource(out);
     expect(comments[0]?.active).toBe(5);
@@ -617,12 +609,10 @@ describe("injectExistingMarkerIntoSource", () => {
       directiveInner
     );
 
-    // The output must still carry the anchor and now contain the directive.
     expect(out).toContain(`data-comment-anchor="${anchor}"`);
     expect(out).toContain(`@comment id="${id}"`);
     expect(out).toContain(`text="too heavy"`);
 
-    // Round-trip via the reader.
     const { comments, warnings } = readCommentsFromSource(out);
     expect(warnings).toEqual([]);
     expect(comments).toHaveLength(1);
@@ -636,9 +626,6 @@ describe("injectExistingMarkerIntoSource", () => {
   });
 
   it("preserves the original directive's text/author/date verbatim via round-trip", async () => {
-    // Create a marker with a non-trivial author/date/screenshot, then yank
-    // its directive inner from the live source and inject it into a fresh
-    // (marker-less) snapshot. The reader must see identical attributes.
     const result = await writeCommentToFile({
       absolutePath: file,
       line: 4,
@@ -652,7 +639,6 @@ describe("injectExistingMarkerIntoSource", () => {
     const directiveInner = extractDirectiveInner(liveSource, result.id);
     expect(directiveInner).not.toBeNull();
 
-    // Build a snapshot that only has the anchor attribute (legacy v0 shape).
     const legacySnapshot = SOURCE.replace(
       "<button>",
       `<button data-comment-anchor="${result.anchor}">`
@@ -681,11 +667,7 @@ describe("injectExistingMarkerIntoSource", () => {
   it("throws a 400 WriteError when the snapshot has no element bearing the anchor", () => {
     const directiveInner = ` @comment id="${id}" anchor="${anchor}" text="x" author="a" date="d" `;
     expect(() =>
-      injectExistingMarkerIntoSource(
-        SOURCE, // No data-comment-anchor anywhere.
-        anchor,
-        directiveInner
-      )
+      injectExistingMarkerIntoSource(SOURCE, anchor, directiveInner)
     ).toThrow(DATA_COMMENT_ANCHOR_RE);
   });
 });
@@ -796,10 +778,8 @@ describe("deleteCommentMarker", () => {
     expect(result.removedAnchor).toBe(false);
 
     const out = readFileSync(file, "utf8");
-    // First marker is gone, second survives.
     expect(out).not.toContain(`id="${r1.id}"`);
     expect(out).toContain(`id="${r2.id}"`);
-    // Anchor attribute stays — second comment still references it.
     expect(out).toContain(`data-comment-anchor="${r1.anchor}"`);
 
     const { comments, warnings } = readCommentsFromSource(out);
@@ -826,7 +806,6 @@ describe("deleteCommentMarker", () => {
     const out = readFileSync(file, "utf8");
     expect(out).not.toContain("@comment");
     expect(out).not.toContain("data-comment-anchor=");
-    // Source is parseable and has no orphaned whitespace breaking the reader.
     const { comments, warnings } = readCommentsFromSource(out);
     expect(warnings).toEqual([]);
     expect(comments).toHaveLength(0);
@@ -840,7 +819,6 @@ describe("deleteCommentMarker", () => {
       text: "ephemeral",
       author: "dev@local",
     });
-    // Sanity: marker is currently on disk.
     expect(readFileSync(file, "utf8")).toContain(`@comment id="${r.id}"`);
 
     await deleteCommentMarker({
@@ -849,17 +827,12 @@ describe("deleteCommentMarker", () => {
     });
 
     const out = readFileSync(file, "utf8");
-    // No double blank lines left behind from the splice.
     expect(out).not.toMatch(TRIPLE_BLANK_LINE_RE);
-    // Re-parsing has to succeed; if not, deleteCommentMarker itself would have
-    // thrown WriteError(500). Read for good measure.
     const { warnings } = readCommentsFromSource(out);
     expect(warnings).toEqual([]);
   });
 
   it("throws WriteError(404) when commentId is not in the file", async () => {
-    // Pre-write a comment so the file isn't empty, then try to delete a
-    // different id.
     await writeCommentToFile({
       absolutePath: file,
       line: 4,
@@ -928,11 +901,9 @@ describe("deleteCommentMarker", () => {
     expect(result.removedAnchor).toBe(true);
 
     const out = readFileSync(file, "utf8");
-    // The deleted marker is gone, the other two survive.
     expect(out).not.toContain(`id="${rMain.id}"`);
     expect(out).toContain(`id="${rHeader.id}"`);
     expect(out).toContain(`id="${rFooter.id}"`);
-    // <main>'s anchor attribute is stripped; <header> and <footer>'s remain.
     expect(out).not.toContain(`data-comment-anchor="${rMain.anchor}"`);
     expect(out).toContain(`data-comment-anchor="${rHeader.anchor}"`);
     expect(out).toContain(`data-comment-anchor="${rFooter.anchor}"`);

@@ -17,13 +17,9 @@ import { captureElementToPng } from "./lib/screenshot.ts";
 import { findSourceLoc } from "./lib/source-loc.ts";
 
 export interface ComposerSubmission {
-  /** anchor uuid assigned to the targeted element */
   anchor: string;
-  /** anchor point (page x/y of the click) for positioning the panel */
   clickPoint: { x: number; y: number };
-  /** Agent model when `runAgent` is set; defaults to overlay settings. */
   model?: OverlayModel;
-  /** submitted in Agent mode — create the comment, then run the agent on it */
   runAgent?: boolean;
   /**
    * Optional `data:image/png;base64,...` capture of the targeted element's
@@ -31,13 +27,9 @@ export interface ComposerSubmission {
    * is captured immediately before the agent run instead.
    */
   screenshotPng?: string;
-  /** the element that was clicked to seed the comment */
   target: HTMLElement;
-  /** the typed body */
   text: string;
-  /** variant count to generate when `runAgent` is set */
   versionCount?: number;
-  /** the slug of the nearest data-view ancestor, if any */
   view: string | undefined;
 }
 
@@ -49,7 +41,6 @@ export interface ComposerSubmission {
 export type ComposerSubmitResult = { ok: true } | { ok: false; error: string };
 
 interface CommentComposerProps {
-  /** when true, the composer mode is active (highlight + capture next click) */
   active: boolean;
   agentModel: OverlayModel;
   /**
@@ -59,7 +50,6 @@ interface CommentComposerProps {
    */
   exiting?: boolean;
   onAgentModelChange: (model: OverlayModel) => void;
-  /** turn composer mode off */
   onCancel: () => void;
   /**
    * Invoked when the user submits a comment. Returns a Promise so the

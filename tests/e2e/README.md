@@ -75,7 +75,7 @@ playground source. Otherwise the suite is not idempotent.
   `button[aria-label="Delete version"]`; active card shows a "Live" badge +
   `border-primary ring-primary`.
 - Thumbnail loading: `.shimmer` skeleton overlay while the `<img>`
-  decodes; `PendingVariantThumbnail` (spinner + "Capturing…") for
+  decodes; `PendingVariantThumbnail` ("New version ready") for
   `screenshotPending` versions.
 - Lightbox: `[aria-label="Version screenshot"]`, close via
   `[aria-label="Close screenshot"]`; `document.body[data-lightbox="open"]`.

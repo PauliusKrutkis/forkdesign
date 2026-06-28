@@ -1,7 +1,6 @@
 import { cn } from "../ui/cn.ts";
 import { Kbd } from "../ui/kbd.tsx";
 
-/** Inline shortcut chip for primary actions inside a Button. */
 export function ShortcutHint({
   children,
   className,
@@ -9,7 +8,6 @@ export function ShortcutHint({
 }: {
   children: React.ReactNode;
   className?: string;
-  /** Use on `default` / primary-filled buttons. */
   onPrimary?: boolean;
 }) {
   return (
@@ -24,14 +22,10 @@ export function ShortcutHint({
 
 const ctrlKey: string = detectCtrlKey();
 
-/**
- * Format a Ctrl/Cmd combo for display (`⌘R` on Mac, `Ctrl+R` elsewhere).
- */
 export function withCtrl(key: string): string {
   return ctrlKey === "⌘" ? `⌘${key}` : `Ctrl+${key}`;
 }
 
-/** Format an Alt/Option combo (`⌥↑` on Mac, `Alt+↑` elsewhere). */
 export function withAlt(key: string): string {
   const alt = detectAltKey();
   return alt === "⌥" ? `⌥${key}` : `Alt+${key}`;
