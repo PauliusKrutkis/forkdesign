@@ -79,6 +79,113 @@ interface OverlayAgentRun {
   status?: string;
 }
 
+/** After-navigation intent: open this anchor's bubble once it lands in the DOM. */
+interface PendingOpen {
+  anchor: string;
+  view?: string | null;
+}
+
+/**
+ * When "go to page" has no in-app `navigate` and falls back to a full page
+ * load, React state is wiped on reload. Stash the pending-open intent in
+ * sessionStorage so the freshly-mounted overlay can pick it up and open the
+ * bubble on the destination page.
+ */
+const PENDING_OPEN_STORAGE_KEY = "redline:pending-open-comment";
+
+/** Read + clear the persisted pending-open intent (one-shot, survives one reload). */
+function readPersistedPendingOpen(): PendingOpen | null {
+  if (typeof window === "undefined") {
+    return null;
+  }
+  try {
+    const raw = window.sessionStorage.getItem(PENDING_OPEN_STORAGE_KEY);
+    if (!raw) {
+      return null;
+    }
+    window.sessionStorage.removeItem(PENDING_OPEN_STORAGE_KEY);
+    const parsed = JSON.parse(raw) as PendingOpen;
+    if (parsed && typeof parsed.anchor === "string") {
+      return parsed;
+    }
+  } catch {
+    // Malformed/unavailable storage: nothing to restore.
+  }
+  return null;
+}
+
+function persistPendingOpen(pending: PendingOpen): void {
+  if (typeof window === "undefined") {
+    return;
+  }
+  try {
+    window.sessionStorage.setItem(
+      PENDING_OPEN_STORAGE_KEY,
+      JSON.stringify(pending)
+    );
+  } catch {
+    // Storage unavailable (private mode/quota): degrade to no auto-open.
+  }
+}
+
+/**
+ * Intent captured the instant a comment is created: open its bubble, and (when
+ * created in Agent mode) auto-run the agent. Persisted because some host
+ * projects answer the comment's source write with a full page reload rather
+ * than React Fast Refresh, which wipes the transient open/run React state. The
+ * remounted overlay restores this so the bubble still opens and the run starts.
+ */
+interface PendingSubmit {
+  agent: { count: number; model: OverlaySettings["model"] } | null;
+  id: string;
+}
+
+const PENDING_SUBMIT_STORAGE_KEY = "redline:pending-submit-comment";
+
+function readPersistedPendingSubmit(): PendingSubmit | null {
+  if (typeof window === "undefined") {
+    return null;
+  }
+  try {
+    const raw = window.sessionStorage.getItem(PENDING_SUBMIT_STORAGE_KEY);
+    if (!raw) {
+      return null;
+    }
+    const parsed = JSON.parse(raw) as PendingSubmit;
+    if (parsed && typeof parsed.id === "string") {
+      return parsed;
+    }
+  } catch {
+    // Malformed/unavailable storage: nothing to restore.
+  }
+  return null;
+}
+
+function persistPendingSubmit(pending: PendingSubmit): void {
+  if (typeof window === "undefined") {
+    return;
+  }
+  try {
+    window.sessionStorage.setItem(
+      PENDING_SUBMIT_STORAGE_KEY,
+      JSON.stringify(pending)
+    );
+  } catch {
+    // Storage unavailable: degrade to no cross-reload restore.
+  }
+}
+
+function clearPersistedPendingSubmit(): void {
+  if (typeof window === "undefined") {
+    return;
+  }
+  try {
+    window.sessionStorage.removeItem(PENDING_SUBMIT_STORAGE_KEY);
+  } catch {
+    // Storage unavailable: nothing to clear.
+  }
+}
+
 interface ActiveIterationRunResponse {
   runs?: Array<{
     anchor: string;
@@ -101,6 +208,10 @@ export function CommentOverlay({
     null
   );
   const [composerActive, setComposerActive] = useState(false);
+  // True for the brief cross-fade after a new comment saves: its bubble has
+  // opened beneath the composer, which now fades out in place. See the
+  // pendingOpenId effect.
+  const [composerExiting, setComposerExiting] = useState(false);
   const [shell, setShell] = useState<ShellTab | null>(null);
   /**
    * User-visible overlay settings: enabled flag, toggle corner, author
@@ -125,7 +236,13 @@ export function CommentOverlay({
    * with the new comment included, we auto-open its bubble — saves the user
    * a mouse trip to click the newly-appeared dot.
    */
-  const [pendingOpenId, setPendingOpenId] = useState<string | null>(null);
+  // Restored once at mount so a full-page-reload on the comment's source write
+  // (some host projects do this instead of Fast Refresh) still opens the bubble
+  // and starts the agent. The in-memory states below drive everything after.
+  const [restoredSubmit] = useState(() => readPersistedPendingSubmit());
+  const [pendingOpenId, setPendingOpenId] = useState<string | null>(
+    restoredSubmit?.id ?? null
+  );
   /**
    * Set when a comment is created in Agent mode: once its bubble auto-opens
    * (via `pendingOpenId`), the bubble runs the agent once with `count`
@@ -135,7 +252,15 @@ export function CommentOverlay({
     id: string;
     count: number;
     model: OverlaySettings["model"];
-  } | null>(null);
+  } | null>(
+    restoredSubmit?.agent
+      ? {
+          id: restoredSubmit.id,
+          count: restoredSubmit.agent.count,
+          model: restoredSubmit.agent.model,
+        }
+      : null
+  );
   /** In-flight agent run metadata. Kept above the bubble so close/reopen preserves UI state. */
   const [agentRunsByAnchor, setAgentRunsByAnchor] = useState<
     Map<string, OverlayAgentRun>
@@ -145,11 +270,14 @@ export function CommentOverlay({
   >(() => new Map());
   /** True while the open thread is docked — its pin is hidden (ring stands in). */
   const [dockedOpen, setDockedOpen] = useState(false);
-  /** After navigation, open the bubble once the anchor appears in the DOM. */
-  const [pendingOpen, setPendingOpen] = useState<{
-    anchor: string;
-    view?: string | null;
-  } | null>(null);
+  /**
+   * After navigation, open the bubble once the anchor appears in the DOM.
+   * Initialized from sessionStorage so a full-page-reload navigation (no
+   * in-app `navigate`) still opens the comment on the destination page.
+   */
+  const [pendingOpen, setPendingOpen] = useState<PendingOpen | null>(() =>
+    readPersistedPendingOpen()
+  );
 
   // Bulk-fetch comments across ALL allowed .tsx files in src/, then re-fetch
   // on every Vite HMR update so a freshly-written marker shows up without a
@@ -248,10 +376,35 @@ export function CommentOverlay({
     }
     const c = comments.find((x) => x.id === pendingOpenId);
     if (c) {
+      // Open the bubble (it mounts beneath the composer, entrance suppressed)
+      // and start the cross-fade: the composer fades out on top of it, then a
+      // dedicated effect (keyed on composerExiting) tears it down. One panel
+      // appears to swap its contents in place, instead of the form vanishing
+      // while the comment animates in somewhere else.
       setOpenTarget({ anchor: c.anchor, instance: 0 });
+      setComposerExiting(true);
       setPendingOpenId(null);
+      // The intent has been consumed in-memory; drop the cross-reload copy so a
+      // later mount can't re-open a stale comment. A pending agent run (if any)
+      // fires from in-memory state as the bubble mounts, just after this.
+      clearPersistedPendingSubmit();
     }
   }, [comments, pendingOpenId]);
+
+  // Tear the composer down once the cross-fade completes. Keyed only on
+  // `composerExiting` so the constant `comments` churn during an agent run
+  // can't cancel the timeout mid-fade and leave the composer mounted on top of
+  // the bubble (two stacked panels, duplicate controls).
+  useEffect(() => {
+    if (!composerExiting) {
+      return;
+    }
+    const t = window.setTimeout(() => {
+      setComposerActive(false);
+      setComposerExiting(false);
+    }, 170);
+    return () => window.clearTimeout(t);
+  }, [composerExiting]);
 
   useEffect(() => {
     if (!pendingOpen) {
@@ -365,7 +518,6 @@ export function CommentOverlay({
     return () => mutationObserver.disconnect();
   }, [syncInDomAnchors]);
 
-  // Group by anchor.
   const grouped = useMemo(() => {
     const map = new Map<string, CommentData[]>();
     for (const c of comments) {
@@ -418,21 +570,33 @@ export function CommentOverlay({
         return result.result;
       }
       if (result.id) {
+        const agent = entry.runAgent
+          ? {
+              count: entry.versionCount ?? DEFAULT_AGENT_VERSION_COUNT,
+              model: entry.model ?? settings.model,
+            }
+          : null;
         setPendingOpenId(result.id);
-        if (entry.runAgent) {
-          setPendingAgentRun({
-            id: result.id,
-            count: entry.versionCount ?? DEFAULT_AGENT_VERSION_COUNT,
-            model: entry.model ?? settings.model,
-          });
+        if (agent) {
+          setPendingAgentRun({ id: result.id, ...agent });
         }
-      }
-      window.setTimeout(() => {
+        // Survive a full page reload on the source write (see PendingSubmit).
+        persistPendingSubmit({ id: result.id, agent });
+        // Don't wait for `vite:afterUpdate` to surface the new comment: host
+        // projects that full-reload (or HMR inconsistently) on the source write
+        // never deliver that event. Refetch now so the bubble opens and — in
+        // Agent mode — the run starts, without depending on Vite's reaction.
+        reloadComments().catch(ignorePromiseRejection);
+        // The composer closes the instant this comment's bubble opens — see the
+        // pendingOpenId effect above. Keeping both on one event removes the gap
+        // between the comment appearing and the form going away.
+      } else {
+        // No id to follow to an open bubble; close the composer directly.
         setComposerActive(false);
-      }, 650);
+      }
       return { ok: true };
     },
-    [settings.model]
+    [settings.model, reloadComments]
   );
 
   const handleEdit = useCallback(async (id: string, text: string) => {
@@ -590,9 +754,14 @@ export function CommentOverlay({
         return;
       }
 
+      // Without an in-app navigate, navigateTo does a full page reload that
+      // wipes `pendingOpen`. Stash it so the remounted overlay can restore it.
+      if (!navigateProp) {
+        persistPendingOpen({ anchor: comment.anchor, view: comment.view });
+      }
       navigateTo(route);
     },
-    [resolveCommentRoute, inDomAnchors, handleJump, navigateTo]
+    [resolveCommentRoute, inDomAnchors, handleJump, navigateTo, navigateProp]
   );
 
   const handleDelete = useCallback(
@@ -676,7 +845,6 @@ export function CommentOverlay({
           />
         ) : null}
 
-        {/* Open bubble. */}
         {settings.enabled && openTarget ? (
           <OpenBubble
             activeVersionByComment={activeVersionByComment}
@@ -710,7 +878,10 @@ export function CommentOverlay({
               });
               reloadAgentRuns().catch(ignorePromiseRejection);
             }}
-            onAutoAgentStarted={() => setPendingAgentRun(null)}
+            onAutoAgentStarted={() => {
+              setPendingAgentRun(null);
+              clearPersistedPendingSubmit();
+            }}
             onClose={() => setOpenTarget(null)}
             onDelete={handleDelete}
             onDockedChange={setDockedOpen}
@@ -720,6 +891,7 @@ export function CommentOverlay({
             onSubmitReply={handleSubmitReply}
             reanchorRequest={reanchorRequest}
             skipDeleteConfirmation={settings.skipDeleteConfirmation}
+            suppressEntrance={composerExiting}
             target={openTarget}
           />
         ) : null}
@@ -729,6 +901,7 @@ export function CommentOverlay({
           <CommentComposer
             active={composerActive}
             agentModel={settings.model}
+            exiting={composerExiting}
             onAgentModelChange={(model) => updateSettings({ model })}
             onCancel={() => setComposerActive(false)}
             onSubmit={handleSubmit}
@@ -736,6 +909,12 @@ export function CommentOverlay({
         ) : null}
 
         <OverlayDock
+          // Drop the launcher below an open bubble: a floating bubble can land
+          // over the dock's corner, and the always-on-top pill would otherwise
+          // intercept clicks on the bubble's own controls (e.g. "Stop agent").
+          // The launcher stays rendered/clickable wherever the bubble doesn't
+          // cover it.
+          belowBubble={Boolean(openTarget)}
           composerActive={composerActive}
           enabled={settings.enabled}
           onPageCount={
@@ -897,6 +1076,7 @@ function OpenBubble({
   onSubmitReply,
   onEditReply,
   reanchorRequest,
+  suppressEntrance,
 }: {
   activeVersionByComment: Map<string, number>;
   agentRun: OverlayAgentRun | null;
@@ -933,6 +1113,7 @@ function OpenBubble({
   onSubmitReply: (id: string, text: string, v?: number) => Promise<void>;
   onEditReply: (id: string, replyIndex: number, text: string) => Promise<void>;
   reanchorRequest: number;
+  suppressEntrance: boolean;
 }) {
   const instances = useAnchorRects(target.anchor);
   const rect = findAnchorInstanceRect(instances, target.instance);
@@ -969,6 +1150,7 @@ function OpenBubble({
       reanchorRequest={reanchorRequest}
       rect={rect}
       skipDeleteConfirmation={skipDeleteConfirmation}
+      suppressEntrance={suppressEntrance}
     />
   );
 }

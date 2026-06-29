@@ -12,7 +12,6 @@ export type OverlayPosition =
   | "top-right"
   | "top-left";
 
-/** Models exposed in overlay settings (subset of AgentModel). */
 export const OVERLAY_AGENT_MODELS = [
   "composer-2.5-fast",
   "composer-2.5",
@@ -22,12 +21,9 @@ export const OVERLAY_AGENT_MODELS = [
 
 export type OverlayModel = (typeof OVERLAY_AGENT_MODELS)[number];
 
-/** Labels for settings UI and the inline composer model picker. */
 export const OVERLAY_MODEL_OPTIONS: ReadonlyArray<{
   value: OverlayModel;
-  /** Full name in the settings panel dropdown. */
   label: string;
-  /** Compact label in the composer toolbar. */
   shortLabel: string;
 }> = [
   {
@@ -57,19 +53,12 @@ const VALID_OVERLAY_MODELS: ReadonlySet<AgentModel> = new Set(
 );
 
 export interface OverlaySettings {
-  /** Override for window.__COMMENT_AUTHOR__. Empty string disables override. */
   author: string;
-  /** false = system fully muted (no dots/bubbles/panel, only settings access). */
   enabled: boolean;
-  /** When true, resolved pins and list rows are hidden from the overlay. */
   hideResolved: boolean;
-  /** Agent model — tried first, then the server fallback chain. */
   model: OverlayModel;
-  /** Which corner the dock pill anchors to. */
   position: OverlayPosition;
-  /** Whether the corner dock pill renders. Hotkeys keep working when false. */
   showFloatingControls: boolean;
-  /** When true, delete hotkey/button removes the comment without confirming. */
   skipDeleteConfirmation: boolean;
 }
 
@@ -159,7 +148,6 @@ export function loadSettings(): OverlaySettings {
   };
 }
 
-/** Persist settings; silently no-ops if storage is unavailable. */
 export function saveSettings(s: OverlaySettings): void {
   if (typeof window === "undefined") {
     return;

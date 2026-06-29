@@ -1,6 +1,5 @@
 import { postJson } from "./api.ts";
 import { cssEscape } from "./css-escape.ts";
-import { ignorePromiseRejection } from "./ignore-promise-rejection.ts";
 import { captureElementToPng } from "./screenshot.ts";
 
 const FALLBACK_CAPTURE_DELAY_MS = 900;
@@ -182,10 +181,27 @@ export async function captureAndUploadVersionNow(args: {
 }
 
 /**
+ * After source changes (HMR), capture the element PNG for version `v` without uploading.
+ */
+async function captureVersionPngAfterHmr(args: {
+  anchor: string;
+  instance?: number;
+  previousSignature?: string | null;
+}): Promise<string | null> {
+  const instance = args.instance ?? 0;
+  await waitForVersionRender({
+    anchor: args.anchor,
+    instance,
+    previousSignature: args.previousSignature,
+  });
+  return captureElementPng(args.anchor, instance);
+}
+
+/**
  * After source changes (HMR), capture the element and upload PNG for version `v`.
  * Agent variants (v &gt; 0) use this so thumbnails match the applied design.
  */
-export function captureAndUploadVersionAfterHmr(args: {
+function captureAndUploadVersionAfterHmr(args: {
   id: string;
   anchor: string;
   instance?: number;
@@ -196,8 +212,11 @@ export function captureAndUploadVersionAfterHmr(args: {
   const instance = args.instance ?? 0;
 
   const captureNow = async (): Promise<boolean> => {
-    await waitForVersionRender({ anchor, instance, previousSignature });
-    const dataUrl = await captureElementPng(anchor, instance);
+    const dataUrl = await captureVersionPngAfterHmr({
+      anchor,
+      instance,
+      previousSignature,
+    });
     if (!dataUrl) {
       console.warn(
         `[CommentBubble] post-agent capture: anchor ${anchor} not found; keeping placeholder v${v}.png`
@@ -214,101 +233,20 @@ export function captureAndUploadVersionAfterHmr(args: {
   return captureNow().catch(() => false);
 }
 
-async function activateIterationVersion(
-  id: string,
-  v: number
-): Promise<boolean> {
-  try {
-    const res = await postJson("/api/iterations/activate", { id, v });
-    return res.ok;
-  } catch {
-    return false;
-  }
-}
-
 /**
- * Replace v0-placeholder PNGs for each agent variant with a capture of that
- * version on the page. Baseline (v0) is never touched here.
+ * Capture and upload a thumbnail for agent variant `v` when that version is
+ * already live on the page (user switched, or the run applied it). Does not
+ * rewrite source — avoids the flash-and-revert of forCapture activates.
  */
-export async function captureAgentVariantScreenshots(args: {
-  initialPreviousSignature?: string | null;
+export async function capturePendingVersionScreenshot(args: {
   id: string;
   anchor: string;
   instance?: number;
-  versions: number[];
-  activeV: number;
-  shouldRestoreActive?: () => boolean;
-}): Promise<void> {
-  const instance = args.instance ?? 0;
-  const agentVersions = args.versions.filter((v) => v > 0);
-  if (agentVersions.length === 0) {
-    return;
+  previousSignature?: string | null;
+  v: number;
+}): Promise<boolean> {
+  if (args.v <= 0) {
+    return false;
   }
-
-  const firstCaptureV = agentVersions.includes(args.activeV)
-    ? args.activeV
-    : agentVersions[0];
-  if (firstCaptureV === undefined) {
-    return;
-  }
-  const others = agentVersions.filter((v) => v !== firstCaptureV);
-
-  if (!(await activateIterationVersion(args.id, firstCaptureV))) {
-    console.warn(
-      `[CommentBubble] failed to activate v${firstCaptureV} for screenshot capture`
-    );
-    return;
-  }
-
-  await captureAndUploadVersionAfterHmr({
-    id: args.id,
-    anchor: args.anchor,
-    instance,
-    previousSignature: args.initialPreviousSignature,
-    v: firstCaptureV,
-  });
-
-  for (const v of others.toSorted((a, b) => a - b)) {
-    const previousSignature = anchorRenderSignature(args.anchor, instance);
-    if (!(await activateIterationVersion(args.id, v))) {
-      console.warn(
-        `[CommentBubble] failed to activate v${v} for screenshot capture`
-      );
-      continue;
-    }
-    await captureAndUploadVersionAfterHmr({
-      id: args.id,
-      anchor: args.anchor,
-      instance,
-      previousSignature,
-      v,
-    });
-  }
-
-  const shouldRestoreActive = args.shouldRestoreActive?.() ?? true;
-  if (
-    shouldRestoreActive &&
-    (others.length > 0 || args.activeV !== firstCaptureV)
-  ) {
-    const previousSignature = anchorRenderSignature(args.anchor, instance);
-    if (await activateIterationVersion(args.id, args.activeV)) {
-      await waitForVersionRender({
-        anchor: args.anchor,
-        instance,
-        previousSignature,
-      });
-    }
-  }
-}
-
-/** Fire-and-forget variant captures after a successful agent run. */
-export function scheduleAgentVariantScreenshots(
-  args: Parameters<typeof captureAgentVariantScreenshots>[0] & {
-    onDone?: () => void;
-  }
-): void {
-  const { onDone, ...captureArgs } = args;
-  captureAgentVariantScreenshots(captureArgs)
-    .then(() => onDone?.())
-    .catch(ignorePromiseRejection);
+  return await captureAndUploadVersionAfterHmr(args);
 }

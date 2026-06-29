@@ -1,36 +1,25 @@
 export interface CommentReply {
   author: string;
-  /** ISO 8601 date string */
   date: string;
   text: string;
-  /** 0-based iteration version this reply refers to (matches marker `active`). */
   v?: number;
 }
 
 export interface CommentProps {
-  /** 0-based index of the active iteration version (matches marker on disk). */
   active?: number;
-  /** uuid matching data-comment-anchor on the sibling/target element */
   anchor: string;
-  /** author identifier (e.g. email) */
   author: string;
-  /** ISO 8601 date string */
   date: string;
-  /** uuid v4, matches data-comment-anchor on the target element */
   id: string;
   replies?: CommentReply[];
-  /** when true, comment is resolved */
   resolved?: boolean;
   /**
    * App route (pathname + search + hash) where the comment was created.
    * Used by the list panel to navigate back to the page hosting the anchor.
    */
   route?: string;
-  /** Iteration screenshot path, e.g. /designs/iterations/<uuid>/v0.png */
   screenshot?: string;
-  /** content hash of the view snapshot this comment was written against */
   snapshot?: string;
-  /** body text */
   text: string;
 }
 
@@ -40,7 +29,6 @@ export interface CommentProps {
  * when the comment isn't inside a `data-view` ancestor).
  */
 export type CommentData = CommentProps & {
-  /** slug of the nearest data-view ancestor; null/undefined = page-level */
   view?: string | null;
 };
 

@@ -1,4 +1,4 @@
-import { Check, Expand, Loader2, Trash2 } from "lucide-react";
+import { Check, Expand, Sparkles, Trash2 } from "lucide-react";
 import { type ReactNode, useState } from "react";
 import { Button } from "../ui/button.tsx";
 import { cn } from "../ui/cn.ts";
@@ -13,15 +13,46 @@ interface VariantGridProps {
   onActivate: (v: number) => void;
   onRemoveVersion: (v: number) => void | Promise<void>;
   onThumbClick: (src: string) => void;
+  runActive: boolean;
   switching: boolean;
   versions: IterationVersion[];
 }
 
+function VariantFooterStatus({
+  showLive,
+  showSwitching,
+}: {
+  showLive: boolean;
+  showSwitching: boolean;
+}): ReactNode {
+  if (showLive) {
+    return (
+      <span className="flex items-center gap-1 font-medium text-[10px] text-primary leading-none">
+        <Check aria-hidden className="h-3 w-3 shrink-0" />
+        Live
+      </span>
+    );
+  }
+  if (showSwitching) {
+    return (
+      <span className="font-mono text-[10px] text-muted-foreground leading-none">
+        …
+      </span>
+    );
+  }
+  return <span aria-hidden className="h-6 w-6" />;
+}
+
 function PendingVariantThumbnail() {
+  // Screenshots are lazy: the variant exists but its thumbnail is captured only
+  // when the user previews it (or the run applies it as the winner). So this is
+  // a ready state, not a busy one — no spinner, and copy that says as much.
   return (
     <div className="absolute inset-0 flex flex-col items-center justify-center gap-1.5 bg-muted text-muted-foreground">
-      <Loader2 aria-hidden className="h-4 w-4 animate-spin" />
-      <span className="font-mono text-[10px] leading-none">Capturing…</span>
+      <Sparkles aria-hidden className="h-4 w-4" />
+      <span className="font-mono text-[10px] leading-none">
+        New version ready
+      </span>
     </div>
   );
 }
@@ -64,6 +95,7 @@ export function VariantGrid({
   active,
   switching,
   deleting,
+  runActive,
   onActivate,
   onRemoveVersion,
   onThumbClick,
@@ -78,6 +110,7 @@ export function VariantGrid({
           onActivate={onActivate}
           onRemoveVersion={onRemoveVersion}
           onThumbClick={onThumbClick}
+          runActive={runActive}
           switching={switching}
           version={version}
         />
@@ -91,6 +124,7 @@ function VariantCard({
   active,
   switching,
   deleting,
+  runActive,
   onActivate,
   onRemoveVersion,
   onThumbClick,
@@ -99,11 +133,13 @@ function VariantCard({
   active: number;
   switching: boolean;
   deleting: boolean;
+  runActive: boolean;
   onActivate: (v: number) => void;
   onRemoveVersion: (v: number) => void | Promise<void>;
   onThumbClick: (src: string) => void;
 }) {
   const isActive = version.v === active;
+  const showLive = isActive;
   const screenshotPending = Boolean(version.screenshotPending);
   const canDelete = version.v > 0;
   const label = version.v === 0 ? "Original" : formatVersionDisplay(version.v);
@@ -129,21 +165,12 @@ function VariantCard({
     onActivate(version.v);
   };
 
-  let footerTrailing: ReactNode = <span aria-hidden className="h-6 w-6" />;
-  if (isActive) {
-    footerTrailing = (
-      <span className="flex items-center gap-1 font-medium text-[10px] text-primary leading-none">
-        <Check aria-hidden className="h-3 w-3 shrink-0" />
-        Live
-      </span>
-    );
-  } else if (switching) {
-    footerTrailing = (
-      <span className="font-mono text-[10px] text-muted-foreground leading-none">
-        …
-      </span>
-    );
-  }
+  const footerTrailing = (
+    <VariantFooterStatus
+      showLive={showLive}
+      showSwitching={switching && isActive}
+    />
+  );
 
   const cardBody = (
     <>
@@ -169,7 +196,8 @@ function VariantCard({
     <div
       className={cn(
         "group/card relative overflow-hidden rounded-lg border bg-background transition-shadow",
-        isActive ? "border-primary ring-1 ring-primary" : "hover:border-ring/60"
+        showLive && "border-primary ring-1 ring-primary",
+        !showLive && "hover:border-ring/60"
       )}
     >
       {canActivate ? (
@@ -200,7 +228,7 @@ function VariantCard({
         <Button
           aria-label="Delete version"
           className="absolute right-1 bottom-0.5 z-10 h-6 w-6 text-muted-foreground opacity-0 transition-opacity hover:bg-destructive/10 hover:text-destructive focus-visible:opacity-100 group-hover/card:opacity-100"
-          disabled={deleting || deleteBusy || confirming}
+          disabled={deleting || deleteBusy || confirming || runActive}
           onClick={(e) => {
             e.stopPropagation();
             requestDelete();

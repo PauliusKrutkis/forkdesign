@@ -25,6 +25,7 @@ const DialogOverlay = ({
 }) => (
   <Overlay
     className={cn("fixed inset-0 z-[9240] bg-black/50", className)}
+    data-comment-overlay="true"
     ref={ref}
     {...props}
   />
@@ -46,6 +47,7 @@ const DialogContent = ({
         "fixed top-[50%] left-[50%] z-[9241] grid w-full max-w-lg translate-x-[-50%] translate-y-[-50%] gap-4 border bg-background p-0 shadow-lg sm:rounded-lg",
         className
       )}
+      data-comment-overlay="true"
       ref={ref}
       {...props}
     >

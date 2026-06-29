@@ -39,7 +39,6 @@ describe("applyIterationVersionToSource — full design revert", () => {
   );
 }
 `;
-    // The agent's v2 changed BOTH the button AND the surrounding <main> wrapper.
     const v2 = `export function Page() {
   return (
     <main className="p-99 bg-red-500">
@@ -72,7 +71,6 @@ describe("applyIterationVersionToSource — full design revert", () => {
     const output = await readFile(sourcePath, "utf8");
     expect(output).toContain("Original");
     expect(output).not.toContain("Variant 2");
-    // The surrounding wrapper reverts too — this is the fix.
     expect(output).toContain("p-4");
     expect(output).not.toContain("p-99");
 
@@ -141,7 +139,6 @@ describe("applyIterationVersionToSource — full design revert", () => {
     expect(result.ok).toBe(true);
 
     const output = await readFile(sourcePath, "utf8");
-    // comment-a's whole design reverted (element + wrapper):
     expect(output).toContain("A original");
     expect(output).toContain("p-4");
     expect(output).not.toContain("p-99");

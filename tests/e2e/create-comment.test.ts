@@ -126,8 +126,9 @@ test.describe("create comment", () => {
     page,
   }) => {
     // Force a deterministic edge case: a narrow viewport so the heading's right
-    // portion sits near the right edge. ComposerPanel anchors to the click point
-    // (clickPoint.x - 200) and clamps left to <= viewportW - 400 - 12.
+    // portion sits near the right edge. ComposerPanel anchors to where the
+    // comment bubble will dock (placeBubblePanel) and clamps left to
+    // <= viewportW - 384 - 12 so the panel never overflows.
     const viewportW = 760;
     await page.setViewportSize({ width: viewportW, height: 600 });
     await page.getByRole("button", { name: "forkdesign comments" }).click();
@@ -157,7 +158,7 @@ test.describe("create comment", () => {
     if (box) {
       // The invariant under test: the panel never overflows the viewport — its
       // left stays non-negative and its right edge stays within the viewport
-      // width (ComposerPanel clamps left into [12, viewportW - 400 - 12]).
+      // width (ComposerPanel clamps left into [12, viewportW - 384 - 12]).
       expect(box.x).toBeGreaterThanOrEqual(0);
       expect(box.x + box.width).toBeLessThanOrEqual(viewportW + 1);
     }

@@ -195,11 +195,9 @@ function maxTsxVersion(project: TempProject, id: string): number {
 
 /**
  * Run one stubbed iteration for `id` (producing v{N}) through the REAL
- * iterations-new route. The route blocks each variant until the client uploads
- * that variant's screenshot (waitForVariantScreenshotUpload, 10s timeout), so
- * we upload CONCURRENTLY while the stream is in flight, retrying the expected
- * next version until the run resolves (the screenshot route notifies the
- * waiter). Returns the terminal done event's version.
+ * iterations-new route. Variant thumbnails are captured lazily on the client
+ * (when the user switches or the run applies a version), so the route no
+ * longer blocks on screenshot upload between variants.
  */
 async function runOneIteration(
   project: TempProject,
@@ -215,24 +213,11 @@ async function runOneIteration(
     `ForkDesign Playground ${marker}`
   );
   agent.setVariant({ source: edited });
-  // The next version this count:1 run will create.
-  const expectedV = maxTsxVersion(project, id) + 1;
 
   const req = ndjsonRequest({ id, count: 1 });
   const res = createNdjsonMockResponse();
 
-  let settled = false;
-  const run = handleIterationsNew(req, res.res, project.root, EXCLUDE).finally(
-    () => {
-      settled = true;
-    }
-  );
-
-  while (!settled) {
-    await uploadScreenshot(project, id, expectedV);
-    await new Promise((r) => setTimeout(r, 5));
-  }
-  await run;
+  await handleIterationsNew(req, res.res, project.root, EXCLUDE);
 
   const events = res.events();
   const done = events.at(-1) as { type: string; ok: boolean; v?: number };

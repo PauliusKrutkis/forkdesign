@@ -182,7 +182,8 @@ describe("integration: iteration snapshot + manifest", () => {
     expect(call?.anchor).toBe(anchor);
     expect(call?.text).toBe("Make the heading bolder");
     expect(call?.model).toBe(model);
-    expect(call?.projectRoot).toBe(project.root);
+    expect(call?.projectRoot).toContain(path.join(".forkdesign", "workspaces"));
+    expect(call?.projectRoot.startsWith(project.root)).toBe(true);
     expect(call?.variantIndex).toBe(1);
     expect(call?.variantCount).toBe(1);
 

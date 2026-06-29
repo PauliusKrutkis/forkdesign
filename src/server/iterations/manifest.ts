@@ -20,7 +20,6 @@ const VERSION_TSX_FILE_RE = /^v(\d+)\.tsx$/;
 
 export type VersionSlotMap = Map<number, { tsx: boolean; png: boolean }>;
 
-/** Merges v{N}.tsx/.png filenames from a directory listing into `present`. */
 export function mergeVersionSlotsFromDirEntries(
   present: VersionSlotMap,
   entries: string[]
@@ -212,7 +211,6 @@ export function resolveIterationsDir(
   return roots[0] ?? null;
 }
 
-/** Version indices where both v{N}.tsx and v{N}.png exist in `iterDir`. */
 export async function listCompleteIterationVersionsInDir(
   iterDir: string
 ): Promise<number[]> {
@@ -227,7 +225,6 @@ export async function listCompleteIterationVersionsInDir(
   return completeVersionIndices(present);
 }
 
-/** Merges version slots across every iteration root for a comment. */
 export async function listCompleteIterationVersionsAllRoots(
   roots: string[]
 ): Promise<number[]> {
@@ -372,7 +369,6 @@ export async function deleteVersionFromManifest(
   );
 }
 
-/** Remove v{N}.tsx/.png and manifest entry from every iteration root. */
 export async function deleteVersionArtifactsAllRoots(
   roots: string[],
   v: number
@@ -417,7 +413,6 @@ export function pngMtimeMs(roots: string[], v: number): number | null {
   }
 }
 
-/** Cache-busted URL for an iteration screenshot (mtime busts stale img cache). */
 export function iterationPngUrl(
   id: string,
   v: number,

@@ -1,3 +1,6 @@
 packages:
   - "."
   - "examples/*"
+  # Standalone starter that installs forkdesign from npm (the degit try path);
+  # kept out of the workspace so it does not depend on the local build.
+  - "!examples/starter"

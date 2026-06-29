@@ -12,7 +12,6 @@ export interface DotInstanceTarget {
 }
 
 interface CommentDotProps {
-  /** True while an agent iteration run is in flight for this anchor. */
   agentWorking?: boolean;
   anchor: string;
   comments: CommentData[];
@@ -87,7 +86,7 @@ function pinBubbleClasses(
   return cn(
     "relative flex h-full w-full items-center justify-center font-semibold text-[10px] tabular-nums leading-none tracking-tight shadow-[0_1px_2px_rgba(0,0,0,0.16),0_2px_6px_-1px_rgba(0,0,0,0.22)] ring-1 transition-[background-color,box-shadow,outline,color] duration-150",
     agentWorking &&
-      "bg-[var(--agent)] text-white ring-[color-mix(in_oklch,var(--agent)_40%,transparent)]",
+      "bg-[var(--fd-agent)] text-white ring-[color-mix(in_oklch,var(--fd-agent)_40%,transparent)]",
     !agentWorking &&
       (state === "default" || state === "recent") &&
       "bg-foreground text-background ring-black/10",
@@ -99,7 +98,7 @@ function pinBubbleClasses(
       "outline outline-2 outline-foreground outline-offset-2",
     isOpen &&
       agentWorking &&
-      "outline outline-2 outline-[var(--agent)] outline-offset-2"
+      "outline outline-2 outline-[var(--fd-agent)] outline-offset-2"
   );
 }
 

@@ -8,6 +8,7 @@ dist/
 .env.*
 !.env.example
 *.tgz
+.forkdesign/
 design/
 designs/
 public/designs/

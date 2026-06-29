@@ -1,15 +1,19 @@
+import { existsSync, readFileSync } from "node:fs";
 import type { IncomingMessage, ServerResponse } from "node:http";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import type { Plugin, ViteDevServer } from "vite";
+import { type Plugin, searchForWorkspaceRoot, type ViteDevServer } from "vite";
 import { configureAgentRuntime } from "../agent/config.ts";
 import type { AgentModel } from "../agent/models.ts";
 import type { AgentSkill } from "../agent/skills.ts";
+import { isScriptedAgentEnabled } from "../agent/strategies/scripted.ts";
 import {
   handleDelete,
   handleGet,
   handlePatch,
   handlePost,
 } from "../api/comments/routes.ts";
+import { handleE2eControl } from "../api/iterations/e2e-control.ts";
 import {
   handleIterationsActivate,
   handleIterationsCancel,
@@ -21,6 +25,7 @@ import {
   type IterationSourceAppliedEvent,
   iterationsSubpath,
 } from "../api/iterations/routes.ts";
+import { FORKDESIGN_DIR } from "../iterations/agent-workspace.ts";
 import { errorMessage, sendError, wrapApiHandler } from "../platform/http.ts";
 import { sourceLoc as createSourceLocPlugin } from "./source-loc.ts";
 
@@ -30,9 +35,7 @@ const VIRTUAL_CLIENT_ID = "virtual:comment-overlay/client";
 const RESOLVED_VIRTUAL_CLIENT_ID = `\0${VIRTUAL_CLIENT_ID}`;
 const LOOPBACK_IPV6 = new Set(["::1", "0:0:0:0:0:0:0:1"]);
 
-/** Public package name; matches `package.json#name`. */
 const PACKAGE_NAME = "forkdesign";
-/** Bare specifiers the auto-mounted virtual client module imports. */
 const CLIENT_BARE_IMPORTS = new Set([
   PACKAGE_NAME,
   `${PACKAGE_NAME}/styles.css`,
@@ -46,11 +49,85 @@ const CLIENT_BARE_IMPORTS = new Set([
  */
 const SELF_MODULE_PATH = fileURLToPath(import.meta.url);
 
+/**
+ * Walk up from a file inside this package to its root (the directory whose
+ * `package.json` is named `forkdesign`). Returns null if not found within a
+ * few levels — e.g. an unusual install layout — so callers can fall back.
+ */
+function findPackageRoot(fromFile: string): string | null {
+  let dir = dirname(fromFile);
+  for (let depth = 0; depth < 10; depth++) {
+    const pkgPath = join(dir, "package.json");
+    if (existsSync(pkgPath)) {
+      try {
+        const pkg = JSON.parse(readFileSync(pkgPath, "utf8")) as {
+          name?: string;
+          exports?: Record<string, { source?: string } | string>;
+        };
+        if (pkg.name === PACKAGE_NAME) {
+          return dir;
+        }
+      } catch {
+        // Unreadable/invalid package.json — keep walking up.
+      }
+    }
+    const parent = dirname(dir);
+    if (parent === dir) {
+      break;
+    }
+    dir = parent;
+  }
+  return null;
+}
+
+const PACKAGE_ROOT = findPackageRoot(SELF_MODULE_PATH);
+
+/**
+ * Absolute path to the overlay's TypeScript entry (`exports["."].source`) when
+ * this package is consumed from a linked checkout that ships `src/` — i.e. the
+ * common "develop the overlay against a real app" setup (`link:../redline`).
+ *
+ * Resolving the overlay to source here lets the consumer's Vite serve it with
+ * live HMR, so overlay edits show up without a `pnpm build`. A published
+ * install ships only `dist/`, so `src/index.ts` is absent and this returns
+ * null — callers then fall back to the built entry. Computed once: the package
+ * layout can't change within a dev session.
+ */
+const clientSourceEntry: string | null = (() => {
+  if (!PACKAGE_ROOT) {
+    return null;
+  }
+  let sourceRel = "./src/index.ts";
+  try {
+    const pkg = JSON.parse(
+      readFileSync(join(PACKAGE_ROOT, "package.json"), "utf8")
+    ) as {
+      exports?: Record<string, { source?: string } | string>;
+    };
+    const entry = pkg.exports?.["."];
+    if (entry && typeof entry === "object" && entry.source) {
+      sourceRel = entry.source;
+    }
+  } catch {
+    // Fall back to the conventional path below.
+  }
+  const abs = resolve(PACKAGE_ROOT, sourceRel);
+  return existsSync(abs) ? abs : null;
+})();
+
 interface SourceChangeController {
   onInternalSourceWorkFinish: (event: IterationSourceAppliedEvent) => void;
   onInternalSourceWorkStart: (event: IterationSourceAppliedEvent) => void;
   onSourceApplied: (event: IterationSourceAppliedEvent) => void;
 }
+
+/**
+ * Glob that keeps Vite's watcher off forkdesign's per-run scratch workspaces.
+ * `createAgentWorkspace` materializes a full project copy under `.forkdesign/`
+ * (inside the Vite root); the index.html/tsconfig.json files in it would each
+ * force a full page reload while an agent runs, wiping the overlay.
+ */
+const WORKSPACE_IGNORE_GLOB = `**/${FORKDESIGN_DIR}/**`;
 
 const sourceChangeControllers = new WeakMap<
   ViteDevServer,
@@ -85,11 +162,11 @@ function rejectRemoteApiRequest(
   return true;
 }
 
-function forkDesignClientModule(): string {
+function forkDesignClientModule(overlayImport: string): string {
   return `
 import { createElement } from "react";
 import { createRoot } from "react-dom/client";
-import { CommentOverlay } from "forkdesign";
+import { CommentOverlay } from "${overlayImport}";
 import "forkdesign/styles.css";
 
 const ROOT_ID = "overlay-root";
@@ -130,6 +207,17 @@ function handleIterationsMiddleware(
 ): void {
   const sub = iterationsSubpath(req.url ?? "");
   const sourceChanges = sourceChangeController(server);
+
+  // Test-only control plane for the scripted agent — gated so it never exists
+  // in a real dev server. See api/iterations/e2e-control.ts.
+  if (
+    req.method === "POST" &&
+    isScriptedAgentEnabled() &&
+    sub.startsWith("/__e2e__/")
+  ) {
+    wrapApiHandler((r, s) => handleE2eControl(r, s, sub))(req, res);
+    return;
+  }
 
   if (req.method === "GET" && (sub === "" || sub === "/")) {
     wrapApiHandler((r, s) =>
@@ -247,7 +335,6 @@ function sendIterationsStreamError(res: ServerResponse, err: unknown): void {
  * dev server pipeline itself.
  */
 export interface CommentsPluginOptions {
-  /** Override the default Agent model priority order. */
   agentModelPriority?: AgentModel[];
   /**
    * Skill guidance injected into generated agent prompts.
@@ -259,7 +346,6 @@ export interface CommentsPluginOptions {
    * dev server is on a trusted network.
    */
   allowRemoteAccess?: boolean;
-  /** Path to the Cursor CLI `agent` binary. Default: `"agent"` (must be on PATH). */
   cursorAgentPath?: string;
   /**
    * Project-relative `src/` prefixes to skip when reading/writing comments
@@ -283,9 +369,57 @@ export function comments(options: CommentsPluginOptions = {}): Plugin {
   const mountOverlay = options.mountOverlay ?? false;
   let projectRoot = process.cwd();
 
+  // When the overlay is served from this package's TypeScript source (a linked
+  // checkout — see `clientSourceEntry`), the consumer's Vite must (a) dedupe
+  // React so the overlay shares the app's single copy rather than resolving its
+  // own through the symlink — two copies break hooks — and (b) be allowed to
+  // read files from this package's root, which lives outside the consumer's
+  // project. Both are no-ops for a built/published install.
+  const serveFromSource = mountOverlay && clientSourceEntry !== null;
+
+  // The auto-mounted client imports the overlay from this specifier. From a
+  // linked checkout we point straight at the TypeScript source via Vite's
+  // `/@fs/` path so edits HMR live; otherwise the bare package name resolves to
+  // the built `dist` entry. (Resolving the bare name to source via `resolveId`
+  // isn't reliable — Vite's core resolver claims that import before our hook
+  // sees it — so we pick the specifier here, where we fully control it.)
+  const overlayImport =
+    serveFromSource && clientSourceEntry
+      ? `/@fs${clientSourceEntry}`
+      : PACKAGE_NAME;
+
   return {
     name: "vite-plugin-comments",
     apply: "serve",
+
+    config(userConfig) {
+      // Keep Vite from watching the agent's scratch workspaces. Each run copies
+      // the whole project under `.forkdesign/` (see createAgentWorkspace); the
+      // index.html/tsconfig.json files in that copy would otherwise trigger a
+      // full page reload on every run and wipe the overlay. Vite appends this
+      // to its built-in ignore defaults.
+      const watchIgnore = {
+        server: { watch: { ignored: [WORKSPACE_IGNORE_GLOB] } },
+      };
+      if (!(serveFromSource && PACKAGE_ROOT)) {
+        return watchIgnore;
+      }
+      // Specifying `fs.allow` at all suppresses Vite's default entry (the
+      // consumer's workspace root), which would block the consumer from
+      // serving its own files (e.g. index.html). So restore that default
+      // explicitly alongside PACKAGE_ROOT, which lives outside the consumer's
+      // project and must also be readable when serving the overlay from source.
+      const consumerRoot = userConfig.root
+        ? resolve(userConfig.root)
+        : process.cwd();
+      return {
+        resolve: { dedupe: ["react", "react-dom"] },
+        server: {
+          watch: { ignored: [WORKSPACE_IGNORE_GLOB] },
+          fs: { allow: [searchForWorkspaceRoot(consumerRoot), PACKAGE_ROOT] },
+        },
+      };
+    },
 
     configResolved(config) {
       projectRoot = config.root;
@@ -372,7 +506,7 @@ export function comments(options: CommentsPluginOptions = {}): Plugin {
 
     load(id) {
       if (mountOverlay && id === RESOLVED_VIRTUAL_CLIENT_ID) {
-        return forkDesignClientModule();
+        return forkDesignClientModule(overlayImport);
       }
       return null;
     },
@@ -417,7 +551,6 @@ export type ForkDesignPluginOption =
   | { name: string }
   | ForkDesignPluginOption[];
 
-/** Streamlined dev setup: source locations + API middleware + overlay mount. */
 export function forkDesign(
   options: ForkDesignPluginOptions = {}
 ): ForkDesignPluginOption {
@@ -440,7 +573,6 @@ export function forkDesign(
   ];
 }
 
-/** Re-exported for `forkdesign/plugin` consumers configuring the dev source-loc stamper. */
 export function sourceLoc(
   options: Parameters<typeof createSourceLocPlugin>[0] = {}
 ): ReturnType<typeof createSourceLocPlugin> {

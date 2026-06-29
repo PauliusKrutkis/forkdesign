@@ -6,27 +6,27 @@
 @source "./index.ts";
 
 @theme {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --color-card: var(--card);
-  --color-card-foreground: var(--card-foreground);
-  --color-popover: var(--popover);
-  --color-popover-foreground: var(--popover-foreground);
-  --color-primary: var(--primary);
-  --color-primary-foreground: var(--primary-foreground);
-  --color-secondary: var(--secondary);
-  --color-secondary-foreground: var(--secondary-foreground);
-  --color-muted: var(--muted);
-  --color-muted-foreground: var(--muted-foreground);
-  --color-accent: var(--accent);
-  --color-accent-foreground: var(--accent-foreground);
-  --color-destructive: var(--destructive);
-  --color-destructive-foreground: var(--destructive-foreground);
-  --color-border: var(--border);
-  --color-input: var(--input);
-  --color-ring: var(--ring);
+  --color-background: var(--fd-background);
+  --color-foreground: var(--fd-foreground);
+  --color-card: var(--fd-card);
+  --color-card-foreground: var(--fd-card-foreground);
+  --color-popover: var(--fd-popover);
+  --color-popover-foreground: var(--fd-popover-foreground);
+  --color-primary: var(--fd-primary);
+  --color-primary-foreground: var(--fd-primary-foreground);
+  --color-secondary: var(--fd-secondary);
+  --color-secondary-foreground: var(--fd-secondary-foreground);
+  --color-muted: var(--fd-muted);
+  --color-muted-foreground: var(--fd-muted-foreground);
+  --color-accent: var(--fd-accent);
+  --color-accent-foreground: var(--fd-accent-foreground);
+  --color-destructive: var(--fd-destructive);
+  --color-destructive-foreground: var(--fd-destructive-foreground);
+  --color-border: var(--fd-border);
+  --color-input: var(--fd-input);
+  --color-ring: var(--fd-ring);
 
-  --radius-sm: calc(var(--radius) - 4px);
-  --radius-md: calc(var(--radius) - 2px);
-  --radius-lg: var(--radius);
+  --radius-sm: calc(var(--fd-radius) - 4px);
+  --radius-md: calc(var(--fd-radius) - 2px);
+  --radius-lg: var(--fd-radius);
 }

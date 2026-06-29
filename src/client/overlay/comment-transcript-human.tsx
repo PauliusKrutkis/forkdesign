@@ -10,7 +10,6 @@ import {
 
 const NAME_SEPARATOR = /[.\-_\s]+/;
 
-/** Initials for the entry avatar, derived from an author identifier/email. */
 function initials(author: string): string {
   const name = author.split("@")[0] ?? author;
   const parts = name.split(NAME_SEPARATOR).filter(Boolean);
@@ -48,7 +47,6 @@ interface TranscriptHumanEntryProps {
   agentVersionCount: number;
   ariaLabel: string;
   author: string;
-  /** Optional badge shown in the meta row (e.g. `Re: v2` for replies). */
   badge?: ReactNode;
   date: string;
   defaultEditMode: ComposerMode;

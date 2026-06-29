@@ -3,7 +3,6 @@ import { cn } from "../ui/cn.ts";
 import { formatDate } from "./lib/bubble-formatters.ts";
 import { formatReplyVersionContext } from "./lib/version-format.ts";
 
-/** One-line `author · date` metadata row. */
 export function CommentBubbleAttribution({
   author,
   date,

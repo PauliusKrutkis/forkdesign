@@ -1,3 +1,4 @@
+import { mkdir } from "node:fs/promises";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import path from "node:path";
 import { getAgentRuntimeConfig } from "../../agent/config.ts";
@@ -6,6 +7,7 @@ import {
   DEFAULT_AGENT_MODEL_PRIORITY,
 } from "../../agent/models.ts";
 import { DEFAULT_AGENT_SKILLS } from "../../agent/skills.ts";
+import { findCommentById } from "../../comments/find-comment.ts";
 import { applyIterationVersionToSource } from "../../iterations/activate-version.ts";
 import { deleteVersionAuxFiles } from "../../iterations/aux-files.ts";
 import { resolveCommentIterationContext } from "../../iterations/context.ts";
@@ -16,6 +18,7 @@ import {
   listCompleteIterationVersionsAllRoots,
   pngMtimeMs,
   readIterationsManifest,
+  resolveIterationDirRoots,
   tsxMtimeMs,
   updateVersionScreenshotCaptured,
   versionEntryFromManifest,
@@ -35,6 +38,7 @@ import {
   startIterationRun,
   updateIterationRunStatus,
   updateIterationRunVisibleActive,
+  withIterationSourceLock,
 } from "../../iterations/runs.ts";
 import { atomicWriteBytes } from "../../platform/atomic-write.ts";
 import {
@@ -86,7 +90,6 @@ function screenshotWaiterKey(id: string, v: number): string {
 function waitForVariantScreenshotUpload(
   event: RunNewIterationVariantCaptureEvent
 ): Promise<void> {
-  updateIterationRunVisibleActive(event.id, event.version);
   return new Promise((resolve) => {
     const key = screenshotWaiterKey(event.id, event.version);
     let timeout: ReturnType<typeof setTimeout> | undefined;
@@ -200,7 +203,6 @@ export async function handleIterationsList(
   });
 }
 
-/** Normalized path after `/api/iterations` (handles mount-stripped and full URLs). */
 export function iterationsSubpath(reqUrl: string): string {
   const url = new URL(reqUrl, "http://localhost");
   let sub = url.pathname;
@@ -271,7 +273,7 @@ export async function handleIterationsActivate(
     sendError(res, 400, parsed.reason);
     return;
   }
-  const { id, v } = parsed.value;
+  const { forCapture, id, v } = parsed.value;
 
   const ctx = await resolveCommentIterationContext(
     projectRoot,
@@ -283,25 +285,28 @@ export async function handleIterationsActivate(
     return;
   }
 
-  if (hasActiveIterationRun(id)) {
-    sendError(
-      res,
-      409,
-      "cannot activate an iteration while an iteration is running"
-    );
-    return;
-  }
-
-  const applied = await applyIterationVersionToSource(
-    ctx.found,
-    ctx.iterationRoots,
-    id,
-    v,
-    projectRoot
+  // While a run is active the agent owns the live source tree. Rather than
+  // reject the switch (the old 409), serialize it behind the per-comment source
+  // lock so it applies at the next gap between variants without colliding with
+  // the variant the agent is editing.
+  const applied = await withIterationSourceLock(id, () =>
+    applyIterationVersionToSource(
+      ctx.found,
+      ctx.iterationRoots,
+      id,
+      v,
+      projectRoot
+    )
   );
   if (!applied.ok) {
     sendError(res, applied.status, applied.message);
     return;
+  }
+
+  // Keep the in-flight run's visible-active in sync so a concurrent GET reflects
+  // the user's choice instead of the version last captured by the agent.
+  if (hasActiveIterationRun(id) && !forCapture) {
+    updateIterationRunVisibleActive(id, v);
   }
 
   // Trigger HMR for every file the activation touched — the comment's file AND
@@ -323,13 +328,6 @@ export async function handleIterationsActivate(
   });
 }
 
-/**
- * POST /api/iterations/delete { id, v }
- *
- * Removes v{N}.tsx, v{N}.png, and the manifest entry. Baseline (v0) cannot be
- * deleted. If the deleted version was active, switches the page to the newest
- * remaining version.
- */
 export async function handleIterationsDelete(
   req: IncomingMessage,
   res: ServerResponse,
@@ -426,21 +424,6 @@ export async function handleIterationsDelete(
   });
 }
 
-/**
- * POST /api/iterations/new { id }
- *
- * Streams progress to the client as newline-delimited JSON (NDJSON):
- *   - `{type:"progress", stage:"agent", tool?, detail?}` — projected SDK events
- *   - `{type:"progress", stage:"snapshot", detail}` — server post-processing
- *   - `{type:"done", ok:true, ...}` or `{type:"done", ok:false, error}` — final
- *
- * Exactly one `done` event is emitted, then the response is closed. The
- * browser bubble consumes the stream and shows live status.
- *
- * Validation errors (before headers are flushed) still return a JSON error
- * with the appropriate non-200 status; the client only starts NDJSON-parsing
- * after a 200.
- */
 export async function handleIterationsNew(
   req: IncomingMessage,
   res: ServerResponse,
@@ -547,13 +530,13 @@ export async function handleIterationsScreenshot(
   }
   const { id, v, screenshotPng } = parsed.value;
 
-  const ctx = await resolveCommentIterationContext(
-    projectRoot,
-    id,
-    excludeSrcPrefixes
-  );
-  if (!ctx.ok) {
-    sendError(res, ctx.status, ctx.message);
+  // Only the comment needs to exist — the iterations dir may not yet (the v0
+  // baseline capture fires before the agent run that would create it). Resolve
+  // the comment for validation, then ensure the canonical dir below so early
+  // captures persist instead of 404-ing on a missing directory.
+  const found = await findCommentById(projectRoot, id, excludeSrcPrefixes);
+  if (!found) {
+    sendError(res, 404, `comment id not found: ${id}`);
     return;
   }
 
@@ -563,15 +546,16 @@ export async function handleIterationsScreenshot(
     return;
   }
 
-  const pngPath = path.join(ctx.iterDir, `v${v}.png`);
+  const iterDir = path.join(projectRoot, "designs", "iterations", id);
   try {
-    await atomicWriteBytes(pngPath, bytes);
+    await mkdir(iterDir, { recursive: true });
+    await atomicWriteBytes(path.join(iterDir, `v${v}.png`), bytes);
   } catch (err) {
     sendError(res, 500, errorMessage(err));
     return;
   }
   try {
-    await updateVersionScreenshotCaptured(ctx.iterDir, v, true);
+    await updateVersionScreenshotCaptured(iterDir, v, true);
   } catch (err) {
     console.warn(
       `[vite-plugin-comments] failed to mark v${v}.png captured: ${errorMessage(err)}`
@@ -579,7 +563,7 @@ export async function handleIterationsScreenshot(
   }
   notifyVariantScreenshotUploaded(id, v);
 
-  const mtimeMs = pngMtimeMs(ctx.iterationRoots, v);
+  const mtimeMs = pngMtimeMs(resolveIterationDirRoots(projectRoot, id), v);
 
   sendJson(res, {
     ok: true,

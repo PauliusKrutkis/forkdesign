@@ -108,3 +108,15 @@ flowchart TB
   Agent --> AgentModel
   Plugins --> API
 ```
+
+## Agent iteration workspace (Stage 2)
+
+During a multi-variant agent run, edits happen in an isolated **agent workspace** under `.forkdesign/workspaces/<runId>/` — either a git worktree (when the host project is a git repo) or a temp copy with a `node_modules` symlink. The workspace is seeded from a pre-run snapshot of the live source tree so uncommitted markers and edits are preserved.
+
+The variant loop never writes agent output to the live Vite tree. Snapshots land in `designs/iterations/<id>/` as before; live source changes only via:
+
+- `POST /api/iterations/activate` (user preview or screenshot capture)
+- successful batch finish (honors `visibleActive` from mid-run picks)
+- cancel → restore pre-run baseline
+
+This decoupling allows honest **Live** mid-run version switching: the user can preview any finished variant while the agent generates the next one in the workspace.

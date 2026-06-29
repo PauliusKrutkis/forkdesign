@@ -1,17 +1,3 @@
-/**
- * AST writer for inserting `{/* @comment ... *\/}` markers into a `.tsx` page
- * file.
- *
- * Used by the dev-only Vite plugin (`server/plugins/comments.ts`) to serve the
- * `POST /api/comments` write path. Formatting-preserving via `recast` so we
- * don't churn unrelated regions of the file each time a comment is added.
- *
- * Orchestration lives here; implementation is split across:
- *   - `writer-errors.ts` — WriteError
- *   - `writer-ast.ts` — recast/JSX helpers
- *   - `writer-directive.ts` — string-level @comment directive mutations
- */
-
 import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { parse as parseBabel } from "@babel/parser";
@@ -46,62 +32,23 @@ const ANCHOR_ATTR_RE = /\banchor="([^"]+)"/;
 const TRAILING_NEWLINE_INDENT_RE = /\n[ \t]*$/;
 
 export interface WriteCommentInput {
-  /** Absolute path to the .tsx file. */
   absolutePath: string;
-  /** Author identifier (email). */
   author: string;
-  /** 1-indexed column of the `<` of the target JSXElement. */
   column: number;
-  /**
-   * If the target element already has `data-comment-anchor`, the caller may
-   * pass it through so we don't mint a new uuid. When omitted, an existing
-   * attribute on the AST is reused as the anchor, otherwise a fresh uuid is
-   * minted and added.
-   */
   existingAnchor?: string;
-  /**
-   * Optional pre-allocated uuid to stamp as the directive's `id`. Callers use
-   * this when they need the id BEFORE the write (e.g. to compute a screenshot
-   * path under `/designs/iterations/<id>/v0.png`). When omitted the writer
-   * mints a fresh uuid as before.
-   */
   id?: string;
-  /** 1-indexed line of the target JSXElement (Babel-style loc.start.line). */
   line: number;
-  /**
-   * Optional app route (pathname + search + hash) stamped on the directive so
-   * the overlay can navigate back to the page where the comment was created.
-   */
   route?: string;
-  /**
-   * Optional repo-root absolute path to the cropped PNG saved at comment time
-   * (e.g. `/designs/iterations/<id>/v0.png`). When provided, the writer emits
-   * `screenshot="..."` on the directive so the reader can surface it.
-   */
   screenshot?: string;
-  /** Body text from the composer. */
   text: string;
 }
 
 export interface WriteCommentResult {
-  /** uuid written as `anchor="..."` and as `data-comment-anchor` on the target. */
   anchor: string;
-  /** ISO 8601 date string written as `date="..."`. */
   date: string;
-  /** uuid v4 written as the directive's `id="..."`. */
   id: string;
 }
 
-/**
- * Mutate the file at `absolutePath` to (a) stamp `data-comment-anchor` on the
- * JSXElement at (line, column) if it doesn't already have one and (b) insert
- * a sibling `{/* @comment ... *\/}` marker. Returns the ids that ended up on
- * disk.
- *
- * Throws on parse errors, no element at (line, column), or invalid output.
- * The on-disk write is atomic-ish: we write to a tmp file in the same
- * directory and rename over the original.
- */
 export async function writeCommentToFile(
   input: WriteCommentInput
 ): Promise<WriteCommentResult> {
@@ -116,8 +63,6 @@ export async function writeCommentToFile(
     );
   }
 
-  // 1. Resolve the anchor uuid. Reuse an existing data-comment-anchor when
-  //    present (callers may also pass `existingAnchor` to be explicit).
   const existingAnchorOnNode = readAttrValue(
     target.openingElement,
     "data-comment-anchor"
@@ -128,14 +73,9 @@ export async function writeCommentToFile(
     addAttribute(target.openingElement, "data-comment-anchor", anchorUuid);
   }
 
-  // 2. Mint a fresh id for the comment marker (unless the caller already
-  //    allocated one — used by the POST handler when the id is needed up
-  //    front to derive paths like `/designs/iterations/<id>/v0.png`).
   const id = input.id ?? randomUUID();
   const date = new Date().toISOString();
 
-  // 3. Build the new JSXExpressionContainer carrying the @comment directive
-  //    and insert as next sibling.
   const marker = buildCommentMarker({
     id,
     anchor: anchorUuid,
@@ -147,10 +87,7 @@ export async function writeCommentToFile(
   });
   insertAfterSibling(ast, target, marker);
 
-  // 4. Serialize, verify, write atomically.
   const output = recast.print(ast).code;
-  // Parse the result with the same parser settings the reader uses, so we
-  // never persist syntactically-broken output.
   try {
     parseBabel(output, {
       sourceType: "module",
@@ -171,30 +108,11 @@ export async function writeCommentToFile(
 }
 
 export interface UpdateCommentActiveInput {
-  /** Absolute path to the .tsx file containing the marker. */
   absolutePath: string;
-  /** New value for the directive's `active=N` attribute. */
   active: number;
-  /** uuid that matches the `id` attribute on the `@comment` directive. */
   commentId: string;
 }
 
-/**
- * Find the `{/* @comment id="<commentId>" ... *\/}` block in `absolutePath` and
- * set its `active=N` attribute to the supplied integer.
- *
- * Mutation strategy: the directive is a free-form attribute list living
- * INSIDE a CommentBlock value (not real AST). We mutate the CommentBlock
- * node's `.value` string and let recast print the surrounding code untouched.
- * Regex-based replace is sufficient because the format is constrained (we
- * emit it ourselves) — we just need to:
- *   1. Replace an existing `active=N` if present.
- *   2. Otherwise append ` active=N` before the trailing whitespace of the
- *      directive (no trailing-newline weirdness since recast preserves block
- *      boundaries).
- *
- * Throws (with status 404) when no matching comment id is found in the file.
- */
 export async function updateCommentActive(
   input: UpdateCommentActiveInput
 ): Promise<void> {
@@ -213,19 +131,11 @@ export async function updateCommentActive(
 }
 
 export interface UpdateCommentTextInput {
-  /** Absolute path to the .tsx file containing the marker. */
   absolutePath: string;
-  /** uuid that matches the `id` attribute on the `@comment` directive. */
   commentId: string;
-  /** New body text for the comment. */
   text: string;
 }
 
-/**
- * Find the `{/* @comment id="<commentId>" ... *\/}` block and replace its
- * `text=...` attribute. Uses `JSON.stringify` for the value so the encoding
- * matches `buildCommentMarker`.
- */
 export async function updateCommentText(
   input: UpdateCommentTextInput
 ): Promise<void> {
@@ -242,16 +152,11 @@ export async function updateCommentText(
 }
 
 export interface UpdateCommentResolvedInput {
-  /** Absolute path to the .tsx file containing the marker. */
   absolutePath: string;
-  /** uuid that matches the `id` attribute on the `@comment` directive. */
   commentId: string;
   resolved: boolean;
 }
 
-/**
- * Toggle the bare `resolved` flag on the `@comment` marker.
- */
 export async function updateCommentResolved(
   input: UpdateCommentResolvedInput
 ): Promise<void> {
@@ -264,14 +169,11 @@ export async function updateCommentResolved(
 }
 
 export interface AppendCommentReplyInput {
-  /** Absolute path to the .tsx file containing the marker. */
   absolutePath: string;
-  /** uuid that matches the `id` attribute on the `@comment` directive. */
   commentId: string;
   reply: {
     author: string;
     text: string;
-    /** 0-based iteration version; defaults to marker `active` when omitted. */
     v?: number;
   };
 }
@@ -283,10 +185,6 @@ export interface AppendCommentReplyResult {
   v: number;
 }
 
-/**
- * Append a flat reply to the `@comment` marker's `replies=[...]` array.
- * Creates the attribute when missing. The server stamps `date` as ISO 8601.
- */
 export async function appendCommentReply(
   input: AppendCommentReplyInput
 ): Promise<AppendCommentReplyResult> {
@@ -326,15 +224,10 @@ export async function appendCommentReply(
 export interface UpdateCommentReplyInput {
   absolutePath: string;
   commentId: string;
-  /** 0-based index into the marker's `replies=[...]` array. */
   replyIndex: number;
   text: string;
 }
 
-/**
- * Replace the `text` field on an existing flat reply. Author and date are
- * preserved.
- */
 export async function updateCommentReply(
   input: UpdateCommentReplyInput
 ): Promise<void> {
@@ -356,11 +249,9 @@ export async function updateCommentReply(
 export interface DeleteCommentReplyInput {
   absolutePath: string;
   commentId: string;
-  /** 0-based index into the marker's `replies=[...]` array. */
   replyIndex: number;
 }
 
-/** Remove one flat reply from the marker's `replies=[...]` array. */
 export async function deleteCommentReply(
   input: DeleteCommentReplyInput
 ): Promise<void> {
@@ -376,19 +267,11 @@ export async function deleteCommentReply(
 }
 
 export interface DeleteCommentMarkerInput {
-  /** Absolute path to the .tsx file containing the marker. */
   absolutePath: string;
-  /** uuid matching the `id` attribute on the `@comment` directive. */
   commentId: string;
 }
 
 export interface DeleteCommentMarkerResult {
-  /**
-   * True when the target was the last @comment block referencing the anchor
-   * and we therefore also stripped `data-comment-anchor="<anchor>"` from the
-   * JSXElement that carried it. False when other sibling @comment markers
-   * still reference the anchor and the attribute was preserved.
-   */
   removedAnchor: boolean;
 }
 
@@ -410,7 +293,6 @@ function collectCommentBlocks(node: t.JSXExpressionContainer): t.Comment[] {
   return blocks;
 }
 
-/** `undefined` when the block is not a matching `@comment` directive. */
 function anchorFromCommentBlock(
   block: t.Comment,
   commentId: string
@@ -528,21 +410,6 @@ function isAnchorReferencedInAst(ast: t.File, anchor: string): boolean {
   return referenced;
 }
 
-/**
- * Remove the `{/* @comment id="<commentId>" ... *\/}` JSXExpressionContainer
- * from the file. When the deleted marker was the only one referencing its
- * `anchor`, the `data-comment-anchor="<anchor>"` attribute is also removed
- * from the JSXElement that carried it (so the source goes back to its
- * pre-comment shape). When other sibling markers still reference the anchor,
- * the attribute is preserved.
- *
- * Whitespace cleanup: when removing the marker we also strip the JSXText
- * fragment IMMEDIATELY preceding it if it ends in a newline + indent — this
- * prevents successive deletes from leaving piles of blank lines.
- *
- * Throws WriteError(404) when no `@comment` block with that id is found in the
- * file. Throws WriteError(500) when the resulting source fails to re-parse.
- */
 export async function deleteCommentMarker(
   input: DeleteCommentMarkerInput
 ): Promise<DeleteCommentMarkerResult> {
@@ -563,11 +430,6 @@ export async function deleteCommentMarker(
     anchor: targetAnchor,
   } = located;
 
-  // Splice the marker out. If the preceding sibling is JSXText that ends in a
-  // newline + whitespace, strip that trailing whitespace too so we don't leave
-  // a blank line behind. We're careful: only the trailing newline+indent run
-  // is removed, the rest of the JSXText (text content from earlier siblings)
-  // stays intact.
   const parent = targetParent as { children: t.Node[] };
   const children = parent.children;
   const removeFrom = targetIndex;
@@ -576,13 +438,8 @@ export async function deleteCommentMarker(
   const prev = children[removeFrom - 1];
   if (prev && prev.type === "JSXText") {
     const text = (prev as t.JSXText).value;
-    // Trim trailing `\n[ \t]*` so the next sibling on a new line lands flush
-    // against the previous element's closing tag. Falls back to removing the
-    // whole node when it was nothing but whitespace.
     const stripped = text.replace(TRAILING_NEWLINE_INDENT_RE, "");
     if (stripped.length === 0) {
-      // It was purely whitespace — fold it into the splice so we don't leave
-      // an orphan empty JSXText behind.
       removeCount += 1;
       children.splice(removeFrom - 1, removeCount);
     } else if (stripped === text) {
@@ -595,9 +452,6 @@ export async function deleteCommentMarker(
     children.splice(removeFrom, removeCount);
   }
 
-  // Decide whether to also remove the `data-comment-anchor` attribute.
-  // Scan the AST AFTER removal for any other @comment blocks referencing the
-  // same anchor. Zero remaining = strip the attribute.
   const anchorStillReferenced =
     targetAnchor !== null && isAnchorReferencedInAst(ast, targetAnchor);
 

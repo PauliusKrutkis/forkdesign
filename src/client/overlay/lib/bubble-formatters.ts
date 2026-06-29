@@ -1,4 +1,3 @@
-/** NDJSON event shapes streamed from `POST /api/iterations/new`. */
 export interface IterateProgressEvent {
   capture?: boolean;
   detail?: string;

@@ -16,13 +16,9 @@
 export type FloaterSide = "top" | "bottom" | "left" | "right";
 
 export interface FloaterPosition {
-  /** distance along the floater's anchor-facing edge where the arrow sits */
   arrowOffset: number;
-  /** viewport-coords left of the floater */
   left: number;
-  /** the side of the anchor the floater landed on (after any flip) */
   side: FloaterSide;
-  /** viewport-coords top of the floater */
   top: number;
 }
 
@@ -35,11 +31,8 @@ interface Rect {
 
 interface PlaceArgs {
   anchor: Rect;
-  /** minimum distance from a corner the arrow may sit at */
   arrowSafePadding?: number;
-  /** gap between the anchor and the floater */
   gap?: number;
-  /** keep this many px of slack between the floater and the viewport edges */
   padding?: number;
   preferredSide: FloaterSide;
   size: { width: number; height: number };

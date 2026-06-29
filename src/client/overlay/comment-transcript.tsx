@@ -342,6 +342,7 @@ function TurnView({
           onActivate={activate}
           onRemoveVersion={onRemoveVersion}
           onThumbClick={onThumbClick}
+          runActive={iterating}
           switching={versionSwitching}
           versions={
             i === 0 && baseline ? [baseline, ...run.versions] : run.versions

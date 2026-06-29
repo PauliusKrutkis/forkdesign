@@ -33,21 +33,33 @@ export async function activateAddComment(page: Page): Promise<void> {
 }
 
 /**
- * Activate capture mode, freeze the element with the given test id as the
- * comment target, and return the composer panel locator (defaults to Agent
- * mode — flip it with the helpers below).
+ * Activate capture mode, freeze the given target element as the comment target,
+ * and return the composer panel locator (defaults to Agent mode — flip it with
+ * the helpers below). Use this when the target is a specific locator, e.g. a
+ * particular instance of a repeated element (`getByTestId(id).nth(1)`).
  */
-export async function openComposerOnTarget(
+export async function openComposerOnLocator(
   page: Page,
-  testId: string
+  target: Locator
 ): Promise<Locator> {
   await activateAddComment(page);
-  const target = page.getByTestId(testId);
   await target.hover();
   await target.click();
   const panel = page.getByTestId(PANEL_TESTID);
   await expect(panel).toBeVisible();
   return panel;
+}
+
+/**
+ * Activate capture mode, freeze the element with the given test id as the
+ * comment target, and return the composer panel locator (defaults to Agent
+ * mode — flip it with the helpers below).
+ */
+export function openComposerOnTarget(
+  page: Page,
+  testId: string
+): Promise<Locator> {
+  return openComposerOnLocator(page, page.getByTestId(testId));
 }
 
 /** Flip the composer panel from the default Agent mode to Comment mode. */
@@ -104,6 +116,118 @@ export async function runAgentOnTarget(
   }
 
   await panel.getByRole("button", { name: "Run agent" }).click();
+}
+
+interface E2eResponse {
+  json: unknown;
+  ok: boolean;
+  status: number;
+}
+
+/** POST to a scripted-agent control route, returning the parsed result. */
+async function postE2eControl(
+  page: Page,
+  route: "advance" | "await-arrival" | "reset",
+  body: Record<string, unknown>
+): Promise<E2eResponse> {
+  return await page.evaluate(
+    async ({ route: r, body: b }) => {
+      const res = await fetch(`/api/iterations/__e2e__/${r}`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(b),
+      });
+      return {
+        ok: res.ok,
+        status: res.status,
+        json: (await res.json().catch(() => null)) as unknown,
+      };
+    },
+    { route, body }
+  );
+}
+
+/**
+ * Drive the GATED scripted agent (dev server booted with
+ * `FORKDESIGN_E2E_SCRIPTED=1`; see src/server/agent/strategies/scripted.ts).
+ * Same composer flow as `runAgentOnTarget` but pacing comes from the gate, not
+ * a timer: each variant blocks until `advanceAgentVariant` releases it.
+ *
+ * Returns the created comment's id (the run creates exactly one comment; specs
+ * revert source in afterEach so none leak between specs).
+ */
+export async function runGatedAgentOnTarget(
+  page: Page,
+  target: Locator,
+  instruction: string,
+  options: { variantCount?: number } = {}
+): Promise<string> {
+  const panel = await openComposerOnLocator(page, target);
+  const textarea = panel.getByRole("textbox", {
+    name: "Instruction for the agent",
+  });
+  await textarea.fill(instruction);
+
+  const variantCount = options.variantCount ?? 1;
+  for (let n = 1; n < variantCount; n += 1) {
+    await textarea.press("Alt+ArrowUp");
+  }
+
+  await panel.getByRole("button", { name: "Run agent" }).click();
+  // Wait for the in-flight signal (comment created + run started) before
+  // resolving the id — more reliable than racing the source-scan immediately.
+  await expect(page.getByRole("button", { name: "Stop agent" })).toBeVisible({
+    timeout: 30_000,
+  });
+  return await waitForLatestCommentId(page);
+}
+
+/** Poll until the server reports a comment, returning the most recent id. */
+async function waitForLatestCommentId(page: Page): Promise<string> {
+  for (let attempt = 0; attempt < 80; attempt += 1) {
+    const comments = await fetchComments(page);
+    const latest = comments.at(-1);
+    if (latest) {
+      return latest.id;
+    }
+    await page.waitForTimeout(125);
+  }
+  throw new Error("no comment was created by the agent run");
+}
+
+/**
+ * Block until the agent has REACHED variant `variantIndex` for `commentId`
+ * (i.e. it is now actively generating it). The server long-holds the response
+ * until arrival, so there is no polling or sleeping in the spec.
+ */
+export async function awaitVariantInProgress(
+  page: Page,
+  commentId: string,
+  variantIndex: number
+): Promise<void> {
+  const res = await postE2eControl(page, "await-arrival", {
+    id: commentId,
+    variantIndex,
+  });
+  if (!res.ok) {
+    throw new Error(`await-arrival failed (${res.status})`);
+  }
+}
+
+/** Release the variant currently waiting at its gate for `commentId`. */
+export async function advanceAgentVariant(
+  page: Page,
+  commentId: string
+): Promise<void> {
+  const res = await postE2eControl(page, "advance", { id: commentId });
+  if (!res.ok) {
+    throw new Error(`advance failed (${res.status})`);
+  }
+}
+
+/** Clear all scripted-agent gates (call from afterEach to isolate specs). */
+export async function resetScriptedGates(page: Page): Promise<void> {
+  await postE2eControl(page, "reset", {});
 }
 
 /** Fetch the comments the server currently knows about. */

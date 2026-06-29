@@ -18,11 +18,18 @@ import { useBubbleLeadActions } from "./hooks/use-bubble-lead-actions.ts";
 import { useBubblePosture } from "./hooks/use-bubble-posture.ts";
 import { useIterations } from "./hooks/use-iterations.ts";
 import { useViewport } from "./hooks/use-viewport.ts";
-import { scheduleAgentVariantScreenshots } from "./lib/capture-iteration-screenshot.ts";
+import {
+  BUBBLE_WIDTH,
+  INITIAL_BUBBLE_HEIGHT,
+  placeBubblePanel,
+} from "./lib/bubble-geometry.ts";
+import {
+  anchorRenderSignature,
+  capturePendingVersionScreenshot,
+} from "./lib/capture-iteration-screenshot.ts";
 import { handleCommentBubbleKeydown } from "./lib/comment-bubble-keydown.ts";
 import { toErrorMessage } from "./lib/errors.ts";
 import { ignorePromiseRejection } from "./lib/ignore-promise-rejection.ts";
-import { dotRect, placeFloater } from "./lib/placement.ts";
 import type { TranscriptEditSubmit } from "./transcript-entry-composer.tsx";
 
 interface CommentBubbleProps {
@@ -35,7 +42,6 @@ interface CommentBubbleProps {
     startedAt: number;
     status?: string;
   } | null;
-  /** True when this thread already has an agent run in flight outside this mount. */
   agentWorking?: boolean;
   /**
    * When set, the bubble runs the agent once on mount with this many variants.
@@ -53,7 +59,6 @@ interface CommentBubbleProps {
   instance?: number;
   onActiveVersionChange?: (id: string, active: number) => void;
   onAgentModelChange: (model: OverlayModel) => void;
-  /** Drives pin loading while the agent iterates (cleared when the run ends). */
   onAgentWorkingChange?: (
     anchor: string | null,
     run?: {
@@ -70,7 +75,6 @@ interface CommentBubbleProps {
     id: string,
     options?: { revertBaseline?: boolean }
   ) => Promise<void>;
-  /** Reports docked posture so the overlay can hide this thread's pin. */
   onDockedChange?: (docked: boolean) => void;
   onEdit?: (id: string, text: string) => Promise<void>;
   onEditReply?: (id: string, replyIndex: number, text: string) => Promise<void>;
@@ -79,13 +83,28 @@ interface CommentBubbleProps {
   reanchorRequest: number;
   rect: DOMRect;
   skipDeleteConfirmation?: boolean;
+  /**
+   * Skip the entrance animation when this bubble is taking over from the
+   * new-comment composer: the composer fades out on top of it, so animating
+   * the bubble in underneath would show the page through the gap. Captured at
+   * mount, so a later change has no effect.
+   */
+  suppressEntrance?: boolean;
 }
 
-const BUBBLE_WIDTH = 384;
 const BUBBLE_HEADER_HEIGHT = 34;
 const VIEWPORT_PADDING = 12;
-/** Conservative estimate for first render; updated by ResizeObserver. */
-const INITIAL_BUBBLE_HEIGHT = 320;
+
+/**
+ * The bubble shares its chrome with the new-comment composer. The entrance
+ * animation is dropped when the composer is fading out on top of it, so the
+ * two read as one panel swapping contents rather than two boxes.
+ */
+const bubbleClassName = (animateEntrance: boolean) =>
+  cn(
+    "pointer-events-auto fixed z-[9200] flex flex-col overflow-hidden rounded-lg border bg-background shadow-lg",
+    animateEntrance && "animate-bubble-in"
+  );
 /** Smooth dock/undock/peek; suppressed mid-gesture via the `dragging` flag. */
 const PANEL_TRANSITION =
   "left 0.3s cubic-bezier(0.65,0,0.1,1), top 0.3s cubic-bezier(0.65,0,0.1,1), width 0.3s cubic-bezier(0.65,0,0.1,1), height 0.3s cubic-bezier(0.65,0,0.1,1), opacity 0.18s ease, border-radius 0.3s";
@@ -195,18 +214,20 @@ export function CommentBubble({
   onSubmitReply,
   onEditReply,
   reanchorRequest,
+  suppressEntrance = false,
 }: CommentBubbleProps) {
   const lead = comments[0];
   const commentId = lead?.id ?? "";
+  // Captured once: the composer-hand-off case mounts with this true, and a
+  // later flip to false must not retrigger the entrance animation.
+  const [animateEntrance] = useState(!suppressEntrance);
   const {
     data: iterations,
     loading: iterationsLoading,
     switching: versionSwitching,
     deleting: versionDeleting,
     deleteError: versionDeleteError,
-    preferredActive,
     activate: activateVersion,
-    clearPreferredActive,
     removeVersion: removeIterationVersion,
     reload: reloadIterations,
   } = useIterations(commentId);
@@ -225,14 +246,43 @@ export function CommentBubble({
   const pendingScreenshotCaptureKeyRef = useRef<string | null>(null);
   const viewport = useViewport();
 
+  const capturePendingScreenshot = useCallback(
+    async (v: number, previousSignature?: string | null) => {
+      if (!lead || v <= 0) {
+        return;
+      }
+      const version = iterations?.versions.find((entry) => entry.v === v);
+      if (!version?.screenshotPending) {
+        return;
+      }
+      const captureKey = `${lead.id}:${v}`;
+      if (pendingScreenshotCaptureKeyRef.current === captureKey) {
+        return;
+      }
+      pendingScreenshotCaptureKeyRef.current = captureKey;
+      try {
+        const uploaded = await capturePendingVersionScreenshot({
+          id: lead.id,
+          anchor: lead.anchor,
+          instance,
+          previousSignature,
+          v,
+        });
+        if (uploaded) {
+          await reloadIterations();
+        }
+      } finally {
+        if (pendingScreenshotCaptureKeyRef.current === captureKey) {
+          pendingScreenshotCaptureKeyRef.current = null;
+        }
+      }
+    },
+    [instance, iterations?.versions, lead, reloadIterations]
+  );
+
   const activeVersion =
     iterations?.active ?? initialActiveVersion ?? lead?.active ?? 0;
   const hasAgentHistory = (iterations?.versions ?? []).some((v) => v.v > 0);
-  const preferredActiveRef = useRef<number | null>(preferredActive);
-
-  useEffect(() => {
-    preferredActiveRef.current = preferredActive;
-  }, [preferredActive]);
 
   useEffect(() => {
     if (!lead) {
@@ -256,8 +306,6 @@ export function CommentBubble({
     instance,
     reloadIterations,
     onAgentWorkingChange,
-    clearPreferredActive,
-    getPreferredActive: () => preferredActiveRef.current,
   });
   const iterationState = visibleIterationState({
     agentRun,
@@ -275,6 +323,29 @@ export function CommentBubble({
     ? (agentRun?.cancel ?? handleCancelIterate)
     : undefined;
 
+  const handleActivateVersion = useCallback(
+    async (v: number): Promise<void> => {
+      const pending = iterations?.versions.find(
+        (entry) => entry.v === v
+      )?.screenshotPending;
+      const previousSignature =
+        pending && lead
+          ? anchorRenderSignature(lead.anchor, instance)
+          : undefined;
+      await activateVersion(v);
+      if (pending) {
+        await capturePendingScreenshot(v, previousSignature);
+      }
+    },
+    [
+      activateVersion,
+      capturePendingScreenshot,
+      instance,
+      iterations?.versions,
+      lead,
+    ]
+  );
+
   // The original stream reader may belong to a bubble that was closed. While
   // this remounted bubble shows an in-flight run, poll the persisted manifest
   // so completed variants replace loaders as soon as they hit disk.
@@ -288,46 +359,30 @@ export function CommentBubble({
     return () => window.clearInterval(interval);
   }, [iterationState.iterating, reloadIterations]);
 
+  // After a run applies the winning variant (or the user switches to one),
+  // capture its thumbnail once — only while that version is already live.
   useEffect(() => {
-    if (!lead || versionSwitching || versionDeleting) {
+    if (
+      iterationState.iterating ||
+      versionSwitching ||
+      versionDeleting ||
+      !lead
+    ) {
       return;
     }
-    const pendingVersions = (iterations?.versions ?? [])
-      .filter((version) => version.v > 0 && version.screenshotPending)
-      .map((version) => version.v);
-    if (pendingVersions.length === 0) {
-      pendingScreenshotCaptureKeyRef.current = null;
+    const active = iterations?.versions.find(
+      (version) => version.v === activeVersion
+    );
+    if (!active?.screenshotPending || activeVersion <= 0) {
       return;
     }
-
-    const captureKey = `${lead.id}:${activeVersion}:${pendingVersions.join(",")}`;
-    if (pendingScreenshotCaptureKeyRef.current === captureKey) {
-      return;
-    }
-    pendingScreenshotCaptureKeyRef.current = captureKey;
-
-    scheduleAgentVariantScreenshots({
-      id: lead.id,
-      anchor: lead.anchor,
-      instance,
-      versions: pendingVersions,
-      activeV: activeVersion,
-      shouldRestoreActive: () => {
-        const preferredActiveNow = preferredActiveRef.current;
-        return (
-          preferredActiveNow === null || preferredActiveNow === activeVersion
-        );
-      },
-      onDone: () => {
-        Promise.resolve(reloadIterations()).catch(ignorePromiseRejection);
-      },
-    });
+    capturePendingScreenshot(activeVersion).catch(ignorePromiseRejection);
   }, [
     activeVersion,
-    instance,
+    capturePendingScreenshot,
+    iterationState.iterating,
     iterations?.versions,
     lead,
-    reloadIterations,
     versionDeleting,
     versionSwitching,
   ]);
@@ -498,18 +553,7 @@ export function CommentBubble({
 
   const placement = useMemo(
     () =>
-      placeFloater({
-        anchor: dotRect({ right: rect.right, top: rect.top }, viewport),
-        size: {
-          width: BUBBLE_WIDTH,
-          height: Math.min(bubbleHeight, maxBubbleHeight),
-        },
-        preferredSide: "bottom",
-        viewport,
-        padding: VIEWPORT_PADDING,
-        gap: 10,
-        arrowSafePadding: 18,
-      }),
+      placeBubblePanel(rect, viewport, Math.min(bubbleHeight, maxBubbleHeight)),
     [rect, bubbleHeight, maxBubbleHeight, viewport]
   );
 
@@ -579,7 +623,7 @@ export function CommentBubble({
 
       <div
         aria-label="Comment"
-        className="pointer-events-auto fixed z-[9200] flex animate-bubble-in flex-col overflow-hidden rounded-lg border bg-background shadow-lg"
+        className={bubbleClassName(animateEntrance)}
         data-comment-overlay="true"
         onPointerDown={(e) => e.stopPropagation()}
         ref={containerRef}
@@ -654,7 +698,7 @@ export function CommentBubble({
           iterations={iterations}
           iterationsLoading={iterationsLoading}
           lead={lead}
-          onActivateVersion={activateVersion}
+          onActivateVersion={handleActivateVersion}
           onAgentModelChange={onAgentModelChange}
           onEditComment={
             onEdit

@@ -32,16 +32,6 @@ export interface StoredCommentReply {
   v?: number;
 }
 
-/**
- * Find the `{/* @comment id="<commentId>" ... *\/}` block in `source` and
- * return its raw inner text — i.e. everything between `/*` and `*\/`,
- * preserving leading/trailing whitespace verbatim. Returns null when no
- * matching marker exists.
- *
- * Used by the activate path to recover the FULL directive (including text,
- * author, date, screenshot, active, etc.) so it can be injected into a legacy
- * `v{N}.tsx` snapshot that pre-dates the marker.
- */
 export function extractDirectiveInner(
   source: string,
   commentId: string
@@ -58,12 +48,6 @@ export function extractDirectiveInner(
   return result;
 }
 
-/**
- * Replace the `{/* @comment id="<commentId>" ... *\/}` block in `source` with
- * `directiveInner` (raw text between `/*` and `*\/`). Used when activating an
- * iteration snapshot so overlay metadata (replies, text, resolved, etc.) from
- * the live marker is not clobbered by an older snapshot copy of the directive.
- */
 export function replaceCommentMarkerInSource(
   source: string,
   commentId: string,
@@ -95,24 +79,6 @@ export function replaceCommentMarkerInSource(
   return output;
 }
 
-/**
- * Inject a pre-built `{/* @comment ... *\/}` directive into `source` as a
- * sibling of the JSX element carrying `data-comment-anchor="<anchorUuid>"`.
- *
- * This is the recovery path for legacy iteration snapshots: a `v{N}.tsx` that
- * still has the `data-comment-anchor` attribute on the element but is missing
- * the `{/* @comment ... *\/}` block. We rebuild the marker as a sibling using
- * the same insertion logic the writer uses for fresh markers.
- *
- * `directiveInner` is the raw text BETWEEN the `/*` and `*\/` of the original
- * block (e.g. `" @comment id=\"...\" anchor=\"...\" text=\"...\" ... "`,
- * usually with a leading space). The caller pulls it off the current source
- * file's AST so attributes (text, author, date, screenshot, active, etc.) are
- * preserved verbatim.
- *
- * Returns the new source. Throws `WriteError(400)` when no element carries
- * the supplied anchor uuid. Throws `WriteError(500)` for parse/print failures.
- */
 export function injectExistingMarkerIntoSource(
   source: string,
   anchorUuid: string,
@@ -148,18 +114,12 @@ export function readActiveFromDirective(raw: string): number {
 }
 
 export function setActiveOnDirective(raw: string, active: number): string {
-  // Replace existing `active=<digits>` (handle optional minus, though we
-  // forbid negative on input). Word-boundary so we don't match e.g.
-  // `inactive=...`.
   if (ACTIVE_VALUE_RE.test(raw)) {
     return raw.replace(ACTIVE_VALUE_RE, `active=${active}`);
   }
-  // Preserve trailing whitespace on the comment-block value so the
-  // closing `*/` keeps its spacing. Split into [content][trailingSpace].
   const m = raw.match(TRAILING_WHITESPACE_RE);
   const content = m ? m[1] : raw;
   const trail = m ? m[2] : "";
-  // Add a single space between the last attr and our addition.
   const sep = content.length > 0 && !TRAILING_SPACE_RE.test(content) ? " " : "";
   return `${content}${sep}active=${active}${trail}`;
 }
@@ -191,7 +151,6 @@ export function setCommentActiveInSource(
   );
 }
 
-/** Toggle the bare `resolved` flag on a directive (reader parses as boolean). */
 export function setResolvedOnDirective(raw: string, resolved: boolean): string {
   const hasResolved = RESOLVED_ATTR_RE.test(raw);
   if (resolved) {
@@ -211,10 +170,6 @@ export function setResolvedOnDirective(raw: string, resolved: boolean): string {
   return raw.replace(RESOLVED_STRIP_RE, "");
 }
 
-/**
- * Replace the `text=...` attribute on a directive. The value is always
- * emitted as `text=${JSON.stringify(text)}` to match `buildCommentMarker`.
- */
 export function setTextOnDirective(raw: string, text: string): string {
   const replacement = `text=${JSON.stringify(text)}`;
   if (!TEXT_ATTR_RE.test(raw)) {

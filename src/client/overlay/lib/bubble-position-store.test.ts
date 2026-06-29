@@ -85,7 +85,6 @@ describe("clampPositionIntoView", () => {
       viewport,
       width
     );
-    // At least MIN_VISIBLE (120) px of the panel stays reachable.
     expect(clamped.left).toBe(viewport.width - 120);
     expect(clamped.top).toBe(viewport.height - 120);
   });

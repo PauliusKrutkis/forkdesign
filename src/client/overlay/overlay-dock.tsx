@@ -6,6 +6,13 @@ import { useDismissOnOutside } from "./hooks/use-dismiss-on-outside.ts";
 import { OverlayDockMenu, OverlayDockPill } from "./overlay-dock-menu.tsx";
 
 export interface OverlayDockProps {
+  /**
+   * Drop the dock beneath an open comment bubble (z-9195 instead of z-9400) so
+   * a bubble that floats over the dock's corner can receive clicks on its own
+   * controls. The pill stays above page anchors/pins, so it remains clickable
+   * wherever the bubble doesn't overlap it.
+   */
+  belowBubble: boolean;
   composerActive: boolean;
   enabled: boolean;
   onPageCount: number;
@@ -22,6 +29,7 @@ export interface OverlayDockProps {
 export function OverlayDock({
   show,
   position,
+  belowBubble,
   enabled,
   onToggleEnabled,
   composerActive,
@@ -83,7 +91,8 @@ export function OverlayDock({
   return (
     <div
       className={cn(
-        "pointer-events-none fixed z-[9400] flex flex-col gap-2",
+        "pointer-events-none fixed flex flex-col gap-2",
+        belowBubble ? "z-[9195]" : "z-[9400]",
         POSITION_CLASSES[position]
       )}
       data-comment-overlay="true"

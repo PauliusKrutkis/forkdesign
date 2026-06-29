@@ -17,7 +17,6 @@ export interface FoundComment {
     replies?: CommentReply[];
   };
   relativePath: string;
-  /** ids of OTHER @comment markers in the same file (for the activate warning). */
   siblingIds: string[];
 }
 
@@ -61,10 +60,6 @@ export async function collectAllowedTsxFiles(
   return out;
 }
 
-/**
- * Walk all allowed .tsx files under src/ and find the one carrying the marker
- * with `id === commentId`. Returns null when no file owns the id.
- */
 export async function findCommentById(
   projectRoot: string,
   commentId: string,

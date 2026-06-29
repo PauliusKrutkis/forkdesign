@@ -8,7 +8,6 @@ import {
 } from "../lib/bubble-position-store.ts";
 import { dotRect } from "../lib/placement.ts";
 
-/** Docked (edge-snapped) posture sizing. */
 const DOCK_DEFAULT_WIDTH = 440;
 const DOCK_MIN_WIDTH = 360;
 const DOCK_MAX_WIDTH = 720;
@@ -77,13 +76,13 @@ function dockedBox(
 function dockedRadiusFor(side: DockSide): string {
   switch (side) {
     case "left":
-      return "0 var(--radius) var(--radius) 0";
+      return "0 var(--fd-radius) var(--fd-radius) 0";
     case "right":
-      return "var(--radius) 0 0 var(--radius)";
+      return "var(--fd-radius) 0 0 var(--fd-radius)";
     case "top":
-      return "0 0 var(--radius) var(--radius)";
+      return "0 0 var(--fd-radius) var(--fd-radius)";
     default:
-      return "var(--radius) var(--radius) 0 0";
+      return "var(--fd-radius) var(--fd-radius) 0 0";
   }
 }
 

@@ -3,7 +3,6 @@ import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Button } from "../ui/button.tsx";
 
-/** Click-to-enlarge screenshot; portaled to the overlay root for z-index. */
 export function CommentBubbleLightbox({
   src,
   onClose,

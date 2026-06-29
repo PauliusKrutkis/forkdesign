@@ -36,15 +36,6 @@ export function pushComments(
   }
 }
 
-/**
- * Find the JSXElement whose `loc.start` is at (line, column - 1). Babel
- * columns are 0-indexed; the overlay sends 1-indexed values matching the
- * `<` token, so we subtract 1 when matching.
- *
- * If no exact match exists, fall back to the JSXElement on the same line
- * with the smallest column delta — this forgives an off-by-one in either
- * direction (e.g. a caller that already converted).
- */
 export function findJsxElementAt(
   ast: File,
   line: number,
@@ -76,8 +67,6 @@ export function findJsxElementAt(
   if (exact) {
     return exact;
   }
-  // Only accept a fallback if it's within 1 column — protects against
-  // matching a totally unrelated element on the same line.
   if (bestFallback !== null) {
     const fb = bestFallback as { node: JSXElement; delta: number };
     if (fb.delta <= 1) {
@@ -87,10 +76,6 @@ export function findJsxElementAt(
   return null;
 }
 
-/**
- * Find the JSXElement carrying `data-comment-anchor="<anchorUuid>"`. Mirrors
- * `findJsxElementAt` but matches on attribute value instead of source loc.
- */
 export function findJsxElementByAnchor(
   ast: File,
   anchorUuid: string
@@ -114,12 +99,6 @@ export function findJsxElementByAnchor(
   return found;
 }
 
-/**
- * Find the JSXElement immediately before a specific `{/* @comment ... *\/}`
- * marker. This disambiguates repeated source elements that share the same
- * `data-comment-anchor` value, because the marker is written next to the exact
- * instance the user commented on.
- */
 export function findJsxElementByCommentMarker(
   ast: File,
   commentId: string
@@ -244,37 +223,10 @@ interface MarkerArgs {
   date: string;
   id: string;
   route?: string;
-  /**
-   * Optional repo-root absolute path to the saved screenshot, e.g.
-   * `/designs/iterations/<id>/v0.png`. Emitted as `screenshot="..."` on the
-   * directive when present.
-   */
   screenshot?: string;
   text: string;
 }
 
-/**
- * Build the JSXExpressionContainer that holds the comment directive:
- *
- *   {/* @comment id="<uuid>" anchor="<uuid>" text="<escaped>" author="<email>" date="<iso>" *\/}
- *
- * Notes on escaping:
- *   - `text` and `author` go through `JSON.stringify` to get safe quoting and
- *     escape sequences (`\"`, `\\`, `\n`) in one shot. The reader's directive
- *     parser understands the JSON-string subset of those escapes.
- *   - `id`/`anchor`/`date` are tightly constrained shapes (uuid / ISO date) so
- *     a plain `"..."` wrapper is fine.
- *   - `screenshot` is a server-controlled ASCII path (`/designs/iterations/...`)
- *     so a plain `"..."` wrapper is fine; we never write the field at all when
- *     the screenshot save failed.
- *
- * Implementation note: building the node by hand via @babel/types and
- * `addComment(..., "inner")` does NOT survive `recast.print` — recast omits
- * the inner comment and emits a bare `{}`. The reliable workaround is to
- * parse a tiny JSX fragment that already contains the desired comment block,
- * then extract the recast-blessed node from that AST. Recast attaches all the
- * formatting hints it needs during parse, so the node prints faithfully.
- */
 export function buildCommentMarker(args: MarkerArgs): JSXExpressionContainer {
   const directive =
     `@comment id="${args.id}" anchor="${args.anchor}"` +
@@ -283,8 +235,6 @@ export function buildCommentMarker(args: MarkerArgs): JSXExpressionContainer {
     (args.screenshot ? ` screenshot="${args.screenshot}"` : "") +
     (args.route ? ` route=${JSON.stringify(args.route)}` : "");
 
-  // Wrap in a JSX fragment so the parser accepts the bare comment-block
-  // expression. We don't render the fragment; we only steal the inner node.
   const wrap = `<>{/* ${directive} */}</>;`;
   const wrapped = recast.parse(wrap, { parser: babelTsParser }) as File;
 
@@ -304,19 +254,9 @@ export function buildCommentMarker(args: MarkerArgs): JSXExpressionContainer {
   return found;
 }
 
-/**
- * Build a JSXExpressionContainer from the RAW inner text of an existing
- * CommentBlock (i.e. everything between `/*` and `*\/`). The wrap-and-extract
- * trick is identical to buildCommentMarker, but here we don't reconstruct the
- * directive's attributes — we keep the original bytes verbatim so text,
- * author, date, screenshot, replies, etc. round-trip without any escaping
- * gymnastics.
- */
 export function buildMarkerFromInner(
   directiveInner: string
 ): JSXExpressionContainer {
-  // The directive must not contain "*/" (would close the block early). If it
-  // does, the original source was malformed — bail rather than emit broken JS.
   if (directiveInner.includes("*/")) {
     throw new WriteError(
       "injectExistingMarkerIntoSource: directive contains '*/' (would close block early)",
@@ -341,16 +281,6 @@ export function buildMarkerFromInner(
   return found;
 }
 
-/**
- * Insert `marker` immediately after `target` in its parent's children array.
- * Handles two parent shapes:
- *   - JSXElement (most common: target sits inside another element)
- *   - JSXFragment (<>...</>)
- *
- * We also emit a leading JSXText newline + indentation so the marker lands on
- * its own line; without this, recast prints freshly-built siblings flush with
- * the previous element's closing tag.
- */
 export function insertAfterSibling(
   ast: File,
   target: JSXElement,
@@ -392,11 +322,6 @@ export function insertAfterSibling(
     return;
   }
 
-  // Fallback: target has no JSXElement/JSXFragment parent (it's the root of
-  // a function return, a conditional consequent, a map callback body, etc.).
-  // Wrap the target in a JSX Fragment and place the marker as a sibling
-  // within. This works for any JSXElement including self-closing ones, and
-  // preserves the original target's formatting.
   recast.visit(ast, {
     visitJSXElement(jsxPath) {
       if (inserted) {
@@ -410,10 +335,6 @@ export function insertAfterSibling(
       const col = target.loc?.start.column ?? 0;
       const indent = " ".repeat(col);
       const outerIndent = " ".repeat(Math.max(0, col - 2));
-      // Strip recast/babel's "parenthesized" trivia from the target. The parens
-      // belong to the original return-expression context; carrying them into
-      // the new fragment slot prints `(<label>…</label>)` which is valid JSX
-      // but ugly.
       const targetExtra = (
         target as unknown as { extra?: Record<string, unknown> }
       ).extra;
@@ -442,12 +363,6 @@ export function insertAfterSibling(
   }
 }
 
-/**
- * Remove the `data-comment-anchor="<anchorUuid>"` attribute from whichever
- * JSXOpeningElement carries it. Returns true when a match was found and
- * stripped. Used by deleteCommentMarker after confirming the anchor has no
- * remaining references.
- */
 export function stripAnchorAttribute(ast: File, anchorUuid: string): boolean {
   let stripped = false;
   recast.visit(ast, {
@@ -493,12 +408,6 @@ export function stripAnchorAttribute(ast: File, anchorUuid: string): boolean {
   return stripped;
 }
 
-/**
- * Infer the indentation to use for a new sibling inserted at `idx + 1`. We
- * look at the JSXText that precedes the target — that node's last line is
- * the whitespace used to indent the target itself, so reusing it puts the
- * new sibling at the same column.
- */
 function inferSiblingIndent(
   parent: JSXElement | JSXFragment,
   children: readonly Node[],
