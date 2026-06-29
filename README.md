@@ -123,14 +123,21 @@ Screenshots and agent iterations are written under `designs/`. Add `designs/`
 and `public/designs/` to the host app's `.gitignore` if those artifacts should
 stay local.
 
-## Try it
+## Try it in 30 seconds
 
-**Zero install:** open the playground in your browser and start commenting —
+Scaffold a ready-to-run Vite + React app with ForkDesign already wired in — no
+clone, no plugin config:
 
-[![Open in StackBlitz](https://developer.stackblitz.com/img/open_in_stackblitz.svg)](https://stackblitz.com/github/PauliusKrutkis/forkdesign/tree/main/examples/stackblitz)
+```sh
+npx degit PauliusKrutkis/forkdesign/examples/starter my-forkdesign-app
+cd my-forkdesign-app
+npm install
+npm run dev
+```
 
-(Commenting works fully in the sandbox; agent iteration needs a local agent, so
-run it locally for variants.)
+Open the printed URL, click the ForkDesign pill, then select an element to leave
+a comment — the marker is written straight into your source. Configure a local
+agent (see [AI Iteration](#ai-iteration)) to generate source-backed variants.
 
 ## Example
 
