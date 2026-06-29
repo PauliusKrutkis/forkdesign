@@ -183,7 +183,7 @@ export async function captureAndUploadVersionNow(args: {
 /**
  * After source changes (HMR), capture the element PNG for version `v` without uploading.
  */
-export async function captureVersionPngAfterHmr(args: {
+async function captureVersionPngAfterHmr(args: {
   anchor: string;
   instance?: number;
   previousSignature?: string | null;
@@ -201,7 +201,7 @@ export async function captureVersionPngAfterHmr(args: {
  * After source changes (HMR), capture the element and upload PNG for version `v`.
  * Agent variants (v &gt; 0) use this so thumbnails match the applied design.
  */
-export function captureAndUploadVersionAfterHmr(args: {
+function captureAndUploadVersionAfterHmr(args: {
   id: string;
   anchor: string;
   instance?: number;
