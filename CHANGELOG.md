@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.1.1
+
+- Renamed the npm package to `@pako_krc/forkdesign` (scoped). Update imports to
+  `@pako_krc/forkdesign` and `@pako_krc/forkdesign/plugin`.
+
 ## 0.1.0
 
 - Initial public release of the ForkDesign Vite plugin and React overlay.
