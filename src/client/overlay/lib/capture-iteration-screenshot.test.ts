@@ -51,7 +51,13 @@ describe("capturePendingVersionScreenshot", () => {
       })
     );
 
-    document.querySelector("[data-comment-anchor]")!.textContent = "live v2";
+    const anchorElement = document.querySelector<HTMLElement>(
+      "[data-comment-anchor]"
+    );
+    if (!anchorElement) {
+      throw new Error("expected comment anchor element");
+    }
+    anchorElement.textContent = "live v2";
 
     await capturePendingVersionScreenshot({
       id: "comment-1",

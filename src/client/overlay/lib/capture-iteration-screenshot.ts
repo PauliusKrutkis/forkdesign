@@ -248,5 +248,5 @@ export async function capturePendingVersionScreenshot(args: {
   if (args.v <= 0) {
     return false;
   }
-  return captureAndUploadVersionAfterHmr(args);
+  return await captureAndUploadVersionAfterHmr(args);
 }

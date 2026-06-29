@@ -30,7 +30,9 @@ describe("agent workspace", () => {
     mkdirSync(path.dirname(sourcePath), { recursive: true });
     writeFileSync(sourcePath, "export const live = 1;\n", "utf8");
 
-    const baselineFiles = new Map([["src/App.tsx", "export const live = 1;\n"]]);
+    const baselineFiles = new Map([
+      ["src/App.tsx", "export const live = 1;\n"],
+    ]);
     const workspace = await createAgentWorkspace({
       projectRoot,
       runId: "run-test",
@@ -39,9 +41,9 @@ describe("agent workspace", () => {
 
     try {
       expect(readFileSync(sourcePath, "utf8")).toBe("export const live = 1;\n");
-      expect(readFileSync(path.join(workspace.workspaceRoot, "src/App.tsx"), "utf8")).toBe(
-        "export const live = 1;\n"
-      );
+      expect(
+        readFileSync(path.join(workspace.workspaceRoot, "src/App.tsx"), "utf8")
+      ).toBe("export const live = 1;\n");
     } finally {
       await workspace.cleanup();
     }

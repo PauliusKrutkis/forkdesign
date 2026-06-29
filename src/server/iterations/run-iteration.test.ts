@@ -120,11 +120,7 @@ describe("runNewIteration multi-variant", () => {
     runAgentMock.mockImplementation(({ projectRoot: workspaceRoot, file }) => {
       call += 1;
       const target = agentTargetPath(workspaceRoot, file);
-      writeFileSync(
-        target,
-        `${baselineSource}\n// variant ${call}`,
-        "utf8"
-      );
+      writeFileSync(target, `${baselineSource}\n// variant ${call}`, "utf8");
       return Promise.resolve({
         ok: true,
         modelUsed: "composer-2.5-fast",

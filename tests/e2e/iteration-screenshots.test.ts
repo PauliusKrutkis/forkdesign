@@ -189,14 +189,16 @@ test.describe("iteration screenshots + mid-run switching", () => {
     await advanceAgentVariant(page, id);
     await awaitVariantInProgress(page, id, 2);
     await page.getByRole("button", { name: "Use v2" }).click();
-    await expect(
-      page.getByTestId("repeated-card-design").first()
-    ).toHaveText("Design variant 1", { timeout: 30_000 });
+    await expect(page.getByTestId("repeated-card-design").first()).toHaveText(
+      "Design variant 1",
+      { timeout: 30_000 }
+    );
 
     await advanceAgentVariant(page, id);
-    await expect(
-      page.getByTestId("repeated-card-design").first()
-    ).toHaveText("Design variant 1", { timeout: 60_000 });
+    await expect(page.getByTestId("repeated-card-design").first()).toHaveText(
+      "Design variant 1",
+      { timeout: 60_000 }
+    );
   });
 
   test("each version's thumbnail captures a visually distinct render", async ({
