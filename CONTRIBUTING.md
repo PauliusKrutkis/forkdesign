@@ -23,7 +23,7 @@ pnpm build
 
 - Keep browser code under `src/client/` free of Node-only imports.
 - Keep Vite middleware and filesystem work under `src/server/`.
-- Public imports should go through `forkdesign` and `forkdesign/plugin`.
+- Public imports should go through `@pako_krc/forkdesign` and `@pako_krc/forkdesign/plugin`.
 - Add focused colocated tests for parser, writer, API, and iteration behavior.
 
 ForkDesign writes local iteration artifacts under `designs/` in host apps. Avoid

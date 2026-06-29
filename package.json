@@ -37,7 +37,10 @@
     "ultracite": "7.8.1",
     "vitest": "^4.1.8"
   },
-  "name": "forkdesign",
+  "name": "@pako_krc/forkdesign",
+  "publishConfig": {
+    "access": "public"
+  },
   "peerDependencies": {
     "react": "^19.0.0",
     "react-dom": "^19.0.0",

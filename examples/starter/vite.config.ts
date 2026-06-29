@@ -1,5 +1,5 @@
+import { forkDesign } from "@pako_krc/forkdesign/plugin";
 import react from "@vitejs/plugin-react";
-import { forkDesign } from "forkdesign/plugin";
 import { defineConfig } from "vite";
 
 export default defineConfig({

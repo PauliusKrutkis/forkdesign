@@ -1,6 +1,6 @@
 /**
  * ForkDesign overlay theme — shadcn zinc tokens (plain CSS variables).
- * Bundled into forkdesign/styles.css with the overlay's generated utilities.
+ * Bundled into @pako_krc/forkdesign/styles.css with the overlay's generated utilities.
  */
 :root {
   --fd-radius: 0.5rem;

@@ -4,7 +4,7 @@ Self-contained Vite + React app with ForkDesign already wired in. This is the
 fastest way to try ForkDesign in a real dev server.
 
 Unlike [`examples/basic-vite`](../basic-vite) (which links the local workspace
-build for contributors), this app installs `forkdesign` from npm, so it runs
+build for contributors), this app installs `@pako_krc/forkdesign` from npm, so it runs
 anywhere. It is intentionally excluded from the pnpm workspace.
 
 ## Scaffold it (no clone)
