@@ -4,7 +4,7 @@
 get source-backed variants, and keep the whole history in your repo — no SaaS,
 every change is a `git diff`.
 
-ForkDesign: comment on a running component, and the feedback is written back into your source as a reviewable diff
+![Fork Design: comment on a running component, and the feedback is written back into your source as a reviewable diff](./docs/assets/forkdesign-demo.gif)
 
 > Comments and variants live in your repo as JSX markers + on-disk snapshots you
 > commit, `git diff`, and `git checkout` — not in a vendor database.
@@ -14,9 +14,16 @@ ForkDesign: comment on a running component, and the feedback is written back int
 ## 30-second tour
 
 1. **Add the plugin** — one line in `vite.config.ts` (`forkDesign()`), dev-only.
-2. **Click the forkdesign pill,** then click any element in your running app.
+2. **Click the Fork Design pill,** then click any element in your running app.
 3. **Leave a comment** — it is written straight back into your `.tsx`, beside the
-  element, as a marker you can review like any other change:
+   element, as a marker you can review like any other change:
+
+   ```diff
+   -<h1>Review your running UI without leaving the browser.</h1>
+   +<h1 data-comment-anchor="32aae123-…">Review your running UI without leaving the browser.</h1>
+   +{/* @comment id="f3e9…" text="Tighten this headline — two lines max, and bump the contrast." author="dev@local" … */}
+   ```
+
 4. **Or switch to Agent mode** and let your local agent generate source-backed
   variants; flip between versions and keep the one you like.
 5. **Review it like code** — `git diff` to see exactly what changed, `git
@@ -38,22 +45,22 @@ is a reviewable, revertable diff.
 **No, if:**
 
 - You need a hosted space for **non-technical stakeholders** to leave feedback.
-ForkDesign runs on a developer's dev server; it is not a SaaS and there is no
+Fork Design runs on a developer's dev server; it is not a SaaS and there is no
 hosted mode.
 - You're **not on React + Vite**. There is no other framework support (0.x
 targets React 19 and Vite 8).
 - You want an **app generator** that builds whole pages or products from a
-prompt. ForkDesign iterates on components you already have — it is not v0 or
+prompt. Fork Design iterates on components you already have — it is not v0 or
 Lovable.
 
 ## How it compares
 
-ForkDesign is deliberately narrow. It is not a generator and not a design
+Fork Design is deliberately narrow. It is not a generator and not a design
 platform — it is local-first design iteration that keeps its history in your
 git.
 
 
-|                   | **ForkDesign**                                      | v0 / Lovable                      | Onlook                    |
+|                   | **Fork Design**                                      | v0 / Lovable                      | Onlook                    |
 | ----------------- | --------------------------------------------------- | --------------------------------- | ------------------------- |
 | Where it runs     | Your local Vite dev server                          | Hosted SaaS                       | Local app on your project |
 | Where state lives | **Your git repo** (JSX markers + on-disk snapshots) | Vendor cloud                      | Your source files         |
@@ -63,7 +70,7 @@ git.
 | Each change is    | A git diff you review and revert                    | Cloud state you export            | Edits to source           |
 
 
-**Where ForkDesign wins:** local-first (no vendor database, no account), every
+**Where Fork Design wins:** local-first (no vendor database, no account), every
 change is a reviewable diff in your repo, and it does one workflow well.
 
 **Where it doesn't:** it won't generate an app from scratch, it's React + Vite
@@ -100,11 +107,11 @@ export default defineConfig({
 That is the only setup for the default path. `forkDesign()` runs in dev only,
 stamps JSX source locations, installs the comment/iteration API, imports the
 compiled overlay CSS, and mounts the overlay. Your app does not need to scan
-forkdesign with Tailwind.
+Fork Design with Tailwind.
 
-## Using ForkDesign
+## Using Fork Design
 
-Open your app in dev, click the forkdesign button, then click an element to leave a
+Open your app in dev, click the Fork Design button, then click an element to leave a
 comment. New comments are written as JSX markers:
 
 ```tsx
@@ -120,7 +127,7 @@ stay local.
 
 ## Try it in 30 seconds
 
-Scaffold a ready-to-run Vite + React app with ForkDesign already wired in — no
+Scaffold a ready-to-run Vite + React app with Fork Design already wired in — no
 clone, no plugin config:
 
 ```sh
@@ -130,13 +137,13 @@ npm install
 npm run dev
 ```
 
-Open the printed URL, click the ForkDesign pill, then select an element to leave
+Open the printed URL, click the Fork Design pill, then select an element to leave
 a comment — the marker is written straight into your source. Configure a local
 agent (see [AI Iteration](#ai-iteration)) to generate source-backed variants.
 
 ## Example
 
-Try the minimal Vite app in `[examples/basic-vite](./examples/basic-vite)`:
+Try the minimal Vite app in [`examples/basic-vite`](./examples/basic-vite):
 
 ```sh
 pnpm install
@@ -151,7 +158,7 @@ written into `examples/basic-vite/src/`; local iteration artifacts land under
 
 ## AI Iteration
 
-ForkDesign agent iteration: flip between source-backed design variants of the commented component and make one live
+![Fork Design agent iteration: flip between source-backed design variants of the commented component and make one live](./docs/assets/forkdesign-versions.gif)
 
 > Each variant is a real on-disk redesign of the commented component. Click a
 > card to make it live in the running app; the winner is written back to your
@@ -165,7 +172,7 @@ Agent mode uses your configured local tools:
 `agent`.
 
 Copy `.env.example` if you want to document local agent credentials for a host
-app. ForkDesign does not send keys to the browser; local agent tools read their own
+app. Fork Design does not send keys to the browser; local agent tools read their own
 credentials.
 
 Default model order:
@@ -224,16 +231,16 @@ export function App() {
 
 ## Safety
 
-ForkDesign is a local development tool. Its Vite middleware can read and write app
+Fork Design is a local development tool. Its Vite middleware can read and write app
 source files, write screenshots and iteration artifacts, and run configured AI
-agents. Do not expose a Vite dev server running forkdesign to an untrusted network
+agents. Do not expose a Vite dev server running Fork Design to an untrusted network
 or run it with `vite --host` unless the network is trusted.
 
 The API rejects non-loopback clients by default. Pass `allowRemoteAccess: true`
 only when the dev server is intentionally reachable from a trusted network.
 
 When AI iteration is enabled, selected source context, comments, screenshots,
-and feedback may be sent to your configured provider. See `[SECURITY.md](./SECURITY.md)`.
+and feedback may be sent to your configured provider. See [`SECURITY.md`](./SECURITY.md).
 
 ## Public API
 
@@ -247,9 +254,9 @@ and feedback may be sent to your configured provider. See `[SECURITY.md](./SECUR
 
 ## Development
 
-Architecture notes live in `[docs/architecture.md](./docs/architecture.md)`.
+Architecture notes live in [`docs/architecture.md`](./docs/architecture.md).
 `AGENTS.md` is guidance for AI coding assistants; human contributors should
-start with `[CONTRIBUTING.md](./CONTRIBUTING.md)`.
+start with [`CONTRIBUTING.md`](./CONTRIBUTING.md).
 For a manual smoke check in a real Vite dev server, use `pnpm example`.
 
 ```sh
