@@ -17,7 +17,7 @@ npm run dev
 ```
 
 Open the printed URL, click the ForkDesign pill, then select an element to leave
-a comment. The marker is written into `src/main.tsx` — open the file to see the
+a comment. The marker is written into `src/app.tsx` — open the file to see the
 diff.
 
 ## Run from a clone
@@ -30,7 +30,7 @@ npm run dev
 ## What works here
 
 - **Commenting** — full. Click the pill, select an element, leave a comment; the
-  marker is written into `src/main.tsx`. Diff it like any other change.
+  marker is written into `src/app.tsx`. Diff it like any other change.
 - **Agent iteration** — configure a local agent (Cursor / Claude, your keys),
   switch to Agent mode, and generate source-backed variants. See the root
   [README](../../README.md#ai-iteration).
