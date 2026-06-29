@@ -16,7 +16,7 @@ body:
       label: Reproduction
       description: Steps or a minimal repo that reproduces the issue.
       placeholder: |
-        1. Install forkdesign...
+        1. Install @pako_krc/forkdesign...
         2. Run vite...
         3. Click...
     validations:
@@ -26,7 +26,7 @@ body:
     attributes:
       label: Versions
       description: ForkDesign, React, Vite, Node, and browser versions.
-      placeholder: "forkdesign 0.1.0, React 19, Vite 8, Node 22, Chrome 120"
+      placeholder: "@pako_krc/forkdesign 0.1.0, React 19, Vite 8, Node 22, Chrome 120"
   - type: textarea
     id: logs
     attributes:

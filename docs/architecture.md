@@ -8,8 +8,8 @@ ForkDesign ships two public entry points (see `package.json` exports):
 
 | Entry | Import | Runtime | Role |
 |-------|--------|---------|------|
-| Client | `forkdesign` | Browser | React overlay UI |
-| Server | `forkdesign/plugin` | Node (Vite dev) | Vite plugins + dev API middleware |
+| Client | `@pako_krc/forkdesign` | Browser | React overlay UI |
+| Server | `@pako_krc/forkdesign/plugin` | Node (Vite dev) | Vite plugins + dev API middleware |
 
 **Critical constraint:** the browser module graph must never import Node builtins, `recast`, or `@babel/*`. The split in `src/index.ts` vs `src/plugin/index.ts` exists for this reason.
 
@@ -77,7 +77,7 @@ Colocated `*.test.ts` beside source.
 - Expanding `shared/` for same-runtime reuse — pick a domain owner instead
 - Generic top-level trees (`models/`, `services/`, `controllers/`)
 - Central `tests/` mirror
-- Renaming package exports (`forkdesign`, `forkdesign/plugin`)
+- Renaming package exports (`@pako_krc/forkdesign`, `@pako_krc/forkdesign/plugin`)
 
 ## Domain map
 

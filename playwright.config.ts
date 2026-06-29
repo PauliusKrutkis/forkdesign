@@ -50,7 +50,7 @@ export default defineConfig({
     // Build the real shipped package (tsup + the npm-identical build:css
     // pipeline) BEFORE Vite boots, in the same `&&` chain so it's strictly
     // sequential. The auto-mounted overlay's virtual client module imports
-    // `forkdesign` / `forkdesign/styles.css` by bare specifier; the playground
+    // `@pako_krc/forkdesign` / `@pako_krc/forkdesign/styles.css` by bare specifier; the playground
     // alias resolves those locally, but on CI the alias does NOT fire from a
     // virtual (`\0`) importer, so the comments plugin re-resolves them via node
     // self-reference through `package.json` exports — which needs the built

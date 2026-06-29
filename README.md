@@ -1,5 +1,7 @@
 # Fork Design
 
+[![npm version](https://img.shields.io/npm/v/@pako_krc/forkdesign.svg)](https://www.npmjs.com/package/@pako_krc/forkdesign)
+
 **Local-first AI design iteration for React devs.** Comment on any component,
 get source-backed variants, and keep the whole history in your repo — no SaaS,
 every change is a `git diff`.
@@ -80,8 +82,8 @@ team/collaboration layer.
 ## Install
 
 ```sh
-pnpm add -D forkdesign
-# or: npm install --save-dev forkdesign
+pnpm add -D @pako_krc/forkdesign
+# or: npm install --save-dev @pako_krc/forkdesign
 ```
 
 Peer dependencies: `react`, `react-dom`, `vite`.
@@ -97,7 +99,7 @@ Add the Vite plugin:
 // vite.config.ts
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
-import { forkDesign } from "forkdesign/plugin";
+import { forkDesign } from "@pako_krc/forkdesign/plugin";
 
 export default defineConfig({
   plugins: [forkDesign(), react()],
@@ -208,7 +210,7 @@ If you want to mount the overlay yourself, use the lower-level plugins:
 // vite.config.ts
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
-import { comments, sourceLoc } from "forkdesign/plugin";
+import { comments, sourceLoc } from "@pako_krc/forkdesign/plugin";
 
 export default defineConfig({
   plugins: [sourceLoc(), react(), comments()],
@@ -216,8 +218,8 @@ export default defineConfig({
 ```
 
 ```tsx
-import { CommentOverlay } from "forkdesign";
-import "forkdesign/styles.css";
+import { CommentOverlay } from "@pako_krc/forkdesign";
+import "@pako_krc/forkdesign/styles.css";
 
 export function App() {
   return (
@@ -245,11 +247,11 @@ and feedback may be sent to your configured provider. See [`SECURITY.md`](./SECU
 ## Public API
 
 
-| Import                  | Exports                                     |
-| ----------------------- | ------------------------------------------- |
-| `forkdesign`            | `CommentOverlay` and public types           |
-| `forkdesign/plugin`     | `forkDesign()`, `comments()`, `sourceLoc()` |
-| `forkdesign/styles.css` | Compiled overlay CSS                        |
+| Import                             | Exports                                     |
+| ---------------------------------- | ------------------------------------------- |
+| `@pako_krc/forkdesign`             | `CommentOverlay` and public types           |
+| `@pako_krc/forkdesign/plugin`      | `forkDesign()`, `comments()`, `sourceLoc()` |
+| `@pako_krc/forkdesign/styles.css`  | Compiled overlay CSS                        |
 
 
 ## Development

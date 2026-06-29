@@ -35,7 +35,7 @@ const VIRTUAL_CLIENT_ID = "virtual:comment-overlay/client";
 const RESOLVED_VIRTUAL_CLIENT_ID = `\0${VIRTUAL_CLIENT_ID}`;
 const LOOPBACK_IPV6 = new Set(["::1", "0:0:0:0:0:0:0:1"]);
 
-const PACKAGE_NAME = "forkdesign";
+const PACKAGE_NAME = "@pako_krc/forkdesign";
 const CLIENT_BARE_IMPORTS = new Set([
   PACKAGE_NAME,
   `${PACKAGE_NAME}/styles.css`,
@@ -45,13 +45,13 @@ const CLIENT_BARE_IMPORTS = new Set([
  * client module's bare imports. Vite can't resolve bare specifiers when the
  * importer is a virtual (`\0`-prefixed) id, so we re-resolve them as if they
  * were imported from here — node self-reference resolution (or a consumer's
- * `forkdesign` alias) then has a real directory to work from.
+ * `@pako_krc/forkdesign` alias) then has a real directory to work from.
  */
 const SELF_MODULE_PATH = fileURLToPath(import.meta.url);
 
 /**
  * Walk up from a file inside this package to its root (the directory whose
- * `package.json` is named `forkdesign`). Returns null if not found within a
+ * `package.json` is named `@pako_krc/forkdesign`). Returns null if not found within a
  * few levels — e.g. an unusual install layout — so callers can fall back.
  */
 function findPackageRoot(fromFile: string): string | null {
@@ -167,7 +167,7 @@ function forkDesignClientModule(overlayImport: string): string {
 import { createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { CommentOverlay } from "${overlayImport}";
-import "forkdesign/styles.css";
+import "${PACKAGE_NAME}/styles.css";
 
 const ROOT_ID = "overlay-root";
 

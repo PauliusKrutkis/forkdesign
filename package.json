@@ -37,7 +37,10 @@
     "ultracite": "7.8.1",
     "vitest": "^4.1.8"
   },
-  "name": "forkdesign",
+  "name": "@pako_krc/forkdesign",
+  "publishConfig": {
+    "access": "public"
+  },
   "peerDependencies": {
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
@@ -62,7 +65,7 @@
     "fix": "ultracite fix"
   },
   "type": "module",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "packageManager": "pnpm@10.33.0",
   "description": "Local-first AI design iteration for Vite + React — comment on a component, get source-backed variants, and keep the whole history in your repo. Every change is a git diff.",
   "license": "MIT",
